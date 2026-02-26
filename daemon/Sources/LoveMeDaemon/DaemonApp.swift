@@ -190,6 +190,9 @@ actor DaemonApp {
         case WSMessageType.parseSchedule:
             await handleParseSchedule(message, client: client)
 
+        case WSMessageType.buildWorkflow:
+            await handleBuildWorkflow(message, client: client)
+
         default:
             Logger.error("Unknown message type: \(message.type)")
             await sendError(to: client, message: "Unknown message type: \(message.type)", code: "UNKNOWN_TYPE")
@@ -957,6 +960,138 @@ actor DaemonApp {
                 ]
             )
             try? await client.send(msg)
+        }
+    }
+
+    private func handleBuildWorkflow(_ message: WSMessage, client: WebSocketClient) async {
+        guard let prompt = message.content ?? message.metadata?["prompt"]?.stringValue else {
+            await sendError(to: client, message: "Missing workflow prompt", code: "MISSING_FIELD")
+            return
+        }
+
+        guard config.apiKey != nil else {
+            await sendError(to: client, message: "No ANTHROPIC_API_KEY configured", code: "NO_API_KEY")
+            return
+        }
+
+        // Gather available MCP tools for context
+        let tools = await mcpManager.getTools()
+        let toolCatalog = tools.map { tool -> String in
+            "- \(tool.name) (server: \(tool.serverName)): \(tool.description)"
+        }.joined(separator: "\n")
+
+        let systemPrompt = """
+        You are a workflow builder for the love.Me automation system. The user will describe a workflow in natural language. You must generate a valid workflow JSON object.
+
+        Available MCP tools:
+        \(toolCatalog.isEmpty ? "No MCP tools currently connected." : toolCatalog)
+
+        Output ONLY a valid JSON object (no markdown, no explanation) with this exact schema:
+        {
+          "name": "Workflow Name",
+          "description": "What this workflow does",
+          "schedule": "natural language schedule like 'every 5 minutes'",
+          "steps": [
+            {
+              "name": "Step Name",
+              "toolName": "exact_tool_name_from_catalog",
+              "serverName": "exact_server_name_from_catalog",
+              "needsConfiguration": false
+            }
+          ]
+        }
+
+        Rules:
+        - Map user descriptions to real tools from the catalog when possible
+        - If no matching tool exists, set toolName to a descriptive placeholder and needsConfiguration to true
+        - Steps are linear (executed top-to-bottom in sequence)
+        - Use the user's language for step names (human-readable)
+        - The schedule field should be natural language (will be parsed to cron separately)
+        - Keep step count minimal — only what the user described
+        """
+
+        let userMessage = MessageParam(role: "user", text: prompt)
+
+        do {
+            let responseText = try await claudeClient.singleRequest(
+                messages: [userMessage],
+                systemPrompt: systemPrompt
+            )
+
+            // Parse the AI response as JSON
+            guard let jsonData = responseText.data(using: .utf8) else {
+                await sendError(to: client, message: "Invalid response from AI", code: "PARSE_ERROR")
+                return
+            }
+
+            // Decode the AI-generated workflow
+            struct AIWorkflow: Codable {
+                let name: String
+                let description: String
+                let schedule: String
+                let steps: [AIStep]
+            }
+            struct AIStep: Codable {
+                let name: String
+                let toolName: String
+                let serverName: String
+                let needsConfiguration: Bool?
+            }
+
+            let aiWorkflow = try JSONDecoder().decode(AIWorkflow.self, from: jsonData)
+
+            // Parse schedule to cron
+            let scheduleResult = NaturalScheduleParser.parse(aiWorkflow.schedule)
+            let cronExpression = scheduleResult?.cron ?? "0 * * * *"
+            let scheduleDescription = scheduleResult?.description ?? aiWorkflow.schedule
+
+            // Build workflow steps
+            let workflowId = UUID().uuidString
+            var stepMetadata: [MetadataValue] = []
+            var previousStepId: String?
+
+            for aiStep in aiWorkflow.steps {
+                let stepId = UUID().uuidString
+                var stepDict: [String: MetadataValue] = [
+                    "id": .string(stepId),
+                    "name": .string(aiStep.name),
+                    "toolName": .string(aiStep.toolName),
+                    "serverName": .string(aiStep.serverName),
+                    "onError": .string("stop"),
+                    "needsConfiguration": .bool(aiStep.needsConfiguration ?? false)
+                ]
+
+                // Linear dependency chain
+                if let prevId = previousStepId {
+                    stepDict["dependsOn"] = .array([.string(prevId)])
+                }
+
+                stepMetadata.append(.object(stepDict))
+                previousStepId = stepId
+            }
+
+            let hasUnconfigured = aiWorkflow.steps.contains { $0.needsConfiguration ?? false }
+
+            let resultMsg = WSMessage(
+                type: WSMessageType.buildWorkflowResult,
+                id: workflowId,
+                metadata: [
+                    "success": .bool(true),
+                    "id": .string(workflowId),
+                    "name": .string(aiWorkflow.name),
+                    "description": .string(aiWorkflow.description),
+                    "cronExpression": .string(cronExpression),
+                    "scheduleDescription": .string(scheduleDescription),
+                    "steps": .array(stepMetadata),
+                    "needsConfiguration": .bool(hasUnconfigured),
+                    "triggerType": .string("cron")
+                ]
+            )
+            try? await client.send(resultMsg)
+
+        } catch {
+            Logger.error("Build workflow failed: \(error)")
+            await sendError(to: client, message: "Failed to build workflow: \(error.localizedDescription)", code: "BUILD_ERROR")
         }
     }
 

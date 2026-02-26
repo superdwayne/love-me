@@ -22,6 +22,12 @@ private struct PendingToolCall: Sendable {
     var inputJSON: String
 }
 
+enum ClaudeAPIError: Error, Sendable {
+    case noAPIKey
+    case invalidResponse
+    case apiError(statusCode: Int, message: String)
+}
+
 /// Claude API client with SSE streaming support
 actor ClaudeAPIClient {
     private let config: DaemonConfig
@@ -76,6 +82,60 @@ actor ClaudeAPIClient {
                 }
             }
         }
+    }
+
+    /// Send a single (non-streaming) request to Claude API and return the text response.
+    func singleRequest(
+        messages: [MessageParam],
+        systemPrompt: String
+    ) async throws -> String {
+        guard let apiKey = config.apiKey else {
+            throw ClaudeAPIError.noAPIKey
+        }
+
+        let request = ClaudeRequest(
+            model: config.model,
+            max_tokens: 8192,
+            messages: messages,
+            system: systemPrompt,
+            stream: false,
+            tools: nil,
+            thinking: nil
+        )
+
+        let encoder = JSONEncoder()
+        let bodyData = try encoder.encode(request)
+
+        var urlRequest = URLRequest(url: apiURL)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        urlRequest.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        urlRequest.setValue("application/json", forHTTPHeaderField: "content-type")
+        urlRequest.httpBody = bodyData
+
+        let (data, response) = try await session.data(for: urlRequest)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw ClaudeAPIError.invalidResponse
+        }
+
+        if httpResponse.statusCode != 200 {
+            let body = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw ClaudeAPIError.apiError(statusCode: httpResponse.statusCode, message: body)
+        }
+
+        // Parse the response to extract text content
+        struct ClaudeResponse: Codable {
+            let content: [ResponseBlock]
+        }
+        struct ResponseBlock: Codable {
+            let type: String
+            let text: String?
+        }
+
+        let decoded = try JSONDecoder().decode(ClaudeResponse.self, from: data)
+        let text = decoded.content.compactMap { $0.text }.joined()
+        return text
     }
 
     // MARK: - Private
