@@ -32,6 +32,11 @@ struct WorkflowEditorView: View {
     @State private var notifyOnComplete = true
     @State private var notifyOnError = true
     @State private var notifyOnStepComplete = false
+    @State private var scheduleText: String = ""
+    @State private var useRawCron: Bool = false
+    @State private var scheduleDebounceTask: Task<Void, Never>?
+    @State private var showToolPicker: Bool = false
+    @State private var editingStepIndex: Int?
 
     private var isEditing: Bool { existingWorkflow != nil }
     private var isValid: Bool {
@@ -70,6 +75,25 @@ struct WorkflowEditorView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .onAppear {
             populateFromExisting()
+        }
+        .sheet(isPresented: $showToolPicker) {
+            ToolPickerSheet(
+                tools: workflowVM.availableTools,
+                isLoading: workflowVM.isLoadingTools,
+                onSelect: { tool in
+                    if let index = editingStepIndex, index < steps.count {
+                        steps[index].toolName = tool.name
+                        steps[index].serverName = tool.serverName
+                        if steps[index].name.isEmpty {
+                            steps[index].name = tool.description.prefix(40).description
+                        }
+                    }
+                    showToolPicker = false
+                }
+            )
+            .onAppear {
+                workflowVM.loadMCPTools()
+            }
         }
     }
 
@@ -117,27 +141,79 @@ struct WorkflowEditorView: View {
             .listRowBackground(Color.surface)
 
             if triggerType == "cron" {
-                HStack {
-                    Text("Expression")
-                        .foregroundStyle(.textPrimary)
-                    Spacer()
-                    TextField("*/5 * * * *", text: $cronExpression)
-                        .multilineTextAlignment(.trailing)
-                        .foregroundStyle(.textPrimary)
-                        .font(.toolDetail)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                }
-                .listRowBackground(Color.surface)
-
-                if !cronExpression.isEmpty {
-                    HStack(spacing: LoveMeTheme.sm) {
-                        Image(systemName: "clock")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.electricBlue)
-                        Text(cronHint)
+                if useRawCron {
+                    // Raw cron mode
+                    HStack {
+                        Text("Cron")
+                            .foregroundStyle(.textPrimary)
+                        Spacer()
+                        TextField("*/5 * * * *", text: $cronExpression)
+                            .multilineTextAlignment(.trailing)
+                            .foregroundStyle(.textPrimary)
                             .font(.toolDetail)
-                            .foregroundStyle(.trust)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                    }
+                    .listRowBackground(Color.surface)
+
+                    Button {
+                        useRawCron = false
+                    } label: {
+                        Text("Use natural language")
+                            .font(.timestamp)
+                            .foregroundStyle(.electricBlue)
+                    }
+                    .listRowBackground(Color.surface)
+                } else {
+                    // Natural language mode
+                    HStack {
+                        Text("Schedule")
+                            .foregroundStyle(.textPrimary)
+                        Spacer()
+                        TextField("e.g. every 5 minutes", text: $scheduleText)
+                            .multilineTextAlignment(.trailing)
+                            .foregroundStyle(.textPrimary)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .onChange(of: scheduleText) { _, newValue in
+                                scheduleDebounceTask?.cancel()
+                                scheduleDebounceTask = Task {
+                                    try? await Task.sleep(nanoseconds: 500_000_000)
+                                    guard !Task.isCancelled, !newValue.isEmpty else { return }
+                                    workflowVM.parseSchedule(text: newValue)
+                                }
+                            }
+                    }
+                    .listRowBackground(Color.surface)
+
+                    // Parse result feedback
+                    if let parsed = workflowVM.parsedSchedule {
+                        HStack(spacing: LoveMeTheme.sm) {
+                            if parsed.success, let desc = parsed.description, let cron = parsed.cron {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.sageGreen)
+                                Text("\(desc) (\(cron))")
+                                    .font(.toolDetail)
+                                    .foregroundStyle(.trust)
+                            } else {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.softRed)
+                                Text(parsed.message ?? "Couldn't parse schedule")
+                                    .font(.toolDetail)
+                                    .foregroundStyle(.trust)
+                            }
+                        }
+                        .listRowBackground(Color.surface)
+                    }
+
+                    Button {
+                        useRawCron = true
+                    } label: {
+                        Text("Use cron syntax")
+                            .font(.timestamp)
+                            .foregroundStyle(.electricBlue)
                     }
                     .listRowBackground(Color.surface)
                 }
@@ -178,8 +254,8 @@ struct WorkflowEditorView: View {
 
     private var stepsSection: some View {
         Section {
-            ForEach($steps) { $step in
-                stepRow(step: $step)
+            ForEach(Array(steps.indices), id: \.self) { index in
+                stepRow(step: $steps[index], index: index)
             }
             .onDelete { indexSet in
                 steps.remove(atOffsets: indexSet)
@@ -221,7 +297,7 @@ struct WorkflowEditorView: View {
         }
     }
 
-    private func stepRow(step: Binding<EditableStep>) -> some View {
+    private func stepRow(step: Binding<EditableStep>, index: Int) -> some View {
         VStack(alignment: .leading, spacing: LoveMeTheme.sm) {
             // Step name
             HStack {
@@ -233,36 +309,43 @@ struct WorkflowEditorView: View {
                     .foregroundStyle(.textPrimary)
             }
 
-            // Server and tool
-            HStack(spacing: LoveMeTheme.sm) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Server")
-                        .font(.timestamp)
+            // Tool selection button
+            Button {
+                editingStepIndex = index
+                showToolPicker = true
+            } label: {
+                HStack {
+                    if step.wrappedValue.toolName.isEmpty {
+                        Image(systemName: "plus.circle")
+                            .font(.system(size: 14))
+                            .foregroundStyle(.heart)
+                        Text("Choose Tool")
+                            .font(.system(size: 14))
+                            .foregroundStyle(.heart)
+                    } else {
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.electricBlue)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(step.wrappedValue.toolName)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(.textPrimary)
+                                .lineLimit(1)
+                            Text(step.wrappedValue.serverName)
+                                .font(.timestamp)
+                                .foregroundStyle(.trust)
+                        }
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11))
                         .foregroundStyle(.trust)
-                    TextField("server", text: step.serverName)
-                        .font(.toolDetail)
-                        .foregroundStyle(.textPrimary)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .padding(LoveMeTheme.xs)
-                        .background(Color.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.xs))
                 }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Tool")
-                        .font(.timestamp)
-                        .foregroundStyle(.trust)
-                    TextField("tool_name", text: step.toolName)
-                        .font(.toolDetail)
-                        .foregroundStyle(.textPrimary)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .padding(LoveMeTheme.xs)
-                        .background(Color.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.xs))
-                }
+                .padding(LoveMeTheme.sm)
+                .background(Color.surfaceElevated)
+                .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.sm))
             }
+            .buttonStyle(.plain)
 
             // On error behavior
             HStack {
@@ -319,9 +402,20 @@ struct WorkflowEditorView: View {
     // MARK: - Actions
 
     private func save() {
+        let resolvedCron: String?
+        if triggerType == "cron" {
+            if useRawCron {
+                resolvedCron = cronExpression
+            } else {
+                resolvedCron = workflowVM.parsedSchedule?.cron ?? cronExpression
+            }
+        } else {
+            resolvedCron = nil
+        }
+
         let trigger = WorkflowTriggerInfo(
             type: triggerType,
-            cronExpression: triggerType == "cron" ? cronExpression : nil,
+            cronExpression: resolvedCron,
             eventSource: triggerType == "event" ? eventSource : nil,
             eventType: triggerType == "event" ? eventType : nil,
             eventFilter: nil
