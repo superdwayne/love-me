@@ -3,6 +3,7 @@ import SwiftUI
 struct WorkflowListView: View {
     @Environment(WorkflowViewModel.self) private var workflowVM
     @State private var showEditor = false
+    @State private var showBuilder = false
     @State private var showDeleteAlert = false
     @State private var workflowToDelete: String?
 
@@ -42,13 +43,23 @@ struct WorkflowListView: View {
         .navigationTitle("Workflows")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showEditor = true
-                } label: {
-                    Image(systemName: "plus")
-                        .foregroundStyle(.heart)
+                HStack(spacing: LoveMeTheme.lg) {
+                    Button {
+                        showBuilder = true
+                    } label: {
+                        Image(systemName: "wand.and.stars")
+                            .foregroundStyle(.heart)
+                    }
+                    .accessibilityLabel("Build with AI")
+
+                    Button {
+                        showEditor = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .foregroundStyle(.heart)
+                    }
+                    .accessibilityLabel("New workflow")
                 }
-                .accessibilityLabel("New workflow")
             }
         }
         .refreshable {
@@ -57,6 +68,11 @@ struct WorkflowListView: View {
         .sheet(isPresented: $showEditor) {
             NavigationStack {
                 WorkflowEditorView(existingWorkflow: nil)
+            }
+        }
+        .sheet(isPresented: $showBuilder) {
+            NavigationStack {
+                WorkflowBuilderView()
             }
         }
         .alert("Delete Workflow", isPresented: $showDeleteAlert) {
