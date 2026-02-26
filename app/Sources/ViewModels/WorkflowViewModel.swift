@@ -94,6 +94,24 @@ struct ParsedSchedule: Sendable {
     let message: String?
 }
 
+struct BuilderWorkflowResult: Sendable {
+    let id: String
+    let name: String
+    let description: String
+    let cronExpression: String
+    let scheduleDescription: String
+    let steps: [BuilderStepResult]
+    let needsConfiguration: Bool
+}
+
+struct BuilderStepResult: Identifiable, Sendable {
+    let id: String
+    let name: String
+    let toolName: String
+    let serverName: String
+    let needsConfiguration: Bool
+}
+
 // MARK: - ViewModel
 
 @Observable
@@ -111,6 +129,9 @@ final class WorkflowViewModel {
     var isLoadingTools: Bool = false
     var parsedSchedule: ParsedSchedule?
     var isParsingSchedule: Bool = false
+    var builderResult: BuilderWorkflowResult?
+    var isBuilding: Bool = false
+    var builderError: String?
 
     private let webSocket: WebSocketClient
 
@@ -209,6 +230,51 @@ final class WorkflowViewModel {
         webSocket.send(msg)
     }
 
+    func buildWorkflow(prompt: String) {
+        isBuilding = true
+        builderError = nil
+        builderResult = nil
+        let msg = WSMessage(
+            type: WSMessageType.buildWorkflow,
+            content: prompt
+        )
+        webSocket.send(msg)
+    }
+
+    func saveBuiltWorkflow() {
+        guard let result = builderResult else { return }
+
+        let steps = result.steps.map { step in
+            WorkflowStepInfo(
+                id: step.id,
+                name: step.name,
+                toolName: step.toolName,
+                serverName: step.serverName,
+                inputs: [:],
+                dependsOn: nil,
+                onError: "stop"
+            )
+        }
+
+        let detail = WorkflowDetail(
+            id: result.id,
+            name: result.name,
+            description: result.description,
+            enabled: true,
+            trigger: WorkflowTriggerInfo(
+                type: "cron",
+                cronExpression: result.cronExpression
+            ),
+            steps: steps,
+            notifyOnStart: false,
+            notifyOnComplete: true,
+            notifyOnError: true,
+            notifyOnStepComplete: false
+        )
+        createWorkflow(detail)
+        builderResult = nil
+    }
+
     // MARK: - Message Routing
 
     func handleMessage(_ msg: WSMessage) {
@@ -254,6 +320,9 @@ final class WorkflowViewModel {
 
         case WSMessageType.parseScheduleResult:
             handleParseScheduleResult(msg)
+
+        case WSMessageType.buildWorkflowResult:
+            handleBuildWorkflowResult(msg)
 
         default:
             break
@@ -600,6 +669,44 @@ final class WorkflowViewModel {
             cron: meta["cron"]?.stringValue,
             description: meta["description"]?.stringValue,
             message: meta["message"]?.stringValue
+        )
+    }
+
+    private func handleBuildWorkflowResult(_ msg: WSMessage) {
+        isBuilding = false
+        guard let meta = msg.metadata else {
+            builderError = "No response from AI"
+            return
+        }
+
+        let success = meta["success"]?.boolValue ?? false
+        if !success {
+            builderError = meta["error"]?.stringValue ?? "Failed to build workflow"
+            return
+        }
+
+        var steps: [BuilderStepResult] = []
+        if case .array(let stepItems) = meta["steps"] {
+            for item in stepItems {
+                guard case .object(let dict) = item else { continue }
+                steps.append(BuilderStepResult(
+                    id: dict["id"]?.stringValue ?? UUID().uuidString,
+                    name: dict["name"]?.stringValue ?? "Step",
+                    toolName: dict["toolName"]?.stringValue ?? "",
+                    serverName: dict["serverName"]?.stringValue ?? "",
+                    needsConfiguration: dict["needsConfiguration"]?.boolValue ?? false
+                ))
+            }
+        }
+
+        builderResult = BuilderWorkflowResult(
+            id: meta["id"]?.stringValue ?? UUID().uuidString,
+            name: meta["name"]?.stringValue ?? "Untitled Workflow",
+            description: meta["description"]?.stringValue ?? "",
+            cronExpression: meta["cronExpression"]?.stringValue ?? "0 * * * *",
+            scheduleDescription: meta["scheduleDescription"]?.stringValue ?? "Every hour",
+            steps: steps,
+            needsConfiguration: meta["needsConfiguration"]?.boolValue ?? false
         )
     }
 
