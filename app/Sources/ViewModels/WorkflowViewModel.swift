@@ -80,6 +80,20 @@ struct WorkflowNotification: Sendable {
     let type: String  // started, completed, failed, stepCompleted
 }
 
+struct MCPToolItem: Identifiable, Sendable {
+    var id: String { "\(serverName)_\(name)" }
+    let name: String
+    let description: String
+    let serverName: String
+}
+
+struct ParsedSchedule: Sendable {
+    let success: Bool
+    let cron: String?
+    let description: String?
+    let message: String?
+}
+
 // MARK: - ViewModel
 
 @Observable
@@ -91,6 +105,12 @@ final class WorkflowViewModel {
     var currentExecution: ExecutionItem?
     var isLoading: Bool = false
     var notification: WorkflowNotification?
+
+    // Visual Builder state
+    var availableTools: [MCPToolItem] = []
+    var isLoadingTools: Bool = false
+    var parsedSchedule: ParsedSchedule?
+    var isParsingSchedule: Bool = false
 
     private let webSocket: WebSocketClient
 
@@ -174,6 +194,21 @@ final class WorkflowViewModel {
         webSocket.send(msg)
     }
 
+    func loadMCPTools() {
+        isLoadingTools = true
+        let msg = WSMessage(type: WSMessageType.mcpToolsList)
+        webSocket.send(msg)
+    }
+
+    func parseSchedule(text: String) {
+        isParsingSchedule = true
+        let msg = WSMessage(
+            type: WSMessageType.parseSchedule,
+            content: text
+        )
+        webSocket.send(msg)
+    }
+
     // MARK: - Message Routing
 
     func handleMessage(_ msg: WSMessage) {
@@ -213,6 +248,12 @@ final class WorkflowViewModel {
 
         case WSMessageType.workflowNotification:
             handleNotification(msg)
+
+        case WSMessageType.mcpToolsListResult:
+            handleMCPToolsListResult(msg)
+
+        case WSMessageType.parseScheduleResult:
+            handleParseScheduleResult(msg)
 
         default:
             break
@@ -530,6 +571,35 @@ final class WorkflowViewModel {
             workflowId: meta["workflowId"]?.stringValue ?? "",
             executionId: meta["executionId"]?.stringValue ?? "",
             type: meta["notificationType"]?.stringValue ?? ""
+        )
+    }
+
+    private func handleMCPToolsListResult(_ msg: WSMessage) {
+        isLoadingTools = false
+        guard case .array(let items) = msg.metadata?["tools"] else { return }
+
+        var loaded: [MCPToolItem] = []
+        for item in items {
+            guard case .object(let dict) = item else { continue }
+            guard let name = dict["name"]?.stringValue else { continue }
+            loaded.append(MCPToolItem(
+                name: name,
+                description: dict["description"]?.stringValue ?? "",
+                serverName: dict["serverName"]?.stringValue ?? ""
+            ))
+        }
+        availableTools = loaded
+    }
+
+    private func handleParseScheduleResult(_ msg: WSMessage) {
+        isParsingSchedule = false
+        guard let meta = msg.metadata else { return }
+        let success = meta["success"]?.boolValue ?? false
+        parsedSchedule = ParsedSchedule(
+            success: success,
+            cron: meta["cron"]?.stringValue,
+            description: meta["description"]?.stringValue,
+            message: meta["message"]?.stringValue
         )
     }
 
