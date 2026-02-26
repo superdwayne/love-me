@@ -118,4 +118,14 @@ enum WSMessageType {
     static let executionList = "execution_list"
     static let executionDetail = "execution_detail"
     static let workflowNotification = "workflow_notification"
+
+    // Client -> Server (Visual Builder)
+    static let mcpToolsList = "mcp_tools_list"
+    static let parseSchedule = "parse_schedule"
+    static let buildWorkflow = "build_workflow"
+
+    // Server -> Client (Visual Builder)
+    static let mcpToolsListResult = "mcp_tools_list_result"
+    static let parseScheduleResult = "parse_schedule_result"
+    static let buildWorkflowResult = "build_workflow_result"
 }
