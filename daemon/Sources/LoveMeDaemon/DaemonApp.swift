@@ -183,6 +183,13 @@ actor DaemonApp {
         case WSMessageType.getExecution:
             await handleGetExecution(message, client: client)
 
+        // Visual Builder messages
+        case WSMessageType.mcpToolsList:
+            await handleMCPToolsList(client: client)
+
+        case WSMessageType.parseSchedule:
+            await handleParseSchedule(message, client: client)
+
         default:
             Logger.error("Unknown message type: \(message.type)")
             await sendError(to: client, message: "Unknown message type: \(message.type)", code: "UNKNOWN_TYPE")
@@ -904,6 +911,69 @@ actor DaemonApp {
             metadata: dict
         )
         await server.broadcast(msg)
+    }
+
+    // MARK: - Visual Builder
+
+    private func handleMCPToolsList(client: WebSocketClient) async {
+        let tools = await mcpManager.getTools()
+        let items = tools.map { tool -> MetadataValue in
+            .object([
+                "name": .string(tool.name),
+                "description": .string(tool.description),
+                "serverName": .string(tool.serverName),
+                "inputSchema": metadataFromJSON(tool.inputSchema)
+            ])
+        }
+        let msg = WSMessage(
+            type: WSMessageType.mcpToolsListResult,
+            metadata: ["tools": .array(items)]
+        )
+        try? await client.send(msg)
+    }
+
+    private func handleParseSchedule(_ message: WSMessage, client: WebSocketClient) async {
+        guard let text = message.content ?? message.metadata?["text"]?.stringValue else {
+            await sendError(to: client, message: "Missing schedule text", code: "MISSING_FIELD")
+            return
+        }
+
+        if let result = NaturalScheduleParser.parse(text) {
+            let msg = WSMessage(
+                type: WSMessageType.parseScheduleResult,
+                metadata: [
+                    "cron": .string(result.cron),
+                    "description": .string(result.description),
+                    "success": .bool(true)
+                ]
+            )
+            try? await client.send(msg)
+        } else {
+            let msg = WSMessage(
+                type: WSMessageType.parseScheduleResult,
+                metadata: [
+                    "success": .bool(false),
+                    "message": .string("Could not parse schedule. Try phrases like 'every 5 minutes' or 'daily at 9am'.")
+                ]
+            )
+            try? await client.send(msg)
+        }
+    }
+
+    /// Convert JSONValue to MetadataValue for WebSocket transport
+    private func metadataFromJSON(_ json: JSONValue) -> MetadataValue {
+        switch json {
+        case .string(let v): return .string(v)
+        case .int(let v): return .int(v)
+        case .double(let v): return .double(v)
+        case .bool(let v): return .bool(v)
+        case .null: return .null
+        case .array(let arr): return .array(arr.map { metadataFromJSON($0) })
+        case .object(let obj):
+            var dict: [String: MetadataValue] = [:]
+            for (k, v) in obj { dict[k] = metadataFromJSON(v) }
+            return .object(dict)
+        }
     }
 
     // MARK: - Status
