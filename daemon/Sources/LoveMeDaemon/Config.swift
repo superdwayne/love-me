@@ -4,6 +4,8 @@ struct DaemonConfig: Sendable {
     let port: UInt16
     let model: String
     let apiKey: String?
+    let gmailClientId: String?
+    let gmailClientSecret: String?
     let mcpConfigPath: String
     let conversationsDirectory: String
     let workflowsDirectory: String
@@ -33,6 +35,9 @@ struct DaemonConfig: Sendable {
         self.port = port
         self.model = Self.defaultModel
         self.apiKey = Self.loadAPIKey(basePath: basePath)
+        let gmailCreds = Self.loadGmailCredentials(basePath: basePath)
+        self.gmailClientId = gmailCreds.clientId
+        self.gmailClientSecret = gmailCreds.clientSecret
         self.mcpConfigPath = "\(basePath)/mcp.json"
         self.conversationsDirectory = "\(basePath)/conversations"
         self.workflowsDirectory = "\(basePath)/workflows"
@@ -63,6 +68,36 @@ struct DaemonConfig: Sendable {
             }
         }
         return nil
+    }
+
+    /// Load Gmail OAuth2 credentials from env vars or ~/.love-me/.env file
+    private static func loadGmailCredentials(basePath: String) -> (clientId: String?, clientSecret: String?) {
+        // 1. Check environment variables first
+        let envId = ProcessInfo.processInfo.environment["GMAIL_CLIENT_ID"]
+        let envSecret = ProcessInfo.processInfo.environment["GMAIL_CLIENT_SECRET"]
+        if let id = envId, !id.isEmpty, let secret = envSecret, !secret.isEmpty {
+            return (id, secret)
+        }
+
+        // 2. Check .env file
+        var clientId: String?
+        var clientSecret: String?
+        let envFile = "\(basePath)/.env"
+        if let contents = try? String(contentsOfFile: envFile, encoding: .utf8) {
+            for line in contents.split(separator: "\n") {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("GMAIL_CLIENT_ID=") {
+                    clientId = String(trimmed.dropFirst("GMAIL_CLIENT_ID=".count))
+                        .trimmingCharacters(in: .whitespaces)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+                } else if trimmed.hasPrefix("GMAIL_CLIENT_SECRET=") {
+                    clientSecret = String(trimmed.dropFirst("GMAIL_CLIENT_SECRET=".count))
+                        .trimmingCharacters(in: .whitespaces)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+                }
+            }
+        }
+        return (clientId, clientSecret)
     }
 
     /// Creates required directories if they don't exist

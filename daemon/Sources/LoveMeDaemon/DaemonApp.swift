@@ -1037,12 +1037,19 @@ actor DaemonApp {
     }
 
     private func handleEmailAuthStart(_ message: WSMessage, client: WebSocketClient) async {
-        let clientId = message.metadata?["clientId"]?.stringValue ?? ""
-        let clientSecret = message.metadata?["clientSecret"]?.stringValue ?? ""
+        // Try message metadata first, then fall back to config (.env file)
+        let clientId = {
+            let fromMsg = message.metadata?["clientId"]?.stringValue ?? ""
+            return fromMsg.isEmpty ? (config.gmailClientId ?? "") : fromMsg
+        }()
+        let clientSecret = {
+            let fromMsg = message.metadata?["clientSecret"]?.stringValue ?? ""
+            return fromMsg.isEmpty ? (config.gmailClientSecret ?? "") : fromMsg
+        }()
         let port: UInt16 = UInt16(message.metadata?["callbackPort"]?.intValue ?? 9477)
 
         guard !clientId.isEmpty, !clientSecret.isEmpty else {
-            await sendError(to: client, message: "Missing clientId or clientSecret", code: "MISSING_FIELD")
+            await sendError(to: client, message: "Gmail credentials not found. Add GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET to ~/.love-me/.env", code: "MISSING_GMAIL_CREDENTIALS")
             return
         }
 
