@@ -1,6 +1,20 @@
 import Foundation
 import Observation
 
+/// Thread-safe one-shot guard for continuation resumption.
+private final class OnceGuard: @unchecked Sendable {
+    private let lock = NSLock()
+    private var consumed = false
+
+    func tryConsume() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !consumed else { return false }
+        consumed = true
+        return true
+    }
+}
+
 enum ConnectionState: Sendable {
     case connected
     case connecting
@@ -103,14 +117,10 @@ final class WebSocketClient {
 
         // Use withCheckedContinuation + DispatchQueue timeout
         let connected = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-            var hasResumed = false
-            let lock = NSLock()
+            let guard_ = OnceGuard()
 
             testTask.receive { result in
-                lock.lock()
-                defer { lock.unlock() }
-                guard !hasResumed else { return }
-                hasResumed = true
+                guard guard_.tryConsume() else { return }
                 switch result {
                 case .success:
                     continuation.resume(returning: true)
@@ -120,10 +130,7 @@ final class WebSocketClient {
             }
 
             DispatchQueue.global().asyncAfter(deadline: .now() + 5) {
-                lock.lock()
-                defer { lock.unlock() }
-                guard !hasResumed else { return }
-                hasResumed = true
+                guard guard_.tryConsume() else { return }
                 testTask.cancel(with: .goingAway, reason: nil)
                 continuation.resume(returning: false)
             }
