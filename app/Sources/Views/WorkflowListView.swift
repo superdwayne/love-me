@@ -20,20 +20,32 @@ struct WorkflowListView: View {
                     .listRowSeparator(.hidden)
             } else {
                 ForEach(workflowVM.workflows) { workflow in
-                    workflowRow(workflow)
-                        .listRowBackground(Color.surface)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            workflowVM.loadWorkflow(id: workflow.id)
+                    NavigationLink(value: workflow.id) {
+                        workflowRow(workflow)
+                    }
+                    .listRowBackground(Color.surface)
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            workflowToDelete = workflow.id
+                            showDeleteAlert = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
                         }
-                        .swipeActions(edge: .trailing) {
-                            Button(role: .destructive) {
-                                workflowToDelete = workflow.id
-                                showDeleteAlert = true
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
+                    }
+                    .contextMenu {
+                        Button {
+                            workflowVM.runWorkflow(id: workflow.id)
+                        } label: {
+                            Label("Run Now", systemImage: "play.fill")
                         }
+
+                        Button(role: .destructive) {
+                            workflowToDelete = workflow.id
+                            showDeleteAlert = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
                 }
             }
         }
@@ -85,6 +97,9 @@ struct WorkflowListView: View {
         } message: {
             Text("Are you sure you want to delete this workflow? This cannot be undone.")
         }
+        .navigationDestination(for: String.self) { workflowId in
+            WorkflowDetailView(workflowId: workflowId)
+        }
         .onAppear {
             workflowVM.loadWorkflows()
         }
@@ -106,8 +121,15 @@ struct WorkflowListView: View {
                 HStack(spacing: LoveMeTheme.sm) {
                     triggerBadge(workflow.triggerType)
 
+                    if !workflow.triggerDetail.isEmpty {
+                        Text(workflow.triggerDetail)
+                            .font(.timestamp)
+                            .foregroundStyle(.trust)
+                            .lineLimit(1)
+                    }
+
                     if let lastRun = workflow.lastRunAt {
-                        Text(lastRun, style: .relative)
+                        Text("· \(lastRun, style: .relative) ago")
                             .font(.timestamp)
                             .foregroundStyle(.trust)
                     }
@@ -120,22 +142,7 @@ struct WorkflowListView: View {
             Toggle("", isOn: Binding(
                 get: { workflow.enabled },
                 set: { _ in
-                    // Toggle enabled state via ViewModel
-                    if var detail = workflowVM.currentWorkflow, detail.id == workflow.id {
-                        detail = WorkflowDetail(
-                            id: detail.id,
-                            name: detail.name,
-                            description: detail.description,
-                            enabled: !detail.enabled,
-                            trigger: detail.trigger,
-                            steps: detail.steps,
-                            notifyOnStart: detail.notifyOnStart,
-                            notifyOnComplete: detail.notifyOnComplete,
-                            notifyOnError: detail.notifyOnError,
-                            notifyOnStepComplete: detail.notifyOnStepComplete
-                        )
-                        workflowVM.updateWorkflow(detail)
-                    }
+                    workflowVM.toggleWorkflowEnabled(id: workflow.id)
                 }
             ))
             .labelsHidden()

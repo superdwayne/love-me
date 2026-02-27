@@ -7,6 +7,9 @@ struct SettingsView: View {
     @AppStorage("ws_port") private var port = 9200
     @State private var testState: TestState = .idle
     @State private var showDeleteAlert = false
+    @State private var isEmailConnected = false
+    @State private var connectedEmail = ""
+    @State private var triggerRuleCount = 0
 
     enum TestState {
         case idle
@@ -19,6 +22,7 @@ struct SettingsView: View {
         NavigationStack {
             List {
                 connectionSection
+                emailSection
                 aboutSection
                 dataSection
             }
@@ -79,6 +83,74 @@ struct SettingsView: View {
             .listRowBackground(Color.surface)
         } header: {
             Text("CONNECTION")
+                .font(.sectionHeader)
+                .foregroundStyle(.trust)
+                .tracking(1.2)
+        }
+    }
+
+    private var emailSection: some View {
+        Section {
+            NavigationLink {
+                EmailSettingsView()
+            } label: {
+                HStack(spacing: LoveMeTheme.md) {
+                    Image(systemName: "envelope.fill")
+                        .font(.toolTitle)
+                        .foregroundStyle(.trust)
+                        .frame(width: 20)
+                    Text("Email")
+                        .font(.chatMessage)
+                        .foregroundStyle(.textPrimary)
+                    Spacer()
+                    if isEmailConnected {
+                        HStack(spacing: LoveMeTheme.sm) {
+                            Circle()
+                                .fill(Color.sageGreen)
+                                .frame(width: LoveMeTheme.connectionDotSize,
+                                       height: LoveMeTheme.connectionDotSize)
+                            Text(connectedEmail)
+                                .font(.toolDetail)
+                                .foregroundStyle(.trust)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    } else {
+                        Text("Not connected")
+                            .font(.toolDetail)
+                            .foregroundStyle(.trust)
+                    }
+                }
+            }
+            .frame(minHeight: LoveMeTheme.minTouchTarget)
+            .listRowBackground(Color.surface)
+            .accessibilityLabel("Email settings, \(isEmailConnected ? "connected as \(connectedEmail)" : "not connected")")
+
+            NavigationLink {
+                EmailTriggersView()
+            } label: {
+                HStack(spacing: LoveMeTheme.md) {
+                    Image(systemName: "envelope.badge.fill")
+                        .font(.toolTitle)
+                        .foregroundStyle(.trust)
+                        .frame(width: 20)
+                    Text("Email Rules")
+                        .font(.chatMessage)
+                        .foregroundStyle(.textPrimary)
+                    Spacer()
+                    if triggerRuleCount > 0 {
+                        Text("\(triggerRuleCount)")
+                            .font(.toolDetail)
+                            .foregroundStyle(.trust)
+                            .monospacedDigit()
+                    }
+                }
+            }
+            .frame(minHeight: LoveMeTheme.minTouchTarget)
+            .listRowBackground(Color.surface)
+            .accessibilityLabel("Email rules, \(triggerRuleCount) active")
+        } header: {
+            Text("EMAIL")
                 .font(.sectionHeader)
                 .foregroundStyle(.trust)
                 .tracking(1.2)

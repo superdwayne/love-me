@@ -110,6 +110,8 @@ struct BuilderStepResult: Identifiable, Sendable {
     let toolName: String
     let serverName: String
     let needsConfiguration: Bool
+    let inputs: [String: String]
+    let dependsOn: [String]?
 }
 
 // MARK: - ViewModel
@@ -123,6 +125,9 @@ final class WorkflowViewModel {
     var currentExecution: ExecutionItem?
     var isLoading: Bool = false
     var notification: WorkflowNotification?
+
+    // Toggle state
+    private var pendingToggles: [String: Bool] = [:]
 
     // Visual Builder state
     var availableTools: [MCPToolItem] = []
@@ -215,6 +220,17 @@ final class WorkflowViewModel {
         webSocket.send(msg)
     }
 
+    func toggleWorkflowEnabled(id: String) {
+        // Optimistically update local state
+        if let index = workflows.firstIndex(where: { $0.id == id }) {
+            let newEnabled = !workflows[index].enabled
+            workflows[index].enabled = newEnabled
+            // Store pending toggle, then load full detail to send update
+            pendingToggles[id] = newEnabled
+            loadWorkflow(id: id)
+        }
+    }
+
     func loadMCPTools() {
         isLoadingTools = true
         let msg = WSMessage(type: WSMessageType.mcpToolsList)
@@ -250,8 +266,8 @@ final class WorkflowViewModel {
                 name: step.name,
                 toolName: step.toolName,
                 serverName: step.serverName,
-                inputs: [:],
-                dependsOn: nil,
+                inputs: step.inputs,
+                dependsOn: step.dependsOn,
                 onError: "stop"
             )
         }
@@ -324,6 +340,9 @@ final class WorkflowViewModel {
         case WSMessageType.buildWorkflowResult:
             handleBuildWorkflowResult(msg)
 
+        case WSMessageType.error:
+            handleError(msg)
+
         default:
             break
         }
@@ -380,10 +399,22 @@ final class WorkflowViewModel {
         guard let id = meta["id"]?.stringValue,
               let name = meta["name"]?.stringValue else { return }
 
-        let trigger = parseTriggerInfo(meta["trigger"])
+        // Trigger may be nested under "trigger" key or flat at top level
+        let trigger: WorkflowTriggerInfo
+        if case .object(_) = meta["trigger"] {
+            trigger = parseTriggerInfo(meta["trigger"])
+        } else {
+            // Flat keys from daemon's encodeWorkflowToMetadata
+            trigger = WorkflowTriggerInfo(
+                type: meta["triggerType"]?.stringValue ?? "cron",
+                cronExpression: meta["cronExpression"]?.stringValue,
+                eventSource: meta["eventSource"]?.stringValue,
+                eventType: meta["eventType"]?.stringValue
+            )
+        }
         let steps = parseSteps(meta["steps"])
 
-        currentWorkflow = WorkflowDetail(
+        var detail = WorkflowDetail(
             id: id,
             name: name,
             description: meta["description"]?.stringValue ?? "",
@@ -395,12 +426,39 @@ final class WorkflowViewModel {
             notifyOnError: meta["notifyOnError"]?.boolValue ?? true,
             notifyOnStepComplete: meta["notifyOnStepComplete"]?.boolValue ?? false
         )
+
+        // Apply pending toggle if one exists
+        if let newEnabled = pendingToggles.removeValue(forKey: id) {
+            detail.enabled = newEnabled
+            updateWorkflow(detail)
+        }
+
+        currentWorkflow = detail
+    }
+
+    private func handleError(_ msg: WSMessage) {
+        let errorMessage = msg.content ?? msg.metadata?["message"]?.stringValue ?? "Unknown error"
+        // Clear any in-progress states
+        if isBuilding {
+            isBuilding = false
+            builderError = errorMessage
+        }
+        if isLoadingTools {
+            isLoadingTools = false
+        }
+        if isParsingSchedule {
+            isParsingSchedule = false
+        }
+        if isLoading {
+            isLoading = false
+        }
     }
 
     private func handleWorkflowCreated(_ msg: WSMessage) {
         guard let meta = msg.metadata else { return }
-        guard let id = meta["id"]?.stringValue,
-              let name = meta["name"]?.stringValue else { return }
+        let id = msg.id ?? meta["id"]?.stringValue
+        let name = meta["name"]?.stringValue
+        guard let id, let name else { return }
 
         let item = WorkflowItem(
             id: id,
@@ -448,7 +506,8 @@ final class WorkflowViewModel {
     }
 
     private func handleWorkflowDeleted(_ msg: WSMessage) {
-        if let id = msg.metadata?["workflowId"]?.stringValue {
+        let id = msg.id ?? msg.metadata?["workflowId"]?.stringValue
+        if let id {
             workflows.removeAll { $0.id == id }
             if currentWorkflow?.id == id {
                 currentWorkflow = nil
@@ -689,12 +748,26 @@ final class WorkflowViewModel {
         if case .array(let stepItems) = meta["steps"] {
             for item in stepItems {
                 guard case .object(let dict) = item else { continue }
+                var stepInputs: [String: String] = [:]
+                if case .object(let inputsDict) = dict["inputs"] {
+                    for (key, val) in inputsDict {
+                        if let str = val.stringValue {
+                            stepInputs[key] = str
+                        }
+                    }
+                }
+                var stepDependsOn: [String]?
+                if case .array(let deps) = dict["dependsOn"] {
+                    stepDependsOn = deps.compactMap { $0.stringValue }
+                }
                 steps.append(BuilderStepResult(
                     id: dict["id"]?.stringValue ?? UUID().uuidString,
                     name: dict["name"]?.stringValue ?? "Step",
                     toolName: dict["toolName"]?.stringValue ?? "",
                     serverName: dict["serverName"]?.stringValue ?? "",
-                    needsConfiguration: dict["needsConfiguration"]?.boolValue ?? false
+                    needsConfiguration: dict["needsConfiguration"]?.boolValue ?? false,
+                    inputs: stepInputs,
+                    dependsOn: stepDependsOn
                 ))
             }
         }
@@ -724,27 +797,24 @@ final class WorkflowViewModel {
             "notifyOnStepComplete": .bool(detail.notifyOnStepComplete),
         ]
 
-        // Encode trigger
-        var triggerDict: [String: MetadataValue] = [
-            "type": .string(detail.trigger.type)
-        ]
+        // Encode trigger — flat keys to match daemon's decodeWorkflowFromMetadata
+        meta["triggerType"] = .string(detail.trigger.type)
         if let cron = detail.trigger.cronExpression {
-            triggerDict["cronExpression"] = .string(cron)
+            meta["cronExpression"] = .string(cron)
         }
         if let source = detail.trigger.eventSource {
-            triggerDict["eventSource"] = .string(source)
+            meta["eventSource"] = .string(source)
         }
         if let eventType = detail.trigger.eventType {
-            triggerDict["eventType"] = .string(eventType)
+            meta["eventType"] = .string(eventType)
         }
         if let filter = detail.trigger.eventFilter {
             var filterDict: [String: MetadataValue] = [:]
             for (key, value) in filter {
                 filterDict[key] = .string(value)
             }
-            triggerDict["eventFilter"] = .object(filterDict)
+            meta["eventFilter"] = .object(filterDict)
         }
-        meta["trigger"] = .object(triggerDict)
 
         // Encode steps
         var stepsArray: [MetadataValue] = []
@@ -761,7 +831,7 @@ final class WorkflowViewModel {
             for (key, value) in step.inputs {
                 inputsDict[key] = .string(value)
             }
-            stepDict["inputs"] = .object(inputsDict)
+            stepDict["inputTemplate"] = .object(inputsDict)
 
             if let deps = step.dependsOn {
                 stepDict["dependsOn"] = .array(deps.map { .string($0) })
@@ -811,7 +881,9 @@ final class WorkflowViewModel {
                   let name = dict["name"]?.stringValue else { continue }
 
             var inputs: [String: String] = [:]
-            if case .object(let inputsDict) = dict["inputs"] {
+            // Try both "inputTemplate" (from daemon) and "inputs" (legacy)
+            let inputSource = dict["inputTemplate"] ?? dict["inputs"]
+            if case .object(let inputsDict) = inputSource {
                 for (key, val) in inputsDict {
                     if let str = val.stringValue {
                         inputs[key] = str

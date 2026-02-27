@@ -13,6 +13,12 @@ struct NaturalScheduleParser {
     static func parse(_ input: String) -> Result? {
         let text = input.lowercased().trimmingCharacters(in: .whitespaces)
 
+        // "every N seconds" -- cron can't do sub-minute, map to every minute
+        if text.firstMatch(of: /every\s+(\d+)\s+sec(ond)?s?/) != nil
+            || text == "every second" {
+            return Result(cron: "* * * * *", description: "Every minute (cron minimum)")
+        }
+
         // "every N minutes" or "every N min"
         if let match = text.firstMatch(of: /every\s+(\d+)\s+min(ute)?s?/) {
             let n = Int(match.1)!

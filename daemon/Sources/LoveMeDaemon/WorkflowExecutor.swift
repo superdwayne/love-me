@@ -141,6 +141,7 @@ actor WorkflowExecutor {
                 resolvedInputs[key] = .string(resolved)
             }
             let arguments = JSONValue.object(resolvedInputs)
+            Logger.info("Step '\(step.name)' calling tool '\(step.toolName)' with \(resolvedInputs.count) arg(s): \(resolvedInputs.keys.sorted().joined(separator: ", "))")
 
             // Execute the tool call, respecting error policy
             let success = await executeStepWithPolicy(

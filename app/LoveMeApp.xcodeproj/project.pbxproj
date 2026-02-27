@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		024660B030D9DA2FD44FDEB8 /* WorkflowDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29CD3B3FA7ED7CF3391BABF3 /* WorkflowDetailView.swift */; };
 		2736A36EB25810A9D548FA20 /* WorkflowPreviewCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B1C0551B102E349B32CA49D /* WorkflowPreviewCard.swift */; };
 		2E7199394B1B105CA8148A12 /* WorkflowBuilderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 250210591A3F2F9DE821065B /* WorkflowBuilderView.swift */; };
 		3514D4B93B2480FB3D3D3BA9 /* ThinkingPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D575BD1A5173A3916F7D9AD /* ThinkingPanel.swift */; };
@@ -29,6 +30,8 @@
 		9CC0D236A5455DAEE7FC74BF /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C934430A65F81F55D43D411 /* Theme.swift */; };
 		AA9E5F8314511AB6F624A1FB /* WebSocketMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ADC742D1AC83496380B9613 /* WebSocketMessage.swift */; };
 		B211458F665A84895FF44520 /* InputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B108799742FC44169DE33DA4 /* InputBar.swift */; };
+		172E26AE31E9D15D29FAD710 /* EmailSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBAB90B5366DFAAC1309B6DD /* EmailSettingsView.swift */; };
+		EA734A29167DC252BE3C0512 /* EmailTriggersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 507B46DABC0079BDC637D157 /* EmailTriggersView.swift */; };
 		B9DBB28048FDED103A899627 /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 721D711231E025E6E7D22354 /* EmptyStateView.swift */; };
 		C8CDB55A0E0A1A1B221CA908 /* WorkflowExecutionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 239984BDB5B06C5F5AA127E9 /* WorkflowExecutionView.swift */; };
 		EA22E42948C42A43394268EF /* ConversationListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F9683C6A0C7EACE0FA68AD9 /* ConversationListView.swift */; };
@@ -42,6 +45,7 @@
 		239984BDB5B06C5F5AA127E9 /* WorkflowExecutionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowExecutionView.swift; sourceTree = "<group>"; };
 		250210591A3F2F9DE821065B /* WorkflowBuilderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowBuilderView.swift; sourceTree = "<group>"; };
 		25A5A941DA6B5BD5C8DE3E63 /* ToolPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolPickerSheet.swift; sourceTree = "<group>"; };
+		29CD3B3FA7ED7CF3391BABF3 /* WorkflowDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowDetailView.swift; sourceTree = "<group>"; };
 		2B1C0551B102E349B32CA49D /* WorkflowPreviewCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowPreviewCard.swift; sourceTree = "<group>"; };
 		329C17EDC450485F75098ECE /* WorkflowViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowViewModel.swift; sourceTree = "<group>"; };
 		34E2683792F27CE368A3B65B /* ToolCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolCard.swift; sourceTree = "<group>"; };
@@ -49,6 +53,8 @@
 		5ADC742D1AC83496380B9613 /* WebSocketMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketMessage.swift; sourceTree = "<group>"; };
 		5C934430A65F81F55D43D411 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		5F9683C6A0C7EACE0FA68AD9 /* ConversationListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationListView.swift; sourceTree = "<group>"; };
+		FBAB90B5366DFAAC1309B6DD /* EmailSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailSettingsView.swift; sourceTree = "<group>"; };
+		507B46DABC0079BDC637D157 /* EmailTriggersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailTriggersView.swift; sourceTree = "<group>"; };
 		721D711231E025E6E7D22354 /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
 		7F78B1B97ED626ED28DBDA80 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
 		842D7A428DCA9812A2D6EAA6 /* MessageBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubble.swift; sourceTree = "<group>"; };
@@ -142,6 +148,8 @@
 				DBE12B2E96ED817B70C3B6FD /* ConnectionBanner.swift */,
 				176BC2E06CFDBA18907AA518 /* ContentView.swift */,
 				5F9683C6A0C7EACE0FA68AD9 /* ConversationListView.swift */,
+				FBAB90B5366DFAAC1309B6DD /* EmailSettingsView.swift */,
+				507B46DABC0079BDC637D157 /* EmailTriggersView.swift */,
 				721D711231E025E6E7D22354 /* EmptyStateView.swift */,
 				B108799742FC44169DE33DA4 /* InputBar.swift */,
 				842D7A428DCA9812A2D6EAA6 /* MessageBubble.swift */,
@@ -150,6 +158,7 @@
 				34E2683792F27CE368A3B65B /* ToolCard.swift */,
 				25A5A941DA6B5BD5C8DE3E63 /* ToolPickerSheet.swift */,
 				250210591A3F2F9DE821065B /* WorkflowBuilderView.swift */,
+				29CD3B3FA7ED7CF3391BABF3 /* WorkflowDetailView.swift */,
 				FA964706C90AB2ADB8F48737 /* WorkflowEditorView.swift */,
 				239984BDB5B06C5F5AA127E9 /* WorkflowExecutionView.swift */,
 				85CB1D36FFA570D9FADB0ADF /* WorkflowListView.swift */,
@@ -223,6 +232,8 @@
 				37FA24722DA341E0FC0E2AA2 /* Conversation.swift in Sources */,
 				EA22E42948C42A43394268EF /* ConversationListView.swift in Sources */,
 				461136E0BB5E451E9E610E4E /* ConversationListViewModel.swift in Sources */,
+				172E26AE31E9D15D29FAD710 /* EmailSettingsView.swift in Sources */,
+				EA734A29167DC252BE3C0512 /* EmailTriggersView.swift in Sources */,
 				B9DBB28048FDED103A899627 /* EmptyStateView.swift in Sources */,
 				49F265B8DD360D6B66FF3601 /* HapticManager.swift in Sources */,
 				B211458F665A84895FF44520 /* InputBar.swift in Sources */,
@@ -238,6 +249,7 @@
 				71CD19A825D9987B16FECF75 /* WebSocketClient.swift in Sources */,
 				AA9E5F8314511AB6F624A1FB /* WebSocketMessage.swift in Sources */,
 				2E7199394B1B105CA8148A12 /* WorkflowBuilderView.swift in Sources */,
+				024660B030D9DA2FD44FDEB8 /* WorkflowDetailView.swift in Sources */,
 				4A56D387A06063EDA4E544C4 /* WorkflowEditorView.swift in Sources */,
 				C8CDB55A0E0A1A1B221CA908 /* WorkflowExecutionView.swift in Sources */,
 				8110AD50716D3CFD8F5501CD /* WorkflowListView.swift in Sources */,

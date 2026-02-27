@@ -16,6 +16,15 @@ actor DaemonApp {
     private let notificationService: NotificationService
     private let eventBus: EventBus
 
+    // Email subsystem
+    private let emailConfigStore: EmailConfigStore
+    private let emailTriggerStore: EmailTriggerStore
+    private let attachmentProcessor: AttachmentProcessor
+    private var gmailClient: GmailClient?
+    private var gmailAuthService: GmailAuthService?
+    private var emailPollingService: EmailPollingService?
+    private var emailConversationBridge: EmailConversationBridge?
+
     init(config: DaemonConfig) {
         self.config = config
         self.server = WebSocketServer(port: config.port)
@@ -31,6 +40,13 @@ actor DaemonApp {
         )
         self.notificationService = NotificationService(server: server)
         self.eventBus = EventBus()
+
+        // Email components
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        let basePath = "\(homeDir)/.love-me"
+        self.emailConfigStore = EmailConfigStore(basePath: basePath)
+        self.emailTriggerStore = EmailTriggerStore(basePath: basePath)
+        self.attachmentProcessor = AttachmentProcessor(basePath: basePath)
 
         // Executor needs mcpManager and store
         self.workflowExecutor = WorkflowExecutor(mcpManager: mcpManager, store: workflowStore)
@@ -107,6 +123,9 @@ actor DaemonApp {
             Logger.error("Failed to load workflows for scheduling: \(error)")
         }
 
+        // Start email subsystem if configured
+        await startEmailSubsystemIfConfigured()
+
         // Set up WebSocket connection handler (sends status on connect)
         await server.setConnectionHandler { [weak self] client in
             guard let self = self else { return }
@@ -127,6 +146,7 @@ actor DaemonApp {
 
     /// Stop all services
     func stop() async {
+        await emailPollingService?.stop()
         await workflowScheduler.removeAll()
         await server.stop()
         await mcpManager.stopAll()
@@ -182,6 +202,34 @@ actor DaemonApp {
 
         case WSMessageType.getExecution:
             await handleGetExecution(message, client: client)
+
+        // Email messages
+        case WSMessageType.emailStatus:
+            await handleEmailStatus(client: client)
+
+        case WSMessageType.emailAuthStart:
+            await handleEmailAuthStart(message, client: client)
+
+        case WSMessageType.emailAuthDisconnect:
+            await handleEmailAuthDisconnect(client: client)
+
+        case WSMessageType.emailPollNow:
+            await handleEmailPollNow(client: client)
+
+        case WSMessageType.emailUpdatePolling:
+            await handleEmailUpdatePolling(message, client: client)
+
+        case WSMessageType.emailTriggersList:
+            await handleEmailTriggersList(client: client)
+
+        case WSMessageType.emailTriggerCreate:
+            await handleEmailTriggerCreate(message, client: client)
+
+        case WSMessageType.emailTriggerUpdate:
+            await handleEmailTriggerUpdate(message, client: client)
+
+        case WSMessageType.emailTriggerDelete:
+            await handleEmailTriggerDelete(message, client: client)
 
         // Visual Builder messages
         case WSMessageType.mcpToolsList:
@@ -916,6 +964,278 @@ actor DaemonApp {
         await server.broadcast(msg)
     }
 
+    // MARK: - Email Subsystem
+
+    private func startEmailSubsystemIfConfigured() async {
+        guard let emailConfig = await emailConfigStore.load() else {
+            Logger.info("Email not configured — skipping email subsystem startup")
+            return
+        }
+
+        let client = GmailClient(configStore: emailConfigStore)
+        self.gmailClient = client
+
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        let basePath = "\(homeDir)/.love-me"
+
+        let bridge = EmailConversationBridge(
+            conversationStore: conversationStore,
+            triggerStore: emailTriggerStore,
+            workflowStore: workflowStore,
+            workflowExecutor: workflowExecutor,
+            eventBus: eventBus,
+            basePath: basePath
+        )
+        self.emailConversationBridge = bridge
+
+        let polling = EmailPollingService(
+            gmailClient: client,
+            eventBus: eventBus,
+            configStore: emailConfigStore,
+            statePath: "\(basePath)/email-state.json"
+        )
+        self.emailPollingService = polling
+
+        // Wire polling to bridge
+        await polling.setOnEmailReceived { [weak self] (email: EmailMessage) in
+            guard let self = self else { return }
+            await self.emailConversationBridge?.handleIncomingEmail(email)
+        }
+
+        await polling.start()
+        Logger.info("Email subsystem started for \(emailConfig.emailAddress)")
+    }
+
+    // MARK: - Email Message Handlers
+
+    private func handleEmailStatus(client: WebSocketClient) async {
+        let config = await emailConfigStore.load()
+        let pollingState = await emailPollingService?.getState()
+        let formatter = ISO8601DateFormatter()
+
+        var metadata: [String: MetadataValue] = [
+            "configured": .bool(config != nil),
+        ]
+
+        if let config = config {
+            metadata["emailAddress"] = .string(config.emailAddress)
+            metadata["pollingIntervalSeconds"] = .int(config.pollingIntervalSeconds)
+        }
+
+        if let state = pollingState {
+            metadata["totalProcessed"] = .int(state.totalProcessed)
+            if let lastPoll = state.lastSeenTimestamp {
+                metadata["lastPollTime"] = .string(formatter.string(from: lastPoll))
+            }
+        }
+
+        let msg = WSMessage(
+            type: WSMessageType.emailStatusResult,
+            metadata: metadata
+        )
+        try? await client.send(msg)
+    }
+
+    private func handleEmailAuthStart(_ message: WSMessage, client: WebSocketClient) async {
+        let clientId = message.metadata?["clientId"]?.stringValue ?? ""
+        let clientSecret = message.metadata?["clientSecret"]?.stringValue ?? ""
+        let port: UInt16 = UInt16(message.metadata?["callbackPort"]?.intValue ?? 9477)
+
+        guard !clientId.isEmpty, !clientSecret.isEmpty else {
+            await sendError(to: client, message: "Missing clientId or clientSecret", code: "MISSING_FIELD")
+            return
+        }
+
+        let authService = GmailAuthService(
+            clientId: clientId,
+            clientSecret: clientSecret,
+            configStore: emailConfigStore
+        )
+        self.gmailAuthService = authService
+
+        do {
+            let authUrl = try await authService.startAuthFlow(port: port)
+
+            let msg = WSMessage(
+                type: WSMessageType.emailAuthStartResult,
+                metadata: [
+                    "authUrl": .string(authUrl),
+                    "success": .bool(true)
+                ]
+            )
+            try? await client.send(msg)
+
+            // Wait for callback completion in background
+            Task {
+                if let emailConfig = try? await authService.waitForCallback() {
+                    // Start the email subsystem
+                    await self.startEmailSubsystemIfConfigured()
+
+                    let completeMsg = WSMessage(
+                        type: WSMessageType.emailAuthComplete,
+                        metadata: [
+                            "emailAddress": .string(emailConfig.emailAddress),
+                            "success": .bool(true)
+                        ]
+                    )
+                    await self.server.broadcast(completeMsg)
+                }
+            }
+        } catch {
+            await sendError(to: client, message: "Failed to start auth flow: \(error.localizedDescription)", code: "AUTH_ERROR")
+        }
+    }
+
+    private func handleEmailAuthDisconnect(client: WebSocketClient) async {
+        // Stop polling
+        await emailPollingService?.stop()
+        self.emailPollingService = nil
+        self.gmailClient = nil
+        self.emailConversationBridge = nil
+
+        // Delete config
+        do {
+            try await emailConfigStore.delete()
+        } catch {
+            Logger.error("Failed to delete email config: \(error)")
+        }
+
+        let msg = WSMessage(type: WSMessageType.emailAuthDisconnected)
+        try? await client.send(msg)
+    }
+
+    private func handleEmailPollNow(client: WebSocketClient) async {
+        guard let polling = emailPollingService else {
+            await sendError(to: client, message: "Email not configured", code: "NOT_CONFIGURED")
+            return
+        }
+
+        let count = await polling.pollNow()
+        let msg = WSMessage(
+            type: WSMessageType.emailPollResult,
+            metadata: ["newEmailCount": .int(count)]
+        )
+        try? await client.send(msg)
+    }
+
+    private func handleEmailUpdatePolling(_ message: WSMessage, client: WebSocketClient) async {
+        guard let seconds = message.metadata?["intervalSeconds"]?.intValue else {
+            await sendError(to: client, message: "Missing intervalSeconds", code: "MISSING_FIELD")
+            return
+        }
+
+        do {
+            try await emailConfigStore.updatePollingInterval(seconds)
+            Logger.info("Email polling interval updated to \(seconds)s")
+        } catch {
+            await sendError(to: client, message: "Failed to update polling interval: \(error)", code: "STORAGE_ERROR")
+        }
+    }
+
+    private func handleEmailTriggersList(client: WebSocketClient) async {
+        let rules = await emailTriggerStore.listAll()
+        let items = rules.map { rule -> MetadataValue in
+            .object([
+                "id": .string(rule.id),
+                "workflowId": .string(rule.workflowId),
+                "enabled": .bool(rule.enabled),
+                "fromContains": .string(rule.conditions.fromContains ?? ""),
+                "subjectContains": .string(rule.conditions.subjectContains ?? ""),
+                "bodyContains": .string(rule.conditions.bodyContains ?? ""),
+                "hasAttachment": .bool(rule.conditions.hasAttachment ?? false),
+                "labelEquals": .string(rule.conditions.labelEquals ?? "")
+            ])
+        }
+
+        let msg = WSMessage(
+            type: WSMessageType.emailTriggersListResult,
+            metadata: ["rules": .array(items)]
+        )
+        try? await client.send(msg)
+    }
+
+    private func handleEmailTriggerCreate(_ message: WSMessage, client: WebSocketClient) async {
+        guard let metadata = message.metadata else {
+            await sendError(to: client, message: "Missing rule data", code: "MISSING_FIELD")
+            return
+        }
+
+        let rule = EmailTriggerRule(
+            workflowId: metadata["workflowId"]?.stringValue ?? "",
+            conditions: EmailTriggerConditions(
+                fromContains: metadata["fromContains"]?.stringValue,
+                subjectContains: metadata["subjectContains"]?.stringValue,
+                bodyContains: metadata["bodyContains"]?.stringValue,
+                hasAttachment: metadata["hasAttachment"]?.boolValue,
+                labelEquals: metadata["labelEquals"]?.stringValue
+            ),
+            enabled: metadata["enabled"]?.boolValue ?? true
+        )
+
+        do {
+            try await emailTriggerStore.create(rule)
+            let msg = WSMessage(
+                type: WSMessageType.emailTriggerCreated,
+                id: rule.id,
+                metadata: ["success": .bool(true)]
+            )
+            try? await client.send(msg)
+        } catch {
+            await sendError(to: client, message: "Failed to create trigger: \(error)", code: "STORAGE_ERROR")
+        }
+    }
+
+    private func handleEmailTriggerUpdate(_ message: WSMessage, client: WebSocketClient) async {
+        guard let metadata = message.metadata,
+              let ruleId = message.id ?? metadata["id"]?.stringValue else {
+            await sendError(to: client, message: "Missing rule data", code: "MISSING_FIELD")
+            return
+        }
+
+        let rule = EmailTriggerRule(
+            id: ruleId,
+            workflowId: metadata["workflowId"]?.stringValue ?? "",
+            conditions: EmailTriggerConditions(
+                fromContains: metadata["fromContains"]?.stringValue,
+                subjectContains: metadata["subjectContains"]?.stringValue,
+                bodyContains: metadata["bodyContains"]?.stringValue,
+                hasAttachment: metadata["hasAttachment"]?.boolValue,
+                labelEquals: metadata["labelEquals"]?.stringValue
+            ),
+            enabled: metadata["enabled"]?.boolValue ?? true
+        )
+
+        do {
+            try await emailTriggerStore.update(rule)
+            let msg = WSMessage(
+                type: WSMessageType.emailTriggerUpdated,
+                id: rule.id,
+                metadata: ["success": .bool(true)]
+            )
+            try? await client.send(msg)
+        } catch {
+            await sendError(to: client, message: "Failed to update trigger: \(error)", code: "STORAGE_ERROR")
+        }
+    }
+
+    private func handleEmailTriggerDelete(_ message: WSMessage, client: WebSocketClient) async {
+        guard let ruleId = message.id ?? message.metadata?["id"]?.stringValue else {
+            await sendError(to: client, message: "Missing rule ID", code: "MISSING_FIELD")
+            return
+        }
+
+        do {
+            try await emailTriggerStore.delete(id: ruleId)
+            let msg = WSMessage(
+                type: WSMessageType.emailTriggerDeleted,
+                id: ruleId
+            )
+            try? await client.send(msg)
+        } catch {
+            await sendError(to: client, message: "Failed to delete trigger: \(error)", code: "STORAGE_ERROR")
+        }
+    }
+
     // MARK: - Visual Builder
 
     private func handleMCPToolsList(client: WebSocketClient) async {
@@ -974,10 +1294,35 @@ actor DaemonApp {
             return
         }
 
-        // Gather available MCP tools for context
+        // Gather available MCP tools for context, including input schemas
         let tools = await mcpManager.getTools()
         let toolCatalog = tools.map { tool -> String in
-            "- \(tool.name) (server: \(tool.serverName)): \(tool.description)"
+            var entry = "- \(tool.name) (server: \(tool.serverName)): \(tool.description)"
+            // Include required parameters so Claude knows what inputs to generate
+            if case .object(let schema) = tool.inputSchema,
+               case .object(let props) = schema["properties"] {
+                let required: [String]
+                if case .array(let reqArr) = schema["required"] {
+                    required = reqArr.compactMap { if case .string(let s) = $0 { return s }; return nil }
+                } else {
+                    required = []
+                }
+                let params = props.keys.sorted().map { key -> String in
+                    let isReq = required.contains(key)
+                    let desc: String
+                    if case .object(let propObj) = props[key],
+                       case .string(let d) = propObj["description"] {
+                        desc = d
+                    } else {
+                        desc = ""
+                    }
+                    return "    \(key)\(isReq ? " (required)" : ""): \(desc)"
+                }.joined(separator: "\n")
+                if !params.isEmpty {
+                    entry += "\n  Parameters:\n\(params)"
+                }
+            }
+            return entry
         }.joined(separator: "\n")
 
         let systemPrompt = """
@@ -996,7 +1341,10 @@ actor DaemonApp {
               "name": "Step Name",
               "toolName": "exact_tool_name_from_catalog",
               "serverName": "exact_server_name_from_catalog",
-              "needsConfiguration": false
+              "needsConfiguration": false,
+              "inputs": {
+                "paramName": "value"
+              }
             }
           ]
         }
@@ -1008,6 +1356,9 @@ actor DaemonApp {
         - Use the user's language for step names (human-readable)
         - The schedule field should be natural language (will be parsed to cron separately)
         - Keep step count minimal — only what the user described
+        - IMPORTANT: Always include the "inputs" object with all required parameters for each tool
+        - Generate creative, sensible default values for inputs based on what the user asked for
+        - For code execution tools, write the actual code that accomplishes the user's goal
         """
 
         let userMessage = MessageParam(role: "user", text: prompt)
@@ -1018,8 +1369,21 @@ actor DaemonApp {
                 systemPrompt: systemPrompt
             )
 
+            // Strip markdown fences if Claude wrapped the JSON
+            var cleanedText = responseText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if cleanedText.hasPrefix("```") {
+                // Remove opening fence (```json or ```)
+                if let firstNewline = cleanedText.firstIndex(of: "\n") {
+                    cleanedText = String(cleanedText[cleanedText.index(after: firstNewline)...])
+                }
+                // Remove closing fence
+                if cleanedText.hasSuffix("```") {
+                    cleanedText = String(cleanedText.dropLast(3)).trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+            }
+
             // Parse the AI response as JSON
-            guard let jsonData = responseText.data(using: .utf8) else {
+            guard let jsonData = cleanedText.data(using: .utf8) else {
                 await sendError(to: client, message: "Invalid response from AI", code: "PARSE_ERROR")
                 return
             }
@@ -1036,6 +1400,7 @@ actor DaemonApp {
                 let toolName: String
                 let serverName: String
                 let needsConfiguration: Bool?
+                let inputs: [String: JSONValue]?
             }
 
             let aiWorkflow = try JSONDecoder().decode(AIWorkflow.self, from: jsonData)
@@ -1060,6 +1425,27 @@ actor DaemonApp {
                     "onError": .string("stop"),
                     "needsConfiguration": .bool(aiStep.needsConfiguration ?? false)
                 ]
+
+                // Include AI-generated inputs (convert JSONValue -> string for MetadataValue)
+                if let inputs = aiStep.inputs, !inputs.isEmpty {
+                    var inputDict: [String: MetadataValue] = [:]
+                    for (key, value) in inputs {
+                        switch value {
+                        case .string(let str):
+                            inputDict[key] = .string(str)
+                        case .int(let num):
+                            inputDict[key] = .string(String(num))
+                        case .double(let num):
+                            inputDict[key] = .string(String(num))
+                        case .bool(let b):
+                            inputDict[key] = .string(String(b))
+                        default:
+                            // For arrays/objects/null, serialize to JSON string
+                            inputDict[key] = .string(value.toJSONString())
+                        }
+                    }
+                    stepDict["inputs"] = .object(inputDict)
+                }
 
                 // Linear dependency chain
                 if let prevId = previousStepId {
@@ -1122,15 +1508,24 @@ actor DaemonApp {
             workflowCount = 0
         }
 
+        let emailConfig = await emailConfigStore.load()
+
+        var metadata: [String: MetadataValue] = [
+            "connected": .bool(true),
+            "hasApiKey": .bool(config.apiKey != nil),
+            "toolCount": .int(toolCount),
+            "workflowCount": .int(workflowCount),
+            "daemonVersion": .string(config.daemonVersion),
+            "emailConfigured": .bool(emailConfig != nil)
+        ]
+
+        if let emailConfig = emailConfig {
+            metadata["emailAddress"] = .string(emailConfig.emailAddress)
+        }
+
         let msg = WSMessage(
             type: WSMessageType.status,
-            metadata: [
-                "connected": .bool(true),
-                "hasApiKey": .bool(config.apiKey != nil),
-                "toolCount": .int(toolCount),
-                "workflowCount": .int(workflowCount),
-                "daemonVersion": .string(config.daemonVersion)
-            ]
+            metadata: metadata
         )
         try? await client.send(msg)
     }
@@ -1192,9 +1587,12 @@ actor DaemonApp {
                         dependsOn = deps.compactMap { $0.stringValue }
                     }
 
+                    let stepName = stepDict["name"]?.stringValue ?? "Step"
+                    Logger.info("Decoded step '\(stepName)' with \(inputTemplate.count) input(s): \(inputTemplate.keys.sorted().joined(separator: ", "))")
+
                     let step = WorkflowStep(
                         id: stepDict["id"]?.stringValue ?? UUID().uuidString,
-                        name: stepDict["name"]?.stringValue ?? "Step",
+                        name: stepName,
                         toolName: stepDict["toolName"]?.stringValue ?? "",
                         serverName: stepDict["serverName"]?.stringValue ?? "",
                         inputTemplate: inputTemplate,
