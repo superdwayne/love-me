@@ -1078,8 +1078,10 @@ actor DaemonApp {
             return
         }
 
-        let inboxId = message.metadata?["inboxId"]?.stringValue ?? "love.me"
-        let emailAddress = "\(inboxId)@agentmail.to"
+        let rawInboxId = message.metadata?["inboxId"]?.stringValue ?? "loveme"
+        // Ensure inbox ID is the full email format the API expects
+        let inboxId = rawInboxId.contains("@") ? rawInboxId : "\(rawInboxId)@agentmail.to"
+        let emailAddress = inboxId
 
         let emailConfig = EmailConfig(
             apiKey: apiKey,

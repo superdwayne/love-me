@@ -10,7 +10,7 @@ actor AgentMailClient {
 
     init(apiKey: String, inboxId: String) {
         self.apiKey = apiKey
-        self.inboxId = inboxId
+        self.inboxId = inboxId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? inboxId
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         self.session = URLSession(configuration: config)
@@ -23,8 +23,10 @@ actor AgentMailClient {
     func listMessages(after: Date? = nil, limit: Int = 20) async throws -> [EmailMessage] {
         var urlString = "\(baseURL)/inboxes/\(inboxId)/messages?limit=\(limit)"
         if let after = after {
-            let epoch = Int(after.timeIntervalSince1970)
-            urlString += "&after=\(epoch)"
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime]
+            let isoDate = formatter.string(from: after)
+            urlString += "&after=\(isoDate)"
         }
         urlString += "&order=desc"
 
