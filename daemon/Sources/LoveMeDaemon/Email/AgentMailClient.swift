@@ -38,7 +38,8 @@ actor AgentMailClient {
 
     /// Get a single message by ID.
     func getMessage(id: String) async throws -> EmailMessage {
-        let data = try await request(url: "\(baseURL)/inboxes/\(inboxId)/messages/\(id)")
+        let encodedId = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        let data = try await request(url: "\(baseURL)/inboxes/\(inboxId)/messages/\(encodedId)")
         let message = try JSONDecoder.agentMail.decode(AgentMailMessage.self, from: data)
         return message.toEmailMessage()
     }
@@ -46,9 +47,9 @@ actor AgentMailClient {
     /// Send a new email.
     func sendEmail(to: [String], subject: String, body: String, cc: [String]? = nil, bcc: [String]? = nil) async throws -> String {
         let payload = AgentMailSendRequest(
-            to: to.map { AgentMailAddress(email: $0) },
-            cc: cc?.map { AgentMailAddress(email: $0) },
-            bcc: bcc?.map { AgentMailAddress(email: $0) },
+            to: to,
+            cc: cc,
+            bcc: bcc,
             subject: subject,
             body: body
         )
@@ -57,7 +58,7 @@ actor AgentMailClient {
         let data = try await request(url: "\(baseURL)/inboxes/\(inboxId)/messages", method: "POST", body: jsonData)
 
         let response = try JSONDecoder.agentMail.decode(AgentMailSendResponse.self, from: data)
-        return response.id
+        return response.message_id
     }
 
     /// Reply to an existing message in a thread.
@@ -71,7 +72,7 @@ actor AgentMailClient {
         let data = try await request(url: "\(baseURL)/inboxes/\(inboxId)/threads/\(threadId)/messages", method: "POST", body: jsonData)
 
         let response = try JSONDecoder.agentMail.decode(AgentMailSendResponse.self, from: data)
-        return response.id
+        return response.message_id
     }
 
     /// Download an attachment by message and attachment ID.
@@ -116,28 +117,33 @@ private struct AgentMailListResponse: Codable {
     let messages: [AgentMailMessage]
 }
 
+/// Maps to the actual AgentMail API response shape.
+/// List responses include `preview` but not `text`/`html`.
+/// Detail responses include `text`, `html`, `extracted_text`.
 private struct AgentMailMessage: Codable {
-    let id: String
+    let message_id: String
     let thread_id: String?
-    let from: AgentMailAddress?
-    let to: [AgentMailAddress]?
-    let cc: [AgentMailAddress]?
+    let from: String?           // "Name <email>" or just "email"
+    let to: [String]?           // ["email@example.com"]
+    let cc: [String]?
     let subject: String?
-    let body: String?
-    let html_body: String?
-    let attachments: [AgentMailAttachment]?
-    let created_at: String?
+    let preview: String?        // List endpoint only
+    let text: String?           // Detail endpoint only
+    let html: String?           // Detail endpoint only
+    let timestamp: String?      // When the email was sent
+    let created_at: String?     // When AgentMail received it
     let labels: [String]?
+    let size: Int?
 
     func toEmailMessage() -> EmailMessage {
         let dateFormatter = ISO8601DateFormatter()
         dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
+        let dateStr = timestamp ?? created_at
         let receivedAt: Date
-        if let dateStr = created_at, let date = dateFormatter.date(from: dateStr) {
+        if let dateStr = dateStr, let date = dateFormatter.date(from: dateStr) {
             receivedAt = date
-        } else if let dateStr = created_at {
-            // Try without fractional seconds
+        } else if let dateStr = dateStr {
             let fallback = ISO8601DateFormatter()
             receivedAt = fallback.date(from: dateStr) ?? Date()
         } else {
@@ -145,46 +151,34 @@ private struct AgentMailMessage: Codable {
         }
 
         return EmailMessage(
-            id: id,
-            threadId: thread_id ?? id,
-            from: from?.email ?? "",
-            to: (to ?? []).map(\.email),
-            cc: (cc ?? []).map(\.email),
+            id: message_id,
+            threadId: thread_id ?? message_id,
+            from: from ?? "",
+            to: to ?? [],
+            cc: cc ?? [],
             subject: subject ?? "(no subject)",
-            bodyText: body ?? "",
-            bodyHtml: html_body,
-            attachments: (attachments ?? []).map { $0.toEmailAttachment() },
+            bodyText: text ?? preview ?? "",
+            bodyHtml: html,
+            attachments: [],
             receivedAt: receivedAt,
             labels: labels ?? []
         )
     }
-}
 
-private struct AgentMailAddress: Codable {
-    let email: String
-    var name: String?
-}
-
-private struct AgentMailAttachment: Codable {
-    let id: String?
-    let filename: String?
-    let content_type: String?
-    let size: Int?
-
-    func toEmailAttachment() -> EmailAttachment {
-        EmailAttachment(
-            id: id ?? "",
-            filename: filename ?? "unknown",
-            mimeType: content_type ?? "application/octet-stream",
-            size: size ?? 0
-        )
+    /// Extract email from "Name <email>" format, or return as-is if plain email.
+    private static func parseEmail(_ value: String) -> String {
+        if let start = value.lastIndex(of: "<"),
+           let end = value.lastIndex(of: ">") {
+            return String(value[value.index(after: start)..<end])
+        }
+        return value
     }
 }
 
 private struct AgentMailSendRequest: Codable {
-    let to: [AgentMailAddress]
-    let cc: [AgentMailAddress]?
-    let bcc: [AgentMailAddress]?
+    let to: [String]
+    let cc: [String]?
+    let bcc: [String]?
     let subject: String
     let body: String
 }
@@ -195,7 +189,7 @@ private struct AgentMailReplyRequest: Codable {
 }
 
 private struct AgentMailSendResponse: Codable {
-    let id: String
+    let message_id: String
 }
 
 // MARK: - Errors
