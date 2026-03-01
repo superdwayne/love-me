@@ -23,6 +23,7 @@ actor DaemonApp {
     private var agentMailClient: AgentMailClient?
     private var emailPollingService: EmailPollingService?
     private var emailConversationBridge: EmailConversationBridge?
+    private var emailApprovalStore: EmailApprovalStore?
 
     init(config: DaemonConfig) {
         self.config = config
@@ -233,6 +234,16 @@ actor DaemonApp {
         case WSMessageType.emailTriggerDelete:
             await handleEmailTriggerDelete(message, client: client)
 
+        // Email Approval messages
+        case WSMessageType.emailApprovalApprove:
+            await handleEmailApprovalApprove(message, client: client)
+
+        case WSMessageType.emailApprovalDismiss:
+            await handleEmailApprovalDismiss(message, client: client)
+
+        case WSMessageType.emailApprovalsList:
+            await handleEmailApprovalsList(client: client)
+
         // Visual Builder messages
         case WSMessageType.mcpToolsList:
             await handleMCPToolsList(client: client)
@@ -312,7 +323,24 @@ actor DaemonApp {
         do {
             // Build messages from conversation history
             let apiMessages = try await conversationStore.buildAPIMessages(conversationId: conversationId)
-            let tools = await mcpManager.getToolDefinitions()
+            var tools = await mcpManager.getToolDefinitions()
+
+            // Built-in create_workflow tool — allows Claude to build workflows from chat
+            tools.append(ToolDefinition(
+                name: "create_workflow",
+                description: "Create and save an automated workflow from a natural language description. Use when the user asks to build, create, or save a workflow.",
+                input_schema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "description": .object([
+                            "type": .string("string"),
+                            "description": .string("Natural language description of the workflow to create")
+                        ])
+                    ]),
+                    "required": .array([.string("description")])
+                ])
+            ))
+
             let systemPrompt = await buildSystemPrompt()
 
             Logger.info("Calling Claude API: \(apiMessages.count) messages, \(tools.count) tools")
@@ -371,7 +399,7 @@ actor DaemonApp {
 
                 case .toolUseStart(let id, let name):
                     hasToolCalls = true
-                    let serverName = await mcpManager.serverForTool(name: name) ?? "unknown"
+                    let serverName = name == "create_workflow" ? "built-in" : await mcpManager.serverForTool(name: name) ?? "unknown"
                     let msg = WSMessage(
                         type: WSMessageType.toolCallStart,
                         id: id,
@@ -423,6 +451,104 @@ actor DaemonApp {
                 // Execute tool calls and store results
                 for toolCall in pendingToolCalls {
                     let startTime = Date()
+
+                    // Built-in create_workflow tool — intercept before MCP
+                    if toolCall.name == "create_workflow" {
+                        do {
+                            // Parse description from tool input
+                            var description = ""
+                            if let inputData = toolCall.input.data(using: .utf8),
+                               let json = try? JSONDecoder().decode([String: String].self, from: inputData) {
+                                description = json["description"] ?? toolCall.input
+                            } else {
+                                description = toolCall.input
+                            }
+
+                            let resultContent: String
+                            if let workflow = await buildWorkflowFromPrompt(description) {
+                                try await workflowStore.create(workflow)
+
+                                // Save tool_result
+                                let toolResultMsg = StoredMessage(
+                                    role: "tool_result",
+                                    content: "Workflow '\(workflow.name)' created successfully (ID: \(workflow.id)). It has \(workflow.steps.count) step(s).",
+                                    metadata: [
+                                        "toolId": toolCall.id,
+                                        "toolName": toolCall.name,
+                                        "isError": "false"
+                                    ]
+                                )
+                                _ = try? await conversationStore.addMessage(to: conversationId, message: toolResultMsg)
+
+                                resultContent = "Workflow '\(workflow.name)' created successfully with \(workflow.steps.count) step(s). ID: \(workflow.id)"
+
+                                // Broadcast workflowCreated so Workflows tab updates
+                                let wfMsg = WSMessage(
+                                    type: WSMessageType.workflowCreated,
+                                    id: workflow.id,
+                                    metadata: ["name": .string(workflow.name)]
+                                )
+                                await server.broadcast(wfMsg)
+                            } else {
+                                let toolResultMsg = StoredMessage(
+                                    role: "tool_result",
+                                    content: "Failed to build workflow from description.",
+                                    metadata: [
+                                        "toolId": toolCall.id,
+                                        "toolName": toolCall.name,
+                                        "isError": "true"
+                                    ]
+                                )
+                                _ = try? await conversationStore.addMessage(to: conversationId, message: toolResultMsg)
+
+                                resultContent = "Failed to build workflow from description."
+                            }
+
+                            let duration = Date().timeIntervalSince(startTime)
+                            let doneMsg = WSMessage(
+                                type: WSMessageType.toolCallDone,
+                                id: toolCall.id,
+                                conversationId: conversationId,
+                                metadata: [
+                                    "toolName": .string(toolCall.name),
+                                    "serverName": .string("built-in"),
+                                    "success": .bool(!resultContent.contains("Failed")),
+                                    "result": .string(resultContent),
+                                    "duration": .double(duration)
+                                ]
+                            )
+                            try? await client.send(doneMsg)
+                        } catch {
+                            let duration = Date().timeIntervalSince(startTime)
+                            let errorContent = "Error creating workflow: \(error.localizedDescription)"
+                            let toolResultMsg = StoredMessage(
+                                role: "tool_result",
+                                content: errorContent,
+                                metadata: [
+                                    "toolId": toolCall.id,
+                                    "toolName": toolCall.name,
+                                    "isError": "true"
+                                ]
+                            )
+                            _ = try? await conversationStore.addMessage(to: conversationId, message: toolResultMsg)
+
+                            let doneMsg = WSMessage(
+                                type: WSMessageType.toolCallDone,
+                                id: toolCall.id,
+                                conversationId: conversationId,
+                                metadata: [
+                                    "toolName": .string(toolCall.name),
+                                    "serverName": .string("built-in"),
+                                    "success": .bool(false),
+                                    "error": .string(error.localizedDescription),
+                                    "duration": .double(duration)
+                                ]
+                            )
+                            try? await client.send(doneMsg)
+                        }
+                        continue  // Skip MCP tool path
+                    }
+
                     let serverName = await mcpManager.serverForTool(name: toolCall.name) ?? "unknown"
 
                     do {
@@ -995,30 +1121,41 @@ actor DaemonApp {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
         let basePath = "\(homeDir)/.love-me"
 
+        let approvalStore = EmailApprovalStore(basePath: basePath)
+        self.emailApprovalStore = approvalStore
+
         let bridge = EmailConversationBridge(
             triggerStore: emailTriggerStore,
             workflowStore: workflowStore,
             workflowExecutor: workflowExecutor,
-            eventBus: eventBus
+            eventBus: eventBus,
+            approvalStore: approvalStore
         )
         self.emailConversationBridge = bridge
 
-        // Wire the workflow builder so the bridge can auto-create workflows from email briefs
+        // Wire the workflow builder so the bridge can create workflows for approval
         await bridge.setWorkflowBuilder { [weak self] prompt in
             guard let self = self else { return nil }
             return await self.buildWorkflowFromPrompt(prompt)
         }
 
-        // Wire brief workflow notifications to broadcast to clients
+        // Wire the email classifier using Claude
+        let claudeClient = self.claudeClient
+        await bridge.setClassifyEmail { emailText in
+            let messages = [MessageParam(role: "user", text: emailText)]
+            return try await claudeClient.singleRequest(
+                messages: messages,
+                systemPrompt: "You are an email classifier. Respond only with the requested JSON."
+            )
+        }
+
+        // Wire approval notifications to broadcast to clients
         let server = self.server
-        await bridge.setOnBriefWorkflowCreated { workflowId, workflowName, emailSubject in
+        await bridge.setOnApprovalCreated { [self] approval in
             let msg = WSMessage(
-                type: WSMessageType.emailBriefWorkflowCreated,
-                id: workflowId,
-                metadata: [
-                    "workflowName": .string(workflowName),
-                    "emailSubject": .string(emailSubject)
-                ]
+                type: WSMessageType.emailApprovalPending,
+                id: approval.id,
+                metadata: self.encodeApprovalToMetadata(approval)
             )
             await server.broadcast(msg)
         }
@@ -1031,14 +1168,90 @@ actor DaemonApp {
         )
         self.emailPollingService = polling
 
-        // Wire polling to bridge
+        // Wire polling to bridge + chat conversation creation
         await polling.setOnEmailReceived { [weak self] (email: EmailMessage) in
             guard let self = self else { return }
             await self.emailConversationBridge?.handleIncomingEmail(email)
+            await self.createEmailConversation(email)
         }
 
         await polling.start()
         Logger.info("Email subsystem started for \(emailConfig.emailAddress)")
+    }
+
+    // MARK: - Email → Chat Conversation
+
+    /// Creates a chat conversation from an incoming email with auto-analysis from Claude.
+    /// Runs in the background so the analysis is ready when the user opens the conversation.
+    private func createEmailConversation(_ email: EmailMessage) async {
+        do {
+            let conversation = try await conversationStore.create(
+                title: "Email: \(email.subject)",
+                sourceType: "email"
+            )
+
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateStyle = .medium
+            dateFormatter.timeStyle = .short
+
+            let emailContent = """
+            **From:** \(email.from)
+            **Subject:** \(email.subject)
+            **Date:** \(dateFormatter.string(from: email.receivedAt))
+
+            \(email.bodyText)
+            """
+
+            let emailMsg = StoredMessage(
+                role: "user",
+                content: emailContent,
+                metadata: [
+                    "sourceType": "email",
+                    "emailMessageId": email.id,
+                    "emailFrom": email.from
+                ]
+            )
+            _ = try await conversationStore.addMessage(to: conversation.id, message: emailMsg)
+
+            // Run Claude analysis in background
+            let analysisPrompt = """
+            You received an email. Analyze it and provide:
+            1. A brief summary (1-2 sentences)
+            2. Key action items or requests, if any
+            3. Suggested next steps — what you can help with (e.g. draft a reply, create a workflow, look something up)
+
+            Be concise and helpful. The user can continue chatting with you about this email.
+            """
+
+            let analysisMessages = [
+                MessageParam(role: "user", text: emailContent),
+                MessageParam(role: "user", text: analysisPrompt)
+            ]
+
+            let analysis = try await claudeClient.singleRequest(
+                messages: analysisMessages,
+                systemPrompt: "You are a helpful AI assistant integrated into the love.Me app. The user has received an email that was forwarded to you for analysis. Provide a concise analysis and offer to help."
+            )
+
+            let analysisMsg = StoredMessage(role: "assistant", content: analysis)
+            _ = try await conversationStore.addMessage(to: conversation.id, message: analysisMsg)
+
+            // Broadcast to all clients so the conversation list updates
+            let broadcastMsg = WSMessage(
+                type: WSMessageType.conversationCreated,
+                conversationId: conversation.id,
+                metadata: [
+                    "title": .string(conversation.title),
+                    "sourceType": .string("email"),
+                    "messageCount": .int(2)
+                ]
+            )
+            await server.broadcast(broadcastMsg)
+
+            Logger.info("Created email conversation '\(conversation.title)' (\(conversation.id))")
+        } catch {
+            Logger.error("Failed to create email conversation: \(error)")
+        }
     }
 
     // MARK: - Email Message Handlers
@@ -1290,6 +1503,298 @@ actor DaemonApp {
         }
     }
 
+    // MARK: - Email Approval Handlers
+
+    private func handleEmailApprovalApprove(_ message: WSMessage, client: WebSocketClient) async {
+        guard let approvalId = message.id ?? message.metadata?["approvalId"]?.stringValue else {
+            await sendError(to: client, message: "Missing approval ID", code: "MISSING_FIELD")
+            return
+        }
+        guard let store = emailApprovalStore else {
+            await sendError(to: client, message: "Approval store not available", code: "NOT_CONFIGURED")
+            return
+        }
+
+        guard let approval = await store.get(id: approvalId) else {
+            await sendError(to: client, message: "Approval not found", code: "NOT_FOUND")
+            return
+        }
+
+        do {
+            try await store.update(id: approvalId, status: .approved)
+
+            // Broadcast status update
+            var updatedApproval = approval
+            updatedApproval.status = .approved
+            let updateMsg = WSMessage(
+                type: WSMessageType.emailApprovalUpdated,
+                id: approvalId,
+                metadata: encodeApprovalToMetadata(updatedApproval)
+            )
+            await server.broadcast(updateMsg)
+
+            switch approval.classification {
+            case .workflow:
+                await executeApprovedWorkflow(approval)
+            case .simpleReply:
+                await sendSimpleReply(approval)
+            case .noAction:
+                break
+            }
+        } catch {
+            await sendError(to: client, message: "Failed to approve: \(error)", code: "APPROVAL_ERROR")
+        }
+    }
+
+    private func handleEmailApprovalDismiss(_ message: WSMessage, client: WebSocketClient) async {
+        guard let approvalId = message.id ?? message.metadata?["approvalId"]?.stringValue else {
+            await sendError(to: client, message: "Missing approval ID", code: "MISSING_FIELD")
+            return
+        }
+        guard let store = emailApprovalStore else {
+            await sendError(to: client, message: "Approval store not available", code: "NOT_CONFIGURED")
+            return
+        }
+
+        guard let approval = await store.get(id: approvalId) else {
+            await sendError(to: client, message: "Approval not found", code: "NOT_FOUND")
+            return
+        }
+
+        do {
+            try await store.update(id: approvalId, status: .dismissed)
+
+            // Delete pre-created workflow if it exists
+            if let workflowId = approval.workflowId {
+                try? await workflowStore.delete(id: workflowId)
+                Logger.info("Deleted pre-created workflow \(workflowId) for dismissed approval")
+            }
+
+            var updatedApproval = approval
+            updatedApproval.status = .dismissed
+            let updateMsg = WSMessage(
+                type: WSMessageType.emailApprovalUpdated,
+                id: approvalId,
+                metadata: encodeApprovalToMetadata(updatedApproval)
+            )
+            await server.broadcast(updateMsg)
+        } catch {
+            await sendError(to: client, message: "Failed to dismiss: \(error)", code: "APPROVAL_ERROR")
+        }
+    }
+
+    private func handleEmailApprovalsList(client: WebSocketClient) async {
+        guard let store = emailApprovalStore else {
+            let msg = WSMessage(
+                type: WSMessageType.emailApprovalsListResult,
+                metadata: ["approvals": .array([])]
+            )
+            try? await client.send(msg)
+            return
+        }
+
+        let approvals = await store.listAll()
+        let items = approvals.map { encodeApprovalToMetadataValue($0) }
+
+        let msg = WSMessage(
+            type: WSMessageType.emailApprovalsListResult,
+            metadata: ["approvals": .array(items)]
+        )
+        try? await client.send(msg)
+    }
+
+    // MARK: - Approval Execution
+
+    private func executeApprovedWorkflow(_ approval: PendingEmailApproval) async {
+        guard let workflowId = approval.workflowId else {
+            Logger.error("No workflow ID in approval \(approval.id)")
+            return
+        }
+
+        do {
+            let workflow = try await workflowStore.get(id: workflowId)
+            let executor = self.workflowExecutor
+            let approvalId = approval.id
+
+            Task {
+                let execution = await executor.execute(
+                    workflow: workflow,
+                    triggerInfo: "email_approval: \(approval.email.subject)"
+                )
+
+                switch execution.status {
+                case .completed:
+                    Logger.info("Approved workflow '\(workflow.name)' completed")
+                    await self.composeAndSendReply(approval: approval, execution: execution)
+                case .failed:
+                    Logger.error("Approved workflow '\(workflow.name)' failed")
+                    try? await self.emailApprovalStore?.update(id: approvalId, status: .failed)
+                    let failMsg = WSMessage(
+                        type: WSMessageType.emailAutoReplyStatus,
+                        id: approvalId,
+                        metadata: [
+                            "status": .string("failed"),
+                            "reason": .string("Workflow execution failed")
+                        ]
+                    )
+                    await self.server.broadcast(failMsg)
+                default:
+                    break
+                }
+            }
+        } catch {
+            Logger.error("Failed to load workflow for approval \(approval.id): \(error)")
+        }
+    }
+
+    private func composeAndSendReply(approval: PendingEmailApproval, execution: WorkflowExecution) async {
+        // Gather step outputs
+        let stepOutputs = execution.stepResults.compactMap { result -> String? in
+            guard let output = result.output else { return nil }
+            return "[\(result.stepName)]: \(output)"
+        }.joined(separator: "\n\n")
+
+        let composePrompt = """
+        Compose a professional reply email based on the workflow results below.
+        Keep it concise and friendly. Do NOT include a subject line — just the body text.
+
+        Original email from: \(approval.email.from)
+        Original subject: \(approval.email.subject)
+        Original message preview: \(approval.email.preview)
+
+        Workflow results:
+        \(stepOutputs.isEmpty ? "Workflow completed successfully with no text output." : stepOutputs)
+        """
+
+        do {
+            let replyBody = try await claudeClient.singleRequest(
+                messages: [MessageParam(role: "user", text: composePrompt)],
+                systemPrompt: "You are a helpful email assistant. Write only the email body text, no subject line or headers."
+            )
+
+            guard let agentMail = agentMailClient else {
+                Logger.error("AgentMail client not available for reply")
+                return
+            }
+
+            _ = try await agentMail.replyToEmail(
+                messageId: approval.email.messageId,
+                threadId: approval.email.threadId,
+                body: replyBody
+            )
+
+            try? await emailApprovalStore?.update(id: approval.id, status: .completed)
+
+            let statusMsg = WSMessage(
+                type: WSMessageType.emailAutoReplyStatus,
+                id: approval.id,
+                metadata: [
+                    "status": .string("completed"),
+                    "replyPreview": .string(String(replyBody.prefix(200)))
+                ]
+            )
+            await server.broadcast(statusMsg)
+
+            Logger.info("Auto-reply sent for approval \(approval.id)")
+        } catch {
+            Logger.error("Failed to compose/send reply for approval \(approval.id): \(error)")
+            try? await emailApprovalStore?.update(id: approval.id, status: .failed)
+
+            let failMsg = WSMessage(
+                type: WSMessageType.emailAutoReplyStatus,
+                id: approval.id,
+                metadata: [
+                    "status": .string("failed"),
+                    "reason": .string("Failed to send reply: \(error.localizedDescription)")
+                ]
+            )
+            await server.broadcast(failMsg)
+        }
+    }
+
+    private func sendSimpleReply(_ approval: PendingEmailApproval) async {
+        do {
+            let replyBody: String
+            if let suggested = approval.suggestedReply, !suggested.isEmpty {
+                replyBody = suggested
+            } else {
+                replyBody = try await claudeClient.singleRequest(
+                    messages: [MessageParam(role: "user", text: """
+                    Write a brief, friendly reply to this email.
+                    From: \(approval.email.from)
+                    Subject: \(approval.email.subject)
+                    Preview: \(approval.email.preview)
+                    """)],
+                    systemPrompt: "You are a helpful email assistant. Write only the email body text."
+                )
+            }
+
+            guard let agentMail = agentMailClient else {
+                Logger.error("AgentMail client not available for reply")
+                return
+            }
+
+            _ = try await agentMail.replyToEmail(
+                messageId: approval.email.messageId,
+                threadId: approval.email.threadId,
+                body: replyBody
+            )
+
+            try? await emailApprovalStore?.update(id: approval.id, status: .completed)
+
+            let statusMsg = WSMessage(
+                type: WSMessageType.emailAutoReplyStatus,
+                id: approval.id,
+                metadata: [
+                    "status": .string("completed"),
+                    "replyPreview": .string(String(replyBody.prefix(200)))
+                ]
+            )
+            await server.broadcast(statusMsg)
+
+            Logger.info("Simple reply sent for approval \(approval.id)")
+        } catch {
+            Logger.error("Failed to send simple reply for approval \(approval.id): \(error)")
+            try? await emailApprovalStore?.update(id: approval.id, status: .failed)
+
+            let failMsg = WSMessage(
+                type: WSMessageType.emailAutoReplyStatus,
+                id: approval.id,
+                metadata: [
+                    "status": .string("failed"),
+                    "reason": .string("Failed to send reply: \(error.localizedDescription)")
+                ]
+            )
+            await server.broadcast(failMsg)
+        }
+    }
+
+    // MARK: - Approval Metadata Helpers
+
+    nonisolated private func encodeApprovalToMetadata(_ approval: PendingEmailApproval) -> [String: MetadataValue] {
+        let formatter = ISO8601DateFormatter()
+        var meta: [String: MetadataValue] = [
+            "approvalId": .string(approval.id),
+            "classification": .string(approval.classification.rawValue),
+            "status": .string(approval.status.rawValue),
+            "emailFrom": .string(approval.email.from),
+            "emailSubject": .string(approval.email.subject),
+            "emailPreview": .string(approval.email.preview),
+            "emailMessageId": .string(approval.email.messageId),
+            "emailThreadId": .string(approval.email.threadId),
+            "createdAt": .string(formatter.string(from: approval.createdAt)),
+        ]
+        if let wfId = approval.workflowId { meta["workflowId"] = .string(wfId) }
+        if let wfName = approval.workflowName { meta["workflowName"] = .string(wfName) }
+        if let count = approval.workflowStepCount { meta["workflowStepCount"] = .int(count) }
+        if let reply = approval.suggestedReply { meta["suggestedReply"] = .string(reply) }
+        return meta
+    }
+
+    nonisolated private func encodeApprovalToMetadataValue(_ approval: PendingEmailApproval) -> MetadataValue {
+        .object(encodeApprovalToMetadata(approval))
+    }
+
     // MARK: - Visual Builder
 
     private func handleMCPToolsList(client: WebSocketClient) async {
@@ -1389,7 +1894,11 @@ actor DaemonApp {
         {
           "name": "Workflow Name",
           "description": "What this workflow does",
-          "schedule": "natural language schedule like 'every 5 minutes'",
+          "triggerType": "cron" or "manual",
+          "schedule": "natural language schedule (only when triggerType is cron)",
+          "inputParams": [
+            { "name": "param_name", "label": "Human Label", "placeholder": "hint text" }
+          ],
           "steps": [
             {
               "name": "Step Name",
@@ -1397,18 +1906,23 @@ actor DaemonApp {
               "serverName": "exact_server_name_from_catalog",
               "needsConfiguration": false,
               "inputs": {
-                "paramName": "value"
+                "paramName": "value or {{__input__.param_name}}"
               }
             }
           ]
         }
+
+        Trigger type rules:
+        - Use "cron" with a "schedule" when the prompt describes a recurring/scheduled task or includes all concrete values needed to run
+        - Use "manual" with "inputParams" when the prompt describes a reusable/on-demand task, or when specific values (URLs, IDs, file paths) are not provided and should be supplied at runtime
+        - For manual triggers, define each runtime input in "inputParams" and reference them in step inputs as {{__input__.param_name}}
+        - When triggerType is "manual", omit "schedule". When triggerType is "cron", omit "inputParams"
 
         Rules:
         - Map user descriptions to real tools from the catalog when possible
         - If no matching tool exists, set toolName to a descriptive placeholder and needsConfiguration to true
         - Steps are linear (executed top-to-bottom in sequence)
         - Use the user's language for step names (human-readable)
-        - The schedule field should be natural language (will be parsed to cron separately)
         - Keep step count minimal — only what the user described
         - IMPORTANT: Always include the "inputs" object with all required parameters for each tool
         - Generate creative, sensible default values for inputs based on what the user asked for
@@ -1443,10 +1957,17 @@ actor DaemonApp {
             }
 
             // Decode the AI-generated workflow
+            struct AIInputParam: Codable {
+                let name: String
+                let label: String
+                let placeholder: String?
+            }
             struct AIWorkflow: Codable {
                 let name: String
                 let description: String
-                let schedule: String
+                let triggerType: String?
+                let schedule: String?
+                let inputParams: [AIInputParam]?
                 let steps: [AIStep]
             }
             struct AIStep: Codable {
@@ -1458,11 +1979,16 @@ actor DaemonApp {
             }
 
             let aiWorkflow = try JSONDecoder().decode(AIWorkflow.self, from: jsonData)
+            let resolvedTriggerType = aiWorkflow.triggerType ?? "cron"
 
-            // Parse schedule to cron
-            let scheduleResult = NaturalScheduleParser.parse(aiWorkflow.schedule)
-            let cronExpression = scheduleResult?.cron ?? "0 * * * *"
-            let scheduleDescription = scheduleResult?.description ?? aiWorkflow.schedule
+            // Parse schedule to cron (only relevant for cron triggers)
+            var cronExpression = "0 * * * *"
+            var scheduleDescription = ""
+            if resolvedTriggerType == "cron", let schedule = aiWorkflow.schedule {
+                let scheduleResult = NaturalScheduleParser.parse(schedule)
+                cronExpression = scheduleResult?.cron ?? "0 * * * *"
+                scheduleDescription = scheduleResult?.description ?? schedule
+            }
 
             // Build workflow steps
             let workflowId = UUID().uuidString
@@ -1512,20 +2038,36 @@ actor DaemonApp {
 
             let hasUnconfigured = aiWorkflow.steps.contains { $0.needsConfiguration ?? false }
 
+            var resultMetadata: [String: MetadataValue] = [
+                "success": .bool(true),
+                "id": .string(workflowId),
+                "name": .string(aiWorkflow.name),
+                "description": .string(aiWorkflow.description),
+                "cronExpression": .string(cronExpression),
+                "scheduleDescription": .string(scheduleDescription),
+                "steps": .array(stepMetadata),
+                "needsConfiguration": .bool(hasUnconfigured),
+                "triggerType": .string(resolvedTriggerType)
+            ]
+
+            if resolvedTriggerType == "manual", let inputParams = aiWorkflow.inputParams {
+                let paramsMeta: [MetadataValue] = inputParams.map { param in
+                    var dict: [String: MetadataValue] = [
+                        "name": .string(param.name),
+                        "label": .string(param.label)
+                    ]
+                    if let placeholder = param.placeholder {
+                        dict["placeholder"] = .string(placeholder)
+                    }
+                    return .object(dict)
+                }
+                resultMetadata["inputParams"] = .array(paramsMeta)
+            }
+
             let resultMsg = WSMessage(
                 type: WSMessageType.buildWorkflowResult,
                 id: workflowId,
-                metadata: [
-                    "success": .bool(true),
-                    "id": .string(workflowId),
-                    "name": .string(aiWorkflow.name),
-                    "description": .string(aiWorkflow.description),
-                    "cronExpression": .string(cronExpression),
-                    "scheduleDescription": .string(scheduleDescription),
-                    "steps": .array(stepMetadata),
-                    "needsConfiguration": .bool(hasUnconfigured),
-                    "triggerType": .string("cron")
-                ]
+                metadata: resultMetadata
             )
             try? await client.send(resultMsg)
 
@@ -1584,7 +2126,11 @@ actor DaemonApp {
         {
           "name": "Workflow Name",
           "description": "What this workflow does",
-          "schedule": "natural language schedule like 'every 5 minutes'",
+          "triggerType": "cron" or "manual",
+          "schedule": "natural language schedule (only when triggerType is cron)",
+          "inputParams": [
+            { "name": "param_name", "label": "Human Label", "placeholder": "hint text" }
+          ],
           "steps": [
             {
               "name": "Step Name",
@@ -1592,18 +2138,23 @@ actor DaemonApp {
               "serverName": "exact_server_name_from_catalog",
               "needsConfiguration": false,
               "inputs": {
-                "paramName": "value"
+                "paramName": "value or {{__input__.param_name}}"
               }
             }
           ]
         }
+
+        Trigger type rules:
+        - Use "cron" with a "schedule" when the prompt describes a recurring/scheduled task or includes all concrete values needed to run
+        - Use "manual" with "inputParams" when the prompt describes a reusable/on-demand task, or when specific values (URLs, IDs, file paths) are not provided and should be supplied at runtime
+        - For manual triggers, define each runtime input in "inputParams" and reference them in step inputs as {{__input__.param_name}}
+        - When triggerType is "manual", omit "schedule". When triggerType is "cron", omit "inputParams"
 
         Rules:
         - Map user descriptions to real tools from the catalog when possible
         - If no matching tool exists, set toolName to a descriptive placeholder and needsConfiguration to true
         - Steps are linear (executed top-to-bottom in sequence)
         - Use the user's language for step names (human-readable)
-        - The schedule field should be natural language (will be parsed to cron separately)
         - Keep step count minimal — only what the user described
         - IMPORTANT: Always include the "inputs" object with all required parameters for each tool
         - Generate creative, sensible default values for inputs based on what the user asked for
@@ -1633,10 +2184,17 @@ actor DaemonApp {
                 return nil
             }
 
+            struct AIInputParam: Codable {
+                let name: String
+                let label: String
+                let placeholder: String?
+            }
             struct AIWorkflow: Codable {
                 let name: String
                 let description: String
-                let schedule: String
+                let triggerType: String?
+                let schedule: String?
+                let inputParams: [AIInputParam]?
                 let steps: [AIStep]
             }
             struct AIStep: Codable {
@@ -1648,8 +2206,23 @@ actor DaemonApp {
             }
 
             let aiWorkflow = try JSONDecoder().decode(AIWorkflow.self, from: jsonData)
-            let scheduleResult = NaturalScheduleParser.parse(aiWorkflow.schedule)
-            let cronExpression = scheduleResult?.cron ?? "0 * * * *"
+            let resolvedTriggerType = aiWorkflow.triggerType ?? "cron"
+
+            // Build trigger based on type
+            let trigger: WorkflowTrigger
+            if resolvedTriggerType == "manual" {
+                let params: [InputParam] = (aiWorkflow.inputParams ?? []).map { p in
+                    InputParam(name: p.name, label: p.label, placeholder: p.placeholder)
+                }
+                trigger = .manual(inputParams: params)
+            } else {
+                var cronExpression = "0 * * * *"
+                if let schedule = aiWorkflow.schedule {
+                    let scheduleResult = NaturalScheduleParser.parse(schedule)
+                    cronExpression = scheduleResult?.cron ?? "0 * * * *"
+                }
+                trigger = .cron(expression: cronExpression)
+            }
 
             var steps: [WorkflowStep] = []
             var previousStepId: String?
@@ -1662,7 +2235,11 @@ actor DaemonApp {
                     for (key, value) in inputs {
                         switch value {
                         case .string(let str):
-                            inputTemplate[key] = .literal(str)
+                            if str.contains("{{") {
+                                inputTemplate[key] = .template(str)
+                            } else {
+                                inputTemplate[key] = .literal(str)
+                            }
                         default:
                             inputTemplate[key] = .literal(value.toJSONString())
                         }
@@ -1691,7 +2268,7 @@ actor DaemonApp {
                 name: aiWorkflow.name,
                 description: aiWorkflow.description,
                 enabled: true,
-                trigger: .cron(expression: cronExpression),
+                trigger: trigger,
                 steps: steps
             )
 

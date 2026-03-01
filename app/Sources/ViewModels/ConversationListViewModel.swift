@@ -44,12 +44,18 @@ final class ConversationListViewModel {
 
         case WSMessageType.conversationCreated:
             if let convId = msg.conversationId {
+                // Duplicate guard — broadcasts can arrive for conversations we already have
+                guard !conversations.contains(where: { $0.id == convId }) else { break }
+
                 let title = msg.metadata?["title"]?.stringValue ?? "New Conversation"
+                let sourceType = msg.metadata?["sourceType"]?.stringValue
+                let messageCount = msg.metadata?["messageCount"]?.intValue ?? 0
                 let conversation = Conversation(
                     id: convId,
                     title: title,
                     lastMessageAt: Date(),
-                    messageCount: 0
+                    messageCount: messageCount,
+                    sourceType: sourceType
                 )
                 conversations.insert(conversation, at: 0)
             }
@@ -85,12 +91,14 @@ final class ConversationListViewModel {
             }
 
             let messageCount = dict["messageCount"]?.intValue ?? 0
+            let sourceType = dict["sourceType"]?.stringValue
 
             loaded.append(Conversation(
                 id: id,
                 title: title,
                 lastMessageAt: lastMessageAt,
-                messageCount: messageCount
+                messageCount: messageCount,
+                sourceType: sourceType
             ))
         }
 

@@ -143,11 +143,14 @@ actor WorkflowExecutor {
             }
             await saveAndBroadcastStep(&execution, stepId: step.id)
 
-            // Resolve input template using outputs from completed steps
+            // Resolve input template using outputs from completed steps.
+            // Coerce string values to the types the tool schema expects (number, boolean, etc.)
+            // so tools with strict JSON Schema validation don't reject them.
+            let toolSchema = await mcpManager.getTools().first(where: { $0.name == step.toolName })?.inputSchema
             var resolvedInputs: [String: JSONValue] = [:]
             for (key, value) in step.inputTemplate {
                 let resolved = value.resolve(with: stepOutputs)
-                resolvedInputs[key] = .string(resolved)
+                resolvedInputs[key] = coerceToSchemaType(value: resolved, key: key, schema: toolSchema)
             }
             let arguments = JSONValue.object(resolvedInputs)
             Logger.info("Step '\(step.name)' calling tool '\(step.toolName)' with \(resolvedInputs.count) arg(s): \(resolvedInputs.keys.sorted().joined(separator: ", "))")
@@ -325,6 +328,44 @@ actor WorkflowExecutor {
            let callback = onStepUpdate {
             let exec = execution
             Task { await callback(exec, stepResult) }
+        }
+    }
+
+    // MARK: - Type Coercion
+
+    /// Coerce a resolved string value to the JSON type expected by the tool's input schema.
+    /// Falls back to `.string()` if the schema is unavailable or the type is unknown.
+    private func coerceToSchemaType(value: String, key: String, schema: JSONValue?) -> JSONValue {
+        guard let schema = schema,
+              case .object(let schemaObj) = schema,
+              case .object(let properties) = schemaObj["properties"],
+              case .object(let propSchema) = properties[key],
+              case .string(let propType) = propSchema["type"] else {
+            return .string(value)
+        }
+
+        switch propType {
+        case "integer":
+            if let intVal = Int(value) { return .int(intVal) }
+            if let dblVal = Double(value) { return .int(Int(dblVal)) }
+            return .string(value)
+        case "number":
+            if let dblVal = Double(value) { return .double(dblVal) }
+            return .string(value)
+        case "boolean":
+            let lower = value.lowercased()
+            if lower == "true" || lower == "1" { return .bool(true) }
+            if lower == "false" || lower == "0" { return .bool(false) }
+            return .string(value)
+        case "array", "object":
+            // Try to parse as JSON
+            if let data = value.data(using: .utf8),
+               let decoded = try? JSONDecoder().decode(JSONValue.self, from: data) {
+                return decoded
+            }
+            return .string(value)
+        default:
+            return .string(value)
         }
     }
 

@@ -130,7 +130,10 @@ final class ChatViewModel {
             handleError(msg)
 
         case WSMessageType.conversationCreated:
-            if let convId = msg.conversationId {
+            // Only auto-switch to new conversation if it's NOT an email conversation
+            // (email conversations are created in background and shouldn't hijack active chat)
+            if let convId = msg.conversationId,
+               msg.metadata?["sourceType"]?.stringValue != "email" {
                 currentConversationId = convId
             }
 
