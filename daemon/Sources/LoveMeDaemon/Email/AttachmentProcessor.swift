@@ -52,8 +52,8 @@ actor AttachmentProcessor {
     /// Process an attachment and return extracted content or a file path.
     ///
     /// - Parameters:
-    ///   - emailId: The Gmail message ID this attachment belongs to.
-    ///   - attachmentId: The Gmail attachment ID.
+    ///   - emailId: The message ID this attachment belongs to.
+    ///   - attachmentId: The attachment ID.
     ///   - filename: Original filename of the attachment.
     ///   - mimeType: MIME type of the attachment (e.g. `application/pdf`).
     ///   - data: Raw attachment data.

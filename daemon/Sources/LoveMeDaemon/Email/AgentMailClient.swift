@@ -1,7 +1,7 @@
 import Foundation
 
 /// REST API client for AgentMail (https://api.agentmail.to/v0).
-/// Replaces GmailClient + GmailAuthService with simple API key auth.
+/// Uses simple API key auth against the AgentMail REST API.
 actor AgentMailClient {
     private let apiKey: String
     private let inboxId: String
@@ -19,7 +19,7 @@ actor AgentMailClient {
     // MARK: - Messages
 
     /// List messages in the inbox, optionally filtering by date.
-    /// Returns full message objects (no two-step fetch like Gmail).
+    /// Returns full message objects in a single call.
     func listMessages(after: Date? = nil, limit: Int = 20) async throws -> [EmailMessage] {
         var urlString = "\(baseURL)/inboxes/\(inboxId)/messages?limit=\(limit)"
         if let after = after {
