@@ -21,10 +21,18 @@ actor EmailConfigStore {
 
     /// Load the email configuration, or nil if not configured.
     func load() -> EmailConfig? {
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: filePath)) else {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: filePath) else {
             return nil
         }
-        return try? decoder.decode(EmailConfig.self, from: data)
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: filePath))
+            let config = try decoder.decode(EmailConfig.self, from: data)
+            return config
+        } catch {
+            Logger.error("Failed to load email config from \(filePath): \(error)")
+            return nil
+        }
     }
 
     /// Save the email configuration with owner-only read/write permissions (0600).
@@ -36,16 +44,6 @@ actor EmailConfigStore {
         // Set file permissions to 0600 (owner read/write only)
         let fm = FileManager.default
         try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: filePath)
-    }
-
-    /// Update only the access token and expiry (for token refresh).
-    func updateTokens(accessToken: String, tokenExpiry: Date) throws {
-        guard var config = load() else {
-            throw EmailConfigError.notConfigured
-        }
-        config.accessToken = accessToken
-        config.tokenExpiry = tokenExpiry
-        try save(config)
     }
 
     /// Update the polling interval.
@@ -73,17 +71,11 @@ actor EmailConfigStore {
 
 enum EmailConfigError: Error, LocalizedError {
     case notConfigured
-    case invalidTokenResponse
-    case authFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .notConfigured:
             return "Email is not configured"
-        case .invalidTokenResponse:
-            return "Invalid token response from OAuth2 provider"
-        case .authFailed(let message):
-            return "Authentication failed: \(message)"
         }
     }
 }

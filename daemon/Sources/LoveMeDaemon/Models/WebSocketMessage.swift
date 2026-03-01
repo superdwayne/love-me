@@ -129,22 +129,24 @@ enum WSMessageType {
     static let parseScheduleResult = "parse_schedule_result"
     static let buildWorkflowResult = "build_workflow_result"
 
-    // Client -> Server (Email)
+    // Client -> Server (Email / Agent Mail)
     static let emailStatus = "email_status"
-    static let emailAuthStart = "email_auth_start"
+    static let emailConnect = "email_connect"
     static let emailAuthDisconnect = "email_auth_disconnect"
     static let emailPollNow = "email_poll_now"
     static let emailUpdatePolling = "email_update_polling"
+    static let emailMessagesList = "email_messages_list"
     static let emailTriggersList = "email_triggers_list"
     static let emailTriggerCreate = "email_trigger_create"
     static let emailTriggerUpdate = "email_trigger_update"
     static let emailTriggerDelete = "email_trigger_delete"
 
-    // Server -> Client (Email)
+    // Server -> Client (Email / Agent Mail)
     static let emailStatusResult = "email_status_result"
-    static let emailAuthStartResult = "email_auth_start_result"
-    static let emailAuthComplete = "email_auth_complete"
+    static let emailConnected = "email_connected"
     static let emailAuthDisconnected = "email_auth_disconnected"
+    static let emailMessagesListResult = "email_messages_list_result"
+    static let emailBriefWorkflowCreated = "email_brief_workflow_created"
     static let emailTriggersListResult = "email_triggers_list_result"
     static let emailTriggerCreated = "email_trigger_created"
     static let emailTriggerUpdated = "email_trigger_updated"

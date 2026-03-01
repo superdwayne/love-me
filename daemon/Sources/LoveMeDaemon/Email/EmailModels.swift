@@ -3,43 +3,22 @@ import Foundation
 // MARK: - Email Configuration
 
 struct EmailConfig: Codable, Sendable {
-    let provider: EmailProvider
-    var clientId: String
-    var clientSecret: String
-    var refreshToken: String
-    var accessToken: String
-    var tokenExpiry: Date
+    var apiKey: String
+    var inboxId: String
     var emailAddress: String
     var pollingIntervalSeconds: Int
 
     init(
-        provider: EmailProvider = .gmail,
-        clientId: String,
-        clientSecret: String,
-        refreshToken: String,
-        accessToken: String,
-        tokenExpiry: Date,
+        apiKey: String,
+        inboxId: String,
         emailAddress: String,
         pollingIntervalSeconds: Int = 60
     ) {
-        self.provider = provider
-        self.clientId = clientId
-        self.clientSecret = clientSecret
-        self.refreshToken = refreshToken
-        self.accessToken = accessToken
-        self.tokenExpiry = tokenExpiry
+        self.apiKey = apiKey
+        self.inboxId = inboxId
         self.emailAddress = emailAddress
         self.pollingIntervalSeconds = pollingIntervalSeconds
     }
-
-    var isTokenExpired: Bool {
-        Date() >= tokenExpiry
-    }
-}
-
-enum EmailProvider: String, Codable, Sendable {
-    case gmail
-    case outlook
 }
 
 // MARK: - Email Message
@@ -112,14 +91,6 @@ struct EmailTriggerConditions: Codable, Sendable {
         }
         return true
     }
-}
-
-// MARK: - Gmail Message Summary
-
-/// Lightweight message reference returned by Gmail list operations.
-struct GmailMessageSummary: Sendable {
-    let id: String
-    let threadId: String
 }
 
 // MARK: - Email Polling State

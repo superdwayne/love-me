@@ -33,79 +33,33 @@ private extension View {
     }
 }
 
-// MARK: - Display Model
-
-struct TriggerRuleDisplay: Identifiable {
-    let id: String
-    var workflowId: String
-    var workflowName: String
-    var fromContains: String
-    var subjectContains: String
-    var bodyContains: String
-    var hasAttachment: Bool
-    var enabled: Bool
-
-    /// Returns a human-readable summary of the rule's conditions.
-    var conditionsSummary: String {
-        var parts: [String] = []
-        if !fromContains.isEmpty {
-            parts.append("From: \(fromContains)")
-        }
-        if !subjectContains.isEmpty {
-            parts.append("Subject: \(subjectContains)")
-        }
-        if !bodyContains.isEmpty {
-            parts.append("Body: \(bodyContains)")
-        }
-        if hasAttachment {
-            parts.append("Has attachment")
-        }
-        return parts.isEmpty ? "No conditions" : parts.joined(separator: " · ")
-    }
-
-    static func empty() -> TriggerRuleDisplay {
-        TriggerRuleDisplay(
-            id: UUID().uuidString,
-            workflowId: "",
-            workflowName: "",
-            fromContains: "",
-            subjectContains: "",
-            bodyContains: "",
-            hasAttachment: false,
-            enabled: true
-        )
-    }
-}
-
 // MARK: - View
 
 struct EmailTriggersView: View {
-    @Environment(WebSocketClient.self) private var webSocket
+    @Environment(EmailViewModel.self) private var emailVM
     @Environment(WorkflowViewModel.self) private var workflowVM
 
-    @State private var rules: [TriggerRuleDisplay] = []
     @State private var showAddSheet = false
     @State private var editingRule: TriggerRuleDisplay?
-    @State private var isLoading = false
 
     var body: some View {
         List {
-            if isLoading && rules.isEmpty {
+            if emailVM.isLoadingTriggers && emailVM.triggerRules.isEmpty {
                 ForEach(0..<3, id: \.self) { _ in
                     skeletonRow
                 }
                 .listRowBackground(Color.surface)
-            } else if rules.isEmpty {
+            } else if emailVM.triggerRules.isEmpty {
                 emptyState
                     .listRowBackground(Color.appBackground)
                     .listRowSeparator(.hidden)
             } else {
-                ForEach(rules) { rule in
+                ForEach(emailVM.triggerRules) { rule in
                     ruleRow(rule)
                         .listRowBackground(Color.surface)
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) {
-                                deleteRule(rule)
+                                emailVM.deleteTriggerRule(rule)
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
@@ -122,8 +76,8 @@ struct EmailTriggersView: View {
         .background(.appBackground)
         .navigationTitle("Email Rules")
         .navigationBarTitleDisplayMode(.inline)
-        .animation(.easeInOut(duration: LoveMeTheme.springDuration), value: rules.count)
-        .animation(.easeInOut(duration: LoveMeTheme.springDuration), value: isLoading)
+        .animation(.easeInOut(duration: LoveMeTheme.springDuration), value: emailVM.triggerRules.count)
+        .animation(.easeInOut(duration: LoveMeTheme.springDuration), value: emailVM.isLoadingTriggers)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -147,7 +101,7 @@ struct EmailTriggersView: View {
                     workflows: workflowVM.workflows,
                     isNew: true
                 ) { newRule in
-                    createRule(newRule)
+                    emailVM.createTriggerRule(newRule)
                 }
             }
         }
@@ -158,12 +112,12 @@ struct EmailTriggersView: View {
                     workflows: workflowVM.workflows,
                     isNew: false
                 ) { updatedRule in
-                    updateRule(updatedRule)
+                    emailVM.updateTriggerRule(updatedRule)
                 }
             }
         }
         .onAppear {
-            loadRules()
+            emailVM.loadTriggerRules()
             workflowVM.loadWorkflows()
         }
     }
@@ -201,7 +155,7 @@ struct EmailTriggersView: View {
             Toggle("", isOn: Binding(
                 get: { rule.enabled },
                 set: { newValue in
-                    toggleRule(rule, enabled: newValue)
+                    emailVM.toggleTriggerRule(rule, enabled: newValue)
                 }
             ))
             .labelsHidden()
@@ -281,88 +235,6 @@ struct EmailTriggersView: View {
         .shimmer()
     }
 
-    // MARK: - Actions
-
-    private func loadRules() {
-        isLoading = true
-        webSocket.send(WSMessage(type: WSMessageType.emailTriggersList))
-    }
-
-    private func createRule(_ rule: TriggerRuleDisplay) {
-        webSocket.send(WSMessage(
-            type: WSMessageType.emailTriggerCreate,
-            metadata: encodeRule(rule)
-        ))
-        rules.append(rule)
-        HapticManager.toolCompleted()
-    }
-
-    private func updateRule(_ rule: TriggerRuleDisplay) {
-        webSocket.send(WSMessage(
-            type: WSMessageType.emailTriggerUpdate,
-            metadata: encodeRule(rule)
-        ))
-        if let index = rules.firstIndex(where: { $0.id == rule.id }) {
-            rules[index] = rule
-        }
-        HapticManager.toolCompleted()
-    }
-
-    private func deleteRule(_ rule: TriggerRuleDisplay) {
-        webSocket.send(WSMessage(
-            type: WSMessageType.emailTriggerDelete,
-            id: rule.id
-        ))
-        withAnimation(.easeInOut(duration: LoveMeTheme.springDuration)) {
-            rules.removeAll { $0.id == rule.id }
-        }
-        HapticManager.toolError()
-    }
-
-    private func toggleRule(_ rule: TriggerRuleDisplay, enabled: Bool) {
-        var updated = rule
-        updated.enabled = enabled
-        updateRule(updated)
-    }
-
-    private func encodeRule(_ rule: TriggerRuleDisplay) -> [String: MetadataValue] {
-        [
-            "id": .string(rule.id),
-            "workflowId": .string(rule.workflowId),
-            "fromContains": .string(rule.fromContains),
-            "subjectContains": .string(rule.subjectContains),
-            "bodyContains": .string(rule.bodyContains),
-            "hasAttachment": .bool(rule.hasAttachment),
-            "enabled": .bool(rule.enabled),
-        ]
-    }
-
-    // MARK: - Message Handling
-
-    /// Called by the app's message router when trigger list responses arrive.
-    func handleTriggersList(_ msg: WSMessage) {
-        isLoading = false
-        guard case .array(let items) = msg.metadata?["rules"] else { return }
-
-        var loaded: [TriggerRuleDisplay] = []
-        for item in items {
-            guard case .object(let dict) = item else { continue }
-            guard let id = dict["id"]?.stringValue else { continue }
-
-            loaded.append(TriggerRuleDisplay(
-                id: id,
-                workflowId: dict["workflowId"]?.stringValue ?? "",
-                workflowName: dict["workflowName"]?.stringValue ?? "",
-                fromContains: dict["fromContains"]?.stringValue ?? "",
-                subjectContains: dict["subjectContains"]?.stringValue ?? "",
-                bodyContains: dict["bodyContains"]?.stringValue ?? "",
-                hasAttachment: dict["hasAttachment"]?.boolValue ?? false,
-                enabled: dict["enabled"]?.boolValue ?? true
-            ))
-        }
-
-        rules = loaded
-    }
 }
 
 // MARK: - Trigger Rule Form

@@ -36,7 +36,7 @@ actor WorkflowExecutor {
     ///
     /// Steps run in topological order (respecting `dependsOn`). The execution
     /// Task is tracked so it can be cancelled via `cancel(executionId:)`.
-    func execute(workflow: WorkflowDefinition, triggerInfo: String) async -> WorkflowExecution {
+    func execute(workflow: WorkflowDefinition, triggerInfo: String, inputParams: [String: String] = [:]) async -> WorkflowExecution {
         // 1. Build the initial execution record
         let executionId = UUID().uuidString
         var execution = WorkflowExecution(
@@ -66,7 +66,7 @@ actor WorkflowExecutor {
         }
 
         // 4. Run steps directly (cancellation handled via runningExecutions task tracking)
-        execution = await runSteps(workflow: workflow, execution: execution)
+        execution = await runSteps(workflow: workflow, execution: execution, inputParams: inputParams)
 
         // Reload the latest execution state from the store
         do {
@@ -98,7 +98,8 @@ actor WorkflowExecutor {
     /// Core execution loop: topological sort then run each step.
     private func runSteps(
         workflow: WorkflowDefinition,
-        execution: WorkflowExecution
+        execution: WorkflowExecution,
+        inputParams: [String: String] = [:]
     ) async -> WorkflowExecution {
         var execution = execution
 
@@ -114,8 +115,16 @@ actor WorkflowExecutor {
             return execution
         }
 
-        // Track outputs keyed by step ID for variable resolution
+        // Track outputs keyed by step ID for variable resolution.
+        // Pre-seed __input__ with runtime parameters so steps can reference them.
         var stepOutputs: [String: String] = [:]
+        if !inputParams.isEmpty {
+            if let data = try? JSONSerialization.data(withJSONObject: inputParams),
+               let json = String(data: data, encoding: .utf8) {
+                stepOutputs["__input__"] = json
+                Logger.info("Seeded __input__ with \(inputParams.count) param(s): \(inputParams.keys.sorted().joined(separator: ", "))")
+            }
+        }
 
         for step in sortedSteps {
             // Check for cancellation before each step

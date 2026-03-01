@@ -89,21 +89,12 @@ struct ConversationListView: View {
             }
 
             VStack(alignment: .leading, spacing: LoveMeTheme.xs) {
-                HStack(spacing: LoveMeTheme.sm) {
-                    Text(conversation.title)
-                        .font(.chatMessage)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.textPrimary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-
-                    if conversation.sourceType == "email" {
-                        Image(systemName: "envelope.fill")
-                            .font(.timestamp)
-                            .foregroundStyle(.trust.opacity(0.7))
-                            .accessibilityLabel("From email")
-                    }
-                }
+                Text(conversation.title)
+                    .font(.chatMessage)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
                 Text(conversation.relativeTimestamp)
                     .font(.thinking)

@@ -28,12 +28,19 @@ struct WorkflowDetail: Sendable {
     var notifyOnStepComplete: Bool
 }
 
+struct InputParamInfo: Sendable {
+    let name: String
+    let label: String
+    let placeholder: String?
+}
+
 struct WorkflowTriggerInfo: Sendable {
-    var type: String  // "cron" or "event"
+    var type: String  // "cron", "event", or "manual"
     var cronExpression: String?
     var eventSource: String?
     var eventType: String?
     var eventFilter: [String: String]?
+    var inputParams: [InputParamInfo]?
 }
 
 struct WorkflowStepInfo: Identifiable, Sendable {
@@ -186,10 +193,18 @@ final class WorkflowViewModel {
         workflows.removeAll { $0.id == id }
     }
 
-    func runWorkflow(id: String) {
+    func runWorkflow(id: String, inputParams: [String: String] = [:]) {
+        var metadata: [String: MetadataValue] = ["workflowId": .string(id)]
+        if !inputParams.isEmpty {
+            var paramsDict: [String: MetadataValue] = [:]
+            for (key, value) in inputParams {
+                paramsDict[key] = .string(value)
+            }
+            metadata["inputParams"] = .object(paramsDict)
+        }
         let msg = WSMessage(
             type: WSMessageType.runWorkflow,
-            metadata: ["workflowId": .string(id)]
+            metadata: metadata
         )
         webSocket.send(msg)
     }
@@ -405,11 +420,21 @@ final class WorkflowViewModel {
             trigger = parseTriggerInfo(meta["trigger"])
         } else {
             // Flat keys from daemon's encodeWorkflowToMetadata
+            var parsedInputParams: [InputParamInfo]?
+            if case .array(let items) = meta["inputParams"] {
+                parsedInputParams = items.compactMap { item -> InputParamInfo? in
+                    guard case .object(let dict) = item,
+                          let name = dict["name"]?.stringValue,
+                          let label = dict["label"]?.stringValue else { return nil }
+                    return InputParamInfo(name: name, label: label, placeholder: dict["placeholder"]?.stringValue)
+                }
+            }
             trigger = WorkflowTriggerInfo(
                 type: meta["triggerType"]?.stringValue ?? "cron",
                 cronExpression: meta["cronExpression"]?.stringValue,
                 eventSource: meta["eventSource"]?.stringValue,
-                eventType: meta["eventType"]?.stringValue
+                eventType: meta["eventType"]?.stringValue,
+                inputParams: parsedInputParams
             )
         }
         let steps = parseSteps(meta["steps"])
@@ -814,6 +839,18 @@ final class WorkflowViewModel {
                 filterDict[key] = .string(value)
             }
             meta["eventFilter"] = .object(filterDict)
+        }
+        if let inputParams = detail.trigger.inputParams {
+            meta["inputParams"] = .array(inputParams.map { param in
+                var paramDict: [String: MetadataValue] = [
+                    "name": .string(param.name),
+                    "label": .string(param.label)
+                ]
+                if let placeholder = param.placeholder {
+                    paramDict["placeholder"] = .string(placeholder)
+                }
+                return .object(paramDict)
+            })
         }
 
         // Encode steps

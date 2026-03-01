@@ -8,6 +8,8 @@ struct WorkflowDetailView: View {
     @State private var showEditor = false
     @State private var showDeleteAlert = false
     @State private var appeared = false
+    @State private var showInputSheet = false
+    @State private var inputValues: [String: String] = [:]
 
     private var workflow: WorkflowDetail? {
         workflowVM.currentWorkflow
@@ -140,7 +142,17 @@ struct WorkflowDetailView: View {
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(.electricBlue)
 
-                    if let cron = workflow.trigger.cronExpression, !cron.isEmpty {
+                    if workflow.trigger.type == "manual" {
+                        if let params = workflow.trigger.inputParams, !params.isEmpty {
+                            Text("\(params.count) input\(params.count == 1 ? "" : "s") required")
+                                .font(.toolDetail)
+                                .foregroundStyle(.textPrimary)
+                        } else {
+                            Text("Run on demand")
+                                .font(.toolDetail)
+                                .foregroundStyle(.textPrimary)
+                        }
+                    } else if let cron = workflow.trigger.cronExpression, !cron.isEmpty {
                         Text(cron)
                             .font(.toolDetail)
                             .foregroundStyle(.textPrimary)
@@ -329,7 +341,13 @@ struct WorkflowDetailView: View {
 
     private func actionsCard(_ workflow: WorkflowDetail) -> some View {
         Button {
-            workflowVM.runWorkflow(id: workflow.id)
+            if let params = workflow.trigger.inputParams, !params.isEmpty {
+                // Pre-fill empty values
+                inputValues = Dictionary(uniqueKeysWithValues: params.map { ($0.name, "") })
+                showInputSheet = true
+            } else {
+                workflowVM.runWorkflow(id: workflow.id)
+            }
         } label: {
             HStack(spacing: LoveMeTheme.sm) {
                 Image(systemName: "play.fill")
@@ -342,6 +360,18 @@ struct WorkflowDetailView: View {
             .padding(.vertical, LoveMeTheme.md)
             .background(Color.heart)
             .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .sheet(isPresented: $showInputSheet) {
+            if let params = workflow.trigger.inputParams {
+                WorkflowInputSheet(
+                    workflowName: workflow.name,
+                    params: params,
+                    values: $inputValues
+                ) {
+                    workflowVM.runWorkflow(id: workflow.id, inputParams: inputValues)
+                    showInputSheet = false
+                }
+            }
         }
     }
 
@@ -366,6 +396,82 @@ struct WorkflowDetailView: View {
             let minutes = Int(interval) / 60
             let seconds = Int(interval) % 60
             return "\(minutes)m \(seconds)s"
+        }
+    }
+}
+
+// MARK: - Input Sheet for Manual Workflows
+
+struct WorkflowInputSheet: View {
+    let workflowName: String
+    let params: [InputParamInfo]
+    @Binding var values: [String: String]
+    let onRun: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: LoveMeTheme.lg) {
+                Text("Provide inputs to run this workflow.")
+                    .font(.chatMessage)
+                    .foregroundStyle(.trust)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, LoveMeTheme.lg)
+
+                VStack(spacing: LoveMeTheme.md) {
+                    ForEach(params, id: \.name) { param in
+                        VStack(alignment: .leading, spacing: LoveMeTheme.xs) {
+                            Text(param.label)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(.textPrimary)
+
+                            TextField(
+                                param.placeholder ?? param.name,
+                                text: Binding(
+                                    get: { values[param.name] ?? "" },
+                                    set: { values[param.name] = $0 }
+                                )
+                            )
+                            .textFieldStyle(.roundedBorder)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                        }
+                    }
+                }
+                .padding(.horizontal, LoveMeTheme.lg)
+
+                Spacer()
+
+                Button {
+                    onRun()
+                } label: {
+                    HStack(spacing: LoveMeTheme.sm) {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 14))
+                        Text("Run")
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, LoveMeTheme.md)
+                    .background(Color.heart)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .padding(.horizontal, LoveMeTheme.lg)
+                .padding(.bottom, LoveMeTheme.lg)
+            }
+            .background(.appBackground)
+            .navigationTitle(workflowName)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .foregroundStyle(.trust)
+                }
+            }
         }
     }
 }

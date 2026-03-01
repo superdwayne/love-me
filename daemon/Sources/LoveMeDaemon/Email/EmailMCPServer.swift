@@ -53,33 +53,25 @@ enum EmailMCPError: Error, LocalizedError {
 // MARK: - Email MCP Server
 
 /// Exposes email tools (send, reply, search, read, attachments) that integrate with MCPManager.
-///
-/// This is an internal module -- not a separate process. It provides tool definitions and
-/// a handler that the MCPManager can route tool calls to, giving Claude access to email
-/// operations alongside other MCP tools.
 actor EmailMCPServer {
-    private let gmailClient: GmailClient
+    private let agentMailClient: AgentMailClient
     private let attachmentProcessor: AttachmentProcessor
 
     /// The server name used when registering tools with MCPManager.
     static let serverName = "email"
 
-    init(gmailClient: GmailClient, attachmentProcessor: AttachmentProcessor) {
-        self.gmailClient = gmailClient
+    init(agentMailClient: AgentMailClient, attachmentProcessor: AttachmentProcessor) {
+        self.agentMailClient = agentMailClient
         self.attachmentProcessor = attachmentProcessor
     }
 
     // MARK: - Tool Registration
 
-    /// Returns tool definitions for registration with MCPManager.
-    ///
-    /// Each definition includes the tool name, description, and parameter schema so that
-    /// Claude knows what arguments to provide when calling the tool.
     func getToolDefinitions() -> [EmailToolDefinition] {
         [
             EmailToolDefinition(
                 name: "send_email",
-                description: "Send a new email. Supports multiple recipients (comma-separated) and optional CC/BCC fields.",
+                description: "Send a new email via AgentMail. Supports multiple recipients (comma-separated) and optional CC/BCC fields.",
                 parameters: [
                     EmailToolParameter(name: "to", type: "string", description: "Recipient email addresses, comma-separated", required: true),
                     EmailToolParameter(name: "subject", type: "string", description: "Email subject line", required: true),
@@ -90,17 +82,16 @@ actor EmailMCPServer {
             ),
             EmailToolDefinition(
                 name: "reply_to_email",
-                description: "Reply to an existing email thread. The reply is sent to the original sender with proper In-Reply-To headers.",
+                description: "Reply to an existing email thread. The reply is sent to the original sender with proper threading.",
                 parameters: [
-                    EmailToolParameter(name: "emailMessageId", type: "string", description: "The Gmail message ID to reply to", required: true),
+                    EmailToolParameter(name: "emailMessageId", type: "string", description: "The message ID to reply to", required: true),
                     EmailToolParameter(name: "body", type: "string", description: "Reply body content (plain text)", required: true),
                 ]
             ),
             EmailToolDefinition(
                 name: "search_emails",
-                description: "Search emails using Gmail search syntax. Returns a list of matching emails with subject, sender, date, and snippet.",
+                description: "List recent emails from the inbox. Returns a list of emails with subject, sender, date, and snippet.",
                 parameters: [
-                    EmailToolParameter(name: "query", type: "string", description: "Gmail search query (e.g. 'from:alice subject:invoice is:unread')", required: true),
                     EmailToolParameter(name: "maxResults", type: "integer", description: "Maximum number of results to return (default: 10, max: 50)", required: false),
                 ]
             ),
@@ -108,14 +99,14 @@ actor EmailMCPServer {
                 name: "get_email",
                 description: "Get the full content of a specific email by its message ID, including headers, body text, and attachment metadata.",
                 parameters: [
-                    EmailToolParameter(name: "emailMessageId", type: "string", description: "The Gmail message ID to retrieve", required: true),
+                    EmailToolParameter(name: "emailMessageId", type: "string", description: "The message ID to retrieve", required: true),
                 ]
             ),
             EmailToolDefinition(
                 name: "get_attachment",
                 description: "Download and process an email attachment. PDFs are converted to text, images are stored locally, and text/CSV/JSON content is returned directly.",
                 parameters: [
-                    EmailToolParameter(name: "emailMessageId", type: "string", description: "The Gmail message ID containing the attachment", required: true),
+                    EmailToolParameter(name: "emailMessageId", type: "string", description: "The message ID containing the attachment", required: true),
                     EmailToolParameter(name: "attachmentId", type: "string", description: "The attachment ID to retrieve", required: true),
                 ]
             ),
@@ -147,12 +138,6 @@ actor EmailMCPServer {
 
     // MARK: - Tool Call Dispatch
 
-    /// Handle a tool call by name, dispatching to the appropriate implementation.
-    ///
-    /// - Parameters:
-    ///   - name: The tool name (e.g. `send_email`).
-    ///   - arguments: A dictionary of string arguments from the caller.
-    /// - Returns: An `EmailToolResult` with the content or error.
     func callTool(name: String, arguments: [String: String]) async throws -> EmailToolResult {
         Logger.info("EmailMCPServer: calling tool '\(name)' with \(arguments.count) argument(s)")
 
@@ -182,7 +167,6 @@ actor EmailMCPServer {
 
     // MARK: - Tool Implementations
 
-    /// Send a new email to one or more recipients.
     private func handleSendEmail(arguments: [String: String]) async -> EmailToolResult {
         guard let toRaw = arguments["to"], !toRaw.isEmpty else {
             return .error("Missing required parameter: to")
@@ -203,7 +187,7 @@ actor EmailMCPServer {
         let bccAddresses: [String]? = arguments["bcc"].map { parseCommaSeparatedEmails($0) }
 
         do {
-            let messageId = try await gmailClient.sendEmail(
+            let messageId = try await agentMailClient.sendEmail(
                 to: toAddresses,
                 subject: subject,
                 body: body,
@@ -218,7 +202,6 @@ actor EmailMCPServer {
         }
     }
 
-    /// Reply to an existing email message in its thread.
     private func handleReplyToEmail(arguments: [String: String]) async -> EmailToolResult {
         guard let messageId = arguments["emailMessageId"], !messageId.isEmpty else {
             return .error("Missing required parameter: emailMessageId")
@@ -228,10 +211,9 @@ actor EmailMCPServer {
         }
 
         do {
-            // Fetch the original message to get the threadId for proper threading
-            let originalMessage = try await gmailClient.getMessage(id: messageId)
+            let originalMessage = try await agentMailClient.getMessage(id: messageId)
 
-            let replyId = try await gmailClient.replyToEmail(
+            let replyId = try await agentMailClient.replyToEmail(
                 messageId: messageId,
                 threadId: originalMessage.threadId,
                 body: body
@@ -244,12 +226,7 @@ actor EmailMCPServer {
         }
     }
 
-    /// Search the mailbox using Gmail search syntax.
     private func handleSearchEmails(arguments: [String: String]) async -> EmailToolResult {
-        guard let query = arguments["query"], !query.isEmpty else {
-            return .error("Missing required parameter: query")
-        }
-
         let maxResults: Int
         if let maxStr = arguments["maxResults"], let parsed = Int(maxStr) {
             maxResults = min(max(parsed, 1), 50)
@@ -258,29 +235,19 @@ actor EmailMCPServer {
         }
 
         do {
-            let listResult = try await gmailClient.listMessages(
-                query: query,
-                maxResults: maxResults
-            )
+            let messages = try await agentMailClient.listMessages(limit: maxResults)
 
-            if listResult.messages.isEmpty {
-                return .success("No emails found matching query: \(query)")
+            if messages.isEmpty {
+                return .success("No emails found in inbox.")
             }
 
-            // Fetch each message to build the result summary
             var emailSummaries: [String] = []
-            for messageSummary in listResult.messages {
-                do {
-                    let message = try await gmailClient.getMessage(id: messageSummary.id)
-                    let summary = formatEmailSummary(message)
-                    emailSummaries.append(summary)
-                } catch {
-                    Logger.error("EmailMCPServer: failed to fetch message \(messageSummary.id): \(error)")
-                    emailSummaries.append("[\(messageSummary.id)] (failed to load)")
-                }
+            for message in messages {
+                let summary = formatEmailSummary(message)
+                emailSummaries.append(summary)
             }
 
-            let header = "Found \(emailSummaries.count) email(s) matching: \(query)\n"
+            let header = "Found \(emailSummaries.count) email(s):\n"
             let separator = String(repeating: "-", count: 60)
             let body = emailSummaries.joined(separator: "\n\(separator)\n")
 
@@ -293,14 +260,13 @@ actor EmailMCPServer {
         }
     }
 
-    /// Get the full content of a specific email message.
     private func handleGetEmail(arguments: [String: String]) async -> EmailToolResult {
         guard let messageId = arguments["emailMessageId"], !messageId.isEmpty else {
             return .error("Missing required parameter: emailMessageId")
         }
 
         do {
-            let message = try await gmailClient.getMessage(id: messageId)
+            let message = try await agentMailClient.getMessage(id: messageId)
             let formatted = formatEmailFull(message)
 
             Logger.info("EmailMCPServer: retrieved email \(messageId)")
@@ -311,7 +277,6 @@ actor EmailMCPServer {
         }
     }
 
-    /// Download and process an email attachment.
     private func handleGetAttachment(arguments: [String: String]) async -> EmailToolResult {
         guard let messageId = arguments["emailMessageId"], !messageId.isEmpty else {
             return .error("Missing required parameter: emailMessageId")
@@ -321,19 +286,16 @@ actor EmailMCPServer {
         }
 
         do {
-            // First get the message to find attachment metadata
-            let message = try await gmailClient.getMessage(id: messageId)
+            let message = try await agentMailClient.getMessage(id: messageId)
             guard let attachmentMeta = message.attachments.first(where: { $0.id == attachmentId }) else {
                 return .error("Attachment '\(attachmentId)' not found in message '\(messageId)'")
             }
 
-            // Download the attachment data
-            let data = try await gmailClient.getAttachment(
+            let data = try await agentMailClient.getAttachment(
                 messageId: messageId,
                 attachmentId: attachmentId
             )
 
-            // Process the attachment
             let processed = try await attachmentProcessor.process(
                 emailId: messageId,
                 attachmentId: attachmentId,
@@ -353,7 +315,6 @@ actor EmailMCPServer {
 
     // MARK: - Formatting Helpers
 
-    /// Format an email message as a brief summary line for search results.
     private func formatEmailSummary(_ message: EmailMessage) -> String {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -374,7 +335,6 @@ actor EmailMCPServer {
         """
     }
 
-    /// Format an email message with full content for the get_email tool.
     private func formatEmailFull(_ message: EmailMessage) -> String {
         let formatter = DateFormatter()
         formatter.dateStyle = .full
@@ -394,7 +354,6 @@ actor EmailMCPServer {
         Date: \(date)\(labels)
         """
 
-        // Attachments
         if !message.attachments.isEmpty {
             result += "\n\nAttachments:"
             for attachment in message.attachments {
@@ -405,7 +364,6 @@ actor EmailMCPServer {
             }
         }
 
-        // Body
         result += "\n\n--- Body ---\n\(message.bodyText)"
 
         return result
@@ -413,15 +371,12 @@ actor EmailMCPServer {
 
     // MARK: - Argument Parsing Helpers
 
-    /// Parse a comma-separated string of email addresses into an array.
-    /// Trims whitespace and filters empty entries.
     private func parseCommaSeparatedEmails(_ raw: String) -> [String] {
         raw.split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
     }
 
-    /// Extract string arguments from a JSONValue (as sent by MCPManager).
     private func extractStringArguments(from arguments: JSONValue) -> [String: String] {
         guard case .object(let obj) = arguments else {
             return [:]
@@ -445,7 +400,6 @@ actor EmailMCPServer {
         return result
     }
 
-    /// Build a JSON Schema input schema from an EmailToolDefinition.
     private func buildInputSchema(from definition: EmailToolDefinition) -> JSONValue {
         var properties: [String: JSONValue] = [:]
         var required: [JSONValue] = []

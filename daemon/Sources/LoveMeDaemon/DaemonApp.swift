@@ -20,8 +20,7 @@ actor DaemonApp {
     private let emailConfigStore: EmailConfigStore
     private let emailTriggerStore: EmailTriggerStore
     private let attachmentProcessor: AttachmentProcessor
-    private var gmailClient: GmailClient?
-    private var gmailAuthService: GmailAuthService?
+    private var agentMailClient: AgentMailClient?
     private var emailPollingService: EmailPollingService?
     private var emailConversationBridge: EmailConversationBridge?
 
@@ -207,8 +206,8 @@ actor DaemonApp {
         case WSMessageType.emailStatus:
             await handleEmailStatus(client: client)
 
-        case WSMessageType.emailAuthStart:
-            await handleEmailAuthStart(message, client: client)
+        case WSMessageType.emailConnect:
+            await handleEmailConnect(message, client: client)
 
         case WSMessageType.emailAuthDisconnect:
             await handleEmailAuthDisconnect(client: client)
@@ -218,6 +217,9 @@ actor DaemonApp {
 
         case WSMessageType.emailUpdatePolling:
             await handleEmailUpdatePolling(message, client: client)
+
+        case WSMessageType.emailMessagesList:
+            await handleEmailMessagesList(client: client)
 
         case WSMessageType.emailTriggersList:
             await handleEmailTriggersList(client: client)
@@ -597,12 +599,16 @@ actor DaemonApp {
             let conversations = try await conversationStore.listAll()
             let formatter = ISO8601DateFormatter()
             let convMetadata = conversations.map { conv -> MetadataValue in
-                .object([
+                var dict: [String: MetadataValue] = [
                     "id": .string(conv.id),
                     "title": .string(conv.title),
                     "lastMessageAt": .string(formatter.string(from: conv.lastMessageAt)),
                     "messageCount": .int(conv.messageCount)
-                ])
+                ]
+                if let sourceType = conv.sourceType {
+                    dict["sourceType"] = .string(sourceType)
+                }
+                return .object(dict)
             }
 
             let msg = WSMessage(
@@ -783,6 +789,16 @@ actor DaemonApp {
             return
         }
 
+        // Extract runtime input parameters if provided
+        var inputParams: [String: String] = [:]
+        if case .object(let paramsDict) = message.metadata?["inputParams"] {
+            for (key, val) in paramsDict {
+                if let str = val.stringValue {
+                    inputParams[key] = str
+                }
+            }
+        }
+
         do {
             let workflow = try await workflowStore.get(id: workflowId)
 
@@ -793,8 +809,9 @@ actor DaemonApp {
             )
 
             // Execute in background
+            let capturedParams = inputParams
             Task {
-                let execution = await workflowExecutor.execute(workflow: workflow, triggerInfo: "manual")
+                let execution = await workflowExecutor.execute(workflow: workflow, triggerInfo: "manual", inputParams: capturedParams)
 
                 switch execution.status {
                 case .completed:
@@ -972,24 +989,42 @@ actor DaemonApp {
             return
         }
 
-        let client = GmailClient(configStore: emailConfigStore)
-        self.gmailClient = client
+        let client = AgentMailClient(apiKey: emailConfig.apiKey, inboxId: emailConfig.inboxId)
+        self.agentMailClient = client
 
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
         let basePath = "\(homeDir)/.love-me"
 
         let bridge = EmailConversationBridge(
-            conversationStore: conversationStore,
             triggerStore: emailTriggerStore,
             workflowStore: workflowStore,
             workflowExecutor: workflowExecutor,
-            eventBus: eventBus,
-            basePath: basePath
+            eventBus: eventBus
         )
         self.emailConversationBridge = bridge
 
+        // Wire the workflow builder so the bridge can auto-create workflows from email briefs
+        await bridge.setWorkflowBuilder { [weak self] prompt in
+            guard let self = self else { return nil }
+            return await self.buildWorkflowFromPrompt(prompt)
+        }
+
+        // Wire brief workflow notifications to broadcast to clients
+        let server = self.server
+        await bridge.setOnBriefWorkflowCreated { workflowId, workflowName, emailSubject in
+            let msg = WSMessage(
+                type: WSMessageType.emailBriefWorkflowCreated,
+                id: workflowId,
+                metadata: [
+                    "workflowName": .string(workflowName),
+                    "emailSubject": .string(emailSubject)
+                ]
+            )
+            await server.broadcast(msg)
+        }
+
         let polling = EmailPollingService(
-            gmailClient: client,
+            agentMailClient: client,
             eventBus: eventBus,
             configStore: emailConfigStore,
             statePath: "\(basePath)/email-state.json"
@@ -1019,6 +1054,7 @@ actor DaemonApp {
 
         if let config = config {
             metadata["emailAddress"] = .string(config.emailAddress)
+            metadata["inboxId"] = .string(config.inboxId)
             metadata["pollingIntervalSeconds"] = .int(config.pollingIntervalSeconds)
         }
 
@@ -1036,60 +1072,38 @@ actor DaemonApp {
         try? await client.send(msg)
     }
 
-    private func handleEmailAuthStart(_ message: WSMessage, client: WebSocketClient) async {
-        // Try message metadata first, then fall back to config (.env file)
-        let clientId = {
-            let fromMsg = message.metadata?["clientId"]?.stringValue ?? ""
-            return fromMsg.isEmpty ? (config.gmailClientId ?? "") : fromMsg
-        }()
-        let clientSecret = {
-            let fromMsg = message.metadata?["clientSecret"]?.stringValue ?? ""
-            return fromMsg.isEmpty ? (config.gmailClientSecret ?? "") : fromMsg
-        }()
-        let port: UInt16 = UInt16(message.metadata?["callbackPort"]?.intValue ?? 9477)
-
-        guard !clientId.isEmpty, !clientSecret.isEmpty else {
-            await sendError(to: client, message: "Gmail credentials not found. Add GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET to ~/.love-me/.env", code: "MISSING_GMAIL_CREDENTIALS")
+    private func handleEmailConnect(_ message: WSMessage, client: WebSocketClient) async {
+        guard let apiKey = message.metadata?["apiKey"]?.stringValue, !apiKey.isEmpty else {
+            await sendError(to: client, message: "Missing API key", code: "MISSING_API_KEY")
             return
         }
 
-        let authService = GmailAuthService(
-            clientId: clientId,
-            clientSecret: clientSecret,
-            configStore: emailConfigStore
+        let inboxId = message.metadata?["inboxId"]?.stringValue ?? "love.me"
+        let emailAddress = "\(inboxId)@agentmail.to"
+
+        let emailConfig = EmailConfig(
+            apiKey: apiKey,
+            inboxId: inboxId,
+            emailAddress: emailAddress
         )
-        self.gmailAuthService = authService
 
         do {
-            let authUrl = try await authService.startAuthFlow(port: port)
+            try await emailConfigStore.save(emailConfig)
+
+            // Start the email subsystem
+            await startEmailSubsystemIfConfigured()
 
             let msg = WSMessage(
-                type: WSMessageType.emailAuthStartResult,
+                type: WSMessageType.emailConnected,
                 metadata: [
-                    "authUrl": .string(authUrl),
+                    "emailAddress": .string(emailAddress),
+                    "inboxId": .string(inboxId),
                     "success": .bool(true)
                 ]
             )
             try? await client.send(msg)
-
-            // Wait for callback completion in background
-            Task {
-                if let emailConfig = try? await authService.waitForCallback() {
-                    // Start the email subsystem
-                    await self.startEmailSubsystemIfConfigured()
-
-                    let completeMsg = WSMessage(
-                        type: WSMessageType.emailAuthComplete,
-                        metadata: [
-                            "emailAddress": .string(emailConfig.emailAddress),
-                            "success": .bool(true)
-                        ]
-                    )
-                    await self.server.broadcast(completeMsg)
-                }
-            }
         } catch {
-            await sendError(to: client, message: "Failed to start auth flow: \(error.localizedDescription)", code: "AUTH_ERROR")
+            await sendError(to: client, message: "Failed to save email config: \(error.localizedDescription)", code: "CONFIG_ERROR")
         }
     }
 
@@ -1097,7 +1111,7 @@ actor DaemonApp {
         // Stop polling
         await emailPollingService?.stop()
         self.emailPollingService = nil
-        self.gmailClient = nil
+        self.agentMailClient = nil
         self.emailConversationBridge = nil
 
         // Delete config
@@ -1240,6 +1254,37 @@ actor DaemonApp {
             try? await client.send(msg)
         } catch {
             await sendError(to: client, message: "Failed to delete trigger: \(error)", code: "STORAGE_ERROR")
+        }
+    }
+
+    private func handleEmailMessagesList(client: WebSocketClient) async {
+        guard let agentMail = agentMailClient else {
+            await sendError(to: client, message: "Email not configured", code: "NOT_CONFIGURED")
+            return
+        }
+
+        do {
+            let messages = try await agentMail.listMessages(limit: 50)
+            let formatter = ISO8601DateFormatter()
+
+            let items = messages.map { msg -> MetadataValue in
+                .object([
+                    "id": .string(msg.id),
+                    "from": .string(msg.from),
+                    "subject": .string(msg.subject),
+                    "date": .string(formatter.string(from: msg.receivedAt)),
+                    "preview": .string(String(msg.bodyText.prefix(100)).replacingOccurrences(of: "\n", with: " ")),
+                    "attachmentCount": .int(msg.attachments.count)
+                ])
+            }
+
+            let msg = WSMessage(
+                type: WSMessageType.emailMessagesListResult,
+                metadata: ["messages": .array(items)]
+            )
+            try? await client.send(msg)
+        } catch {
+            await sendError(to: client, message: "Failed to list emails: \(error.localizedDescription)", code: "EMAIL_ERROR")
         }
     }
 
@@ -1488,6 +1533,172 @@ actor DaemonApp {
         }
     }
 
+    // MARK: - Shared Workflow Builder
+
+    /// Build a workflow from a natural language prompt using Claude.
+    /// Shared between handleBuildWorkflow (WebSocket) and EmailConversationBridge (email briefs).
+    func buildWorkflowFromPrompt(_ prompt: String) async -> WorkflowDefinition? {
+        guard config.apiKey != nil else {
+            Logger.error("buildWorkflowFromPrompt: No ANTHROPIC_API_KEY configured")
+            return nil
+        }
+
+        let tools = await mcpManager.getTools()
+        let toolCatalog = tools.map { tool -> String in
+            var entry = "- \(tool.name) (server: \(tool.serverName)): \(tool.description)"
+            if case .object(let schema) = tool.inputSchema,
+               case .object(let props) = schema["properties"] {
+                let required: [String]
+                if case .array(let reqArr) = schema["required"] {
+                    required = reqArr.compactMap { if case .string(let s) = $0 { return s }; return nil }
+                } else {
+                    required = []
+                }
+                let params = props.keys.sorted().map { key -> String in
+                    let isReq = required.contains(key)
+                    let desc: String
+                    if case .object(let propObj) = props[key],
+                       case .string(let d) = propObj["description"] {
+                        desc = d
+                    } else {
+                        desc = ""
+                    }
+                    return "    \(key)\(isReq ? " (required)" : ""): \(desc)"
+                }.joined(separator: "\n")
+                if !params.isEmpty {
+                    entry += "\n  Parameters:\n\(params)"
+                }
+            }
+            return entry
+        }.joined(separator: "\n")
+
+        let systemPrompt = """
+        You are a workflow builder for the love.Me automation system. The user will describe a workflow in natural language. You must generate a valid workflow JSON object.
+
+        Available MCP tools:
+        \(toolCatalog.isEmpty ? "No MCP tools currently connected." : toolCatalog)
+
+        Output ONLY a valid JSON object (no markdown, no explanation) with this exact schema:
+        {
+          "name": "Workflow Name",
+          "description": "What this workflow does",
+          "schedule": "natural language schedule like 'every 5 minutes'",
+          "steps": [
+            {
+              "name": "Step Name",
+              "toolName": "exact_tool_name_from_catalog",
+              "serverName": "exact_server_name_from_catalog",
+              "needsConfiguration": false,
+              "inputs": {
+                "paramName": "value"
+              }
+            }
+          ]
+        }
+
+        Rules:
+        - Map user descriptions to real tools from the catalog when possible
+        - If no matching tool exists, set toolName to a descriptive placeholder and needsConfiguration to true
+        - Steps are linear (executed top-to-bottom in sequence)
+        - Use the user's language for step names (human-readable)
+        - The schedule field should be natural language (will be parsed to cron separately)
+        - Keep step count minimal — only what the user described
+        - IMPORTANT: Always include the "inputs" object with all required parameters for each tool
+        - Generate creative, sensible default values for inputs based on what the user asked for
+        - For code execution tools, write the actual code that accomplishes the user's goal
+        """
+
+        let userMessage = MessageParam(role: "user", text: prompt)
+
+        do {
+            let responseText = try await claudeClient.singleRequest(
+                messages: [userMessage],
+                systemPrompt: systemPrompt
+            )
+
+            var cleanedText = responseText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if cleanedText.hasPrefix("```") {
+                if let firstNewline = cleanedText.firstIndex(of: "\n") {
+                    cleanedText = String(cleanedText[cleanedText.index(after: firstNewline)...])
+                }
+                if cleanedText.hasSuffix("```") {
+                    cleanedText = String(cleanedText.dropLast(3)).trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+            }
+
+            guard let jsonData = cleanedText.data(using: .utf8) else {
+                Logger.error("buildWorkflowFromPrompt: Invalid response from AI")
+                return nil
+            }
+
+            struct AIWorkflow: Codable {
+                let name: String
+                let description: String
+                let schedule: String
+                let steps: [AIStep]
+            }
+            struct AIStep: Codable {
+                let name: String
+                let toolName: String
+                let serverName: String
+                let needsConfiguration: Bool?
+                let inputs: [String: JSONValue]?
+            }
+
+            let aiWorkflow = try JSONDecoder().decode(AIWorkflow.self, from: jsonData)
+            let scheduleResult = NaturalScheduleParser.parse(aiWorkflow.schedule)
+            let cronExpression = scheduleResult?.cron ?? "0 * * * *"
+
+            var steps: [WorkflowStep] = []
+            var previousStepId: String?
+
+            for aiStep in aiWorkflow.steps {
+                let stepId = UUID().uuidString
+                var inputTemplate: [String: StringOrVariable] = [:]
+
+                if let inputs = aiStep.inputs {
+                    for (key, value) in inputs {
+                        switch value {
+                        case .string(let str):
+                            inputTemplate[key] = .literal(str)
+                        default:
+                            inputTemplate[key] = .literal(value.toJSONString())
+                        }
+                    }
+                }
+
+                var dependsOn: [String]?
+                if let prevId = previousStepId {
+                    dependsOn = [prevId]
+                }
+
+                steps.append(WorkflowStep(
+                    id: stepId,
+                    name: aiStep.name,
+                    toolName: aiStep.toolName,
+                    serverName: aiStep.serverName,
+                    inputTemplate: inputTemplate,
+                    dependsOn: dependsOn,
+                    onError: .stop
+                ))
+                previousStepId = stepId
+            }
+
+            return WorkflowDefinition(
+                id: UUID().uuidString,
+                name: aiWorkflow.name,
+                description: aiWorkflow.description,
+                enabled: true,
+                trigger: .cron(expression: cronExpression),
+                steps: steps
+            )
+
+        } catch {
+            Logger.error("buildWorkflowFromPrompt: \(error)")
+            return nil
+        }
+    }
+
     /// Convert JSONValue to MetadataValue for WebSocket transport
     private func metadataFromJSON(_ json: JSONValue) -> MetadataValue {
         switch json {
@@ -1563,6 +1774,17 @@ actor DaemonApp {
         if triggerType == "cron" {
             let expression = metadata["cronExpression"]?.stringValue ?? "0 * * * *"
             trigger = .cron(expression: expression)
+        } else if triggerType == "manual" {
+            var inputParams: [InputParam]?
+            if case .array(let items) = metadata["inputParams"] {
+                inputParams = items.compactMap { item -> InputParam? in
+                    guard case .object(let dict) = item,
+                          let name = dict["name"]?.stringValue,
+                          let label = dict["label"]?.stringValue else { return nil }
+                    return InputParam(name: name, label: label, placeholder: dict["placeholder"]?.stringValue)
+                }
+            }
+            trigger = .manual(inputParams: inputParams)
         } else {
             let source = metadata["eventSource"]?.stringValue ?? ""
             let eventType = metadata["eventType"]?.stringValue ?? ""
@@ -1578,10 +1800,14 @@ actor DaemonApp {
                     var inputTemplate: [String: StringOrVariable] = [:]
                     if case .object(let inputDict) = stepDict["inputTemplate"] {
                         for (key, val) in inputDict {
-                            if case .object(let varObj) = val,
-                               let stepId = varObj["stepId"]?.stringValue,
-                               let jsonPath = varObj["jsonPath"]?.stringValue {
-                                inputTemplate[key] = .variable(stepId: stepId, jsonPath: jsonPath)
+                            if case .object(let varObj) = val {
+                                if varObj["type"]?.stringValue == "template",
+                                   let templateValue = varObj["value"]?.stringValue {
+                                    inputTemplate[key] = .template(templateValue)
+                                } else if let stepId = varObj["stepId"]?.stringValue,
+                                          let jsonPath = varObj["jsonPath"]?.stringValue {
+                                    inputTemplate[key] = .variable(stepId: stepId, jsonPath: jsonPath)
+                                }
                             } else if let strVal = val.stringValue {
                                 inputTemplate[key] = .literal(strVal)
                             }
@@ -1659,6 +1885,20 @@ actor DaemonApp {
                 for (k, v) in filter { filterDict[k] = .string(v) }
                 dict["eventFilter"] = .object(filterDict)
             }
+        case .manual(let inputParams):
+            dict["triggerType"] = .string("manual")
+            if let params = inputParams {
+                dict["inputParams"] = .array(params.map { param in
+                    var paramDict: [String: MetadataValue] = [
+                        "name": .string(param.name),
+                        "label": .string(param.label)
+                    ]
+                    if let placeholder = param.placeholder {
+                        paramDict["placeholder"] = .string(placeholder)
+                    }
+                    return .object(paramDict)
+                })
+            }
         }
 
         // Encode steps
@@ -1682,6 +1922,11 @@ actor DaemonApp {
                         inputDict[key] = .object([
                             "stepId": .string(stepId),
                             "jsonPath": .string(jsonPath)
+                        ])
+                    case .template(let templateStr):
+                        inputDict[key] = .object([
+                            "type": .string("template"),
+                            "value": .string(templateStr)
                         ])
                     }
                 }

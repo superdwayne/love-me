@@ -6,6 +6,7 @@ struct StoredConversation: Codable, Sendable {
     var title: String
     let created: Date
     var messages: [StoredMessage]
+    var sourceType: String?  // "email" for email conversations, nil for chat
 
     var lastMessageAt: Date {
         messages.last?.timestamp ?? created
@@ -36,6 +37,7 @@ struct ConversationSummary: Sendable {
     let title: String
     let lastMessageAt: Date
     let messageCount: Int
+    let sourceType: String?
 }
 
 /// Persistence layer for conversations
@@ -58,12 +60,13 @@ actor ConversationStore {
     }
 
     /// Create a new conversation
-    func create(title: String? = nil) throws -> StoredConversation {
+    func create(title: String? = nil, sourceType: String? = nil) throws -> StoredConversation {
         let conversation = StoredConversation(
             id: UUID().uuidString,
             title: title ?? "New Conversation",
             created: Date(),
-            messages: []
+            messages: [],
+            sourceType: sourceType
         )
         try save(conversation)
         return conversation
@@ -90,11 +93,13 @@ actor ConversationStore {
             conversation = try load(id: conversationId)
         } catch {
             // Auto-create conversation if it doesn't exist
+            let sourceType = message.metadata?["sourceType"]
             conversation = StoredConversation(
                 id: conversationId,
                 title: "New Conversation",
                 created: Date(),
-                messages: []
+                messages: [],
+                sourceType: sourceType
             )
         }
 
@@ -127,7 +132,8 @@ actor ConversationStore {
                     id: conv.id,
                     title: conv.title,
                     lastMessageAt: conv.lastMessageAt,
-                    messageCount: conv.messageCount
+                    messageCount: conv.messageCount,
+                    sourceType: conv.sourceType
                 ))
             } catch {
                 Logger.error("Failed to load conversation from \(file): \(error)")

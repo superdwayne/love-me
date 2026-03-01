@@ -38,12 +38,20 @@ struct WorkflowDefinition: Codable, Sendable {
 
 // MARK: - Trigger
 
+/// Parameters that a manual-trigger workflow can accept at run time.
+struct InputParam: Codable, Sendable {
+    let name: String         // e.g. "figma_url"
+    let label: String        // e.g. "Figma File URL"
+    let placeholder: String? // e.g. "https://www.figma.com/design/..."
+}
+
 enum WorkflowTrigger: Codable, Sendable {
     case cron(expression: String)
     case event(source: String, eventType: String, filter: [String: String]?)
+    case manual(inputParams: [InputParam]?)
 
     private enum CodingKeys: String, CodingKey {
-        case type, expression, source, eventType, filter
+        case type, expression, source, eventType, filter, inputParams
     }
 
     init(from decoder: Decoder) throws {
@@ -58,6 +66,9 @@ enum WorkflowTrigger: Codable, Sendable {
             let eventType = try container.decode(String.self, forKey: .eventType)
             let filter = try container.decodeIfPresent([String: String].self, forKey: .filter)
             self = .event(source: source, eventType: eventType, filter: filter)
+        case "manual":
+            let inputParams = try container.decodeIfPresent([InputParam].self, forKey: .inputParams)
+            self = .manual(inputParams: inputParams)
         default:
             throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Unknown trigger type: \(type)")
         }
@@ -74,6 +85,9 @@ enum WorkflowTrigger: Codable, Sendable {
             try container.encode(source, forKey: .source)
             try container.encode(eventType, forKey: .eventType)
             try container.encodeIfPresent(filter, forKey: .filter)
+        case .manual(let inputParams):
+            try container.encode("manual", forKey: .type)
+            try container.encodeIfPresent(inputParams, forKey: .inputParams)
         }
     }
 }
@@ -113,6 +127,9 @@ struct WorkflowStep: Codable, Sendable {
 enum StringOrVariable: Codable, Sendable {
     case literal(String)
     case variable(stepId: String, jsonPath: String)
+    /// Template string with `{{stepId.jsonPath}}` placeholders.
+    /// Use `$` as jsonPath to inject the entire step output.
+    case template(String)
 
     private enum CodingKeys: String, CodingKey {
         case type, value, stepId, jsonPath
@@ -129,6 +146,9 @@ enum StringOrVariable: Codable, Sendable {
             let stepId = try container.decode(String.self, forKey: .stepId)
             let jsonPath = try container.decode(String.self, forKey: .jsonPath)
             self = .variable(stepId: stepId, jsonPath: jsonPath)
+        case "template":
+            let value = try container.decode(String.self, forKey: .value)
+            self = .template(value)
         default:
             throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Unknown StringOrVariable type: \(type)")
         }
@@ -144,6 +164,9 @@ enum StringOrVariable: Codable, Sendable {
             try container.encode("variable", forKey: .type)
             try container.encode(stepId, forKey: .stepId)
             try container.encode(jsonPath, forKey: .jsonPath)
+        case .template(let value):
+            try container.encode("template", forKey: .type)
+            try container.encode(value, forKey: .value)
         }
     }
 
@@ -155,8 +178,46 @@ enum StringOrVariable: Codable, Sendable {
         case .variable(let stepId, let jsonPath):
             guard let output = stepOutputs[stepId] else { return "" }
             return extractJSONPath(from: output, path: jsonPath)
+        case .template(let templateString):
+            return resolveTemplate(templateString, with: stepOutputs)
         }
     }
+}
+
+/// Resolve `{{stepId.jsonPath}}` placeholders in a template string.
+/// Use `{{stepId.$}}` to inject the entire output of that step.
+private func resolveTemplate(_ template: String, with stepOutputs: [String: String]) -> String {
+    // Match {{stepId.jsonPath}} or {{stepId.$}}
+    let pattern = #"\{\{([^.}]+)\.([^}]+)\}\}"#
+    guard let regex = try? NSRegularExpression(pattern: pattern) else {
+        return template
+    }
+
+    let nsTemplate = template as NSString
+    let matches = regex.matches(in: template, range: NSRange(location: 0, length: nsTemplate.length))
+
+    var result = template
+    // Replace in reverse order to preserve ranges
+    for match in matches.reversed() {
+        let stepId = nsTemplate.substring(with: match.range(at: 1))
+        let jsonPath = nsTemplate.substring(with: match.range(at: 2))
+        let fullMatch = nsTemplate.substring(with: match.range)
+
+        guard let output = stepOutputs[stepId] else {
+            result = result.replacingOccurrences(of: fullMatch, with: "")
+            continue
+        }
+
+        let replacement: String
+        if jsonPath == "$" {
+            replacement = output
+        } else {
+            replacement = extractJSONPath(from: output, path: jsonPath)
+        }
+        result = result.replacingOccurrences(of: fullMatch, with: replacement)
+    }
+
+    return result
 }
 
 // MARK: - Error Policy
@@ -292,6 +353,9 @@ struct WorkflowSummary: Codable, Sendable {
         case .event(let source, let eventType, _):
             self.triggerType = "event"
             self.triggerDetail = "\(source):\(eventType)"
+        case .manual(let inputParams):
+            self.triggerType = "manual"
+            self.triggerDetail = inputParams.map { "\($0.count) input(s)" } ?? "no inputs"
         }
 
         self.lastRunStatus = lastExecution?.status.rawValue

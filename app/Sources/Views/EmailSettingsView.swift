@@ -1,16 +1,10 @@
 import SwiftUI
 
 struct EmailSettingsView: View {
-    @Environment(WebSocketClient.self) private var webSocket
+    @Environment(EmailViewModel.self) private var emailVM
     @Environment(\.dismiss) private var dismiss
 
-    @State private var isEmailConnected = false
-    @State private var connectedEmail = ""
-    @State private var lastPollTime: String?
-    @State private var emailsProcessed = 0
-    @State private var pollingInterval = 60
     @State private var showDisconnectAlert = false
-    @State private var isConnecting = false
 
     private let pollingOptions: [(label: String, seconds: Int)] = [
         ("1 min", 60),
@@ -23,7 +17,7 @@ struct EmailSettingsView: View {
         List {
             statusSection
             connectionSection
-            if isEmailConnected {
+            if emailVM.isEmailConnected {
                 statsSection
                 pollingSection
             }
@@ -31,13 +25,13 @@ struct EmailSettingsView: View {
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(.appBackground)
-        .navigationTitle("Email")
+        .navigationTitle("Agent Mail")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.appBackground, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
-        .animation(.easeInOut(duration: LoveMeTheme.springDuration), value: isEmailConnected)
+        .animation(.easeInOut(duration: LoveMeTheme.springDuration), value: emailVM.isEmailConnected)
         .onAppear {
-            requestEmailStatus()
+            emailVM.requestEmailStatus()
         }
     }
 
@@ -50,7 +44,7 @@ struct EmailSettingsView: View {
                     .font(.chatMessage)
                     .foregroundStyle(.textPrimary)
                 Spacer()
-                if isEmailConnected {
+                if emailVM.isEmailConnected {
                     HStack(spacing: LoveMeTheme.sm) {
                         Circle()
                             .fill(Color.sageGreen)
@@ -69,15 +63,15 @@ struct EmailSettingsView: View {
             }
             .frame(minHeight: LoveMeTheme.minTouchTarget)
             .listRowBackground(Color.surface)
-            .accessibilityLabel("Email status: \(isEmailConnected ? "Connected" : "Not connected")")
+            .accessibilityLabel("Email status: \(emailVM.isEmailConnected ? "Connected" : "Not connected")")
 
-            if isEmailConnected {
+            if emailVM.isEmailConnected {
                 HStack {
                     Text("Account")
                         .font(.chatMessage)
                         .foregroundStyle(.textPrimary)
                     Spacer()
-                    Text(connectedEmail)
+                    Text(emailVM.connectedEmail)
                         .font(.toolDetail)
                         .foregroundStyle(.trust)
                         .lineLimit(1)
@@ -85,7 +79,7 @@ struct EmailSettingsView: View {
                 }
                 .frame(minHeight: LoveMeTheme.minTouchTarget)
                 .listRowBackground(Color.surface)
-                .accessibilityLabel("Connected account: \(connectedEmail)")
+                .accessibilityLabel("Connected account: \(emailVM.connectedEmail)")
             }
         } header: {
             Text("ACCOUNT")
@@ -97,13 +91,13 @@ struct EmailSettingsView: View {
 
     private var connectionSection: some View {
         Section {
-            if isEmailConnected {
+            if emailVM.isEmailConnected {
                 Button(role: .destructive) {
                     showDisconnectAlert = true
                 } label: {
                     HStack {
                         Spacer()
-                        Text("Disconnect Gmail")
+                        Text("Disconnect Agent Mail")
                             .font(.chatMessage)
                             .foregroundStyle(.softRed)
                         Spacer()
@@ -111,55 +105,21 @@ struct EmailSettingsView: View {
                 }
                 .frame(minHeight: LoveMeTheme.minTouchTarget)
                 .listRowBackground(Color.surface)
-                .accessibilityLabel("Disconnect Gmail account")
-                .alert("Disconnect Email", isPresented: $showDisconnectAlert) {
+                .accessibilityLabel("Disconnect Agent Mail account")
+                .alert("Disconnect Agent Mail", isPresented: $showDisconnectAlert) {
                     Button("Cancel", role: .cancel) { }
                     Button("Disconnect", role: .destructive) {
-                        disconnectEmail()
+                        emailVM.disconnectEmail()
                     }
                 } message: {
-                    Text("Are you sure you want to disconnect your Gmail account? Email triggers will stop working.")
+                    Text("Are you sure you want to disconnect Agent Mail? Email triggers and auto-workflows will stop working.")
                 }
-            } else {
-                Button {
-                    connectGmail()
-                } label: {
-                    HStack {
-                        Spacer()
-                        connectButtonLabel
-                        Spacer()
-                    }
-                }
-                .frame(minHeight: LoveMeTheme.minTouchTarget)
-                .listRowBackground(Color.surface)
-                .accessibilityLabel(isConnecting ? "Connecting to Gmail" : "Connect Gmail account")
             }
         } header: {
             Text("CONNECTION")
                 .font(.sectionHeader)
                 .foregroundStyle(.trust)
                 .tracking(1.2)
-        }
-    }
-
-    @ViewBuilder
-    private var connectButtonLabel: some View {
-        if isConnecting {
-            HStack(spacing: LoveMeTheme.sm) {
-                ProgressView()
-                    .scaleEffect(0.8)
-                    .tint(.trust)
-                Text("Connecting...")
-                    .font(.chatMessage)
-                    .foregroundStyle(.trust)
-            }
-        } else {
-            HStack(spacing: LoveMeTheme.sm) {
-                Image(systemName: "envelope.fill")
-                Text("Connect Gmail")
-                    .font(.chatMessage)
-            }
-            .foregroundStyle(.heart)
         }
     }
 
@@ -174,14 +134,14 @@ struct EmailSettingsView: View {
                     .font(.chatMessage)
                     .foregroundStyle(.textPrimary)
                 Spacer()
-                Text("\(emailsProcessed)")
+                Text("\(emailVM.emailsProcessed)")
                     .font(.toolTitle)
                     .foregroundStyle(.trust)
                     .monospacedDigit()
             }
             .frame(minHeight: LoveMeTheme.minTouchTarget)
             .listRowBackground(Color.surface)
-            .accessibilityLabel("Emails processed: \(emailsProcessed)")
+            .accessibilityLabel("Emails processed: \(emailVM.emailsProcessed)")
 
             HStack(spacing: LoveMeTheme.md) {
                 Image(systemName: "clock.fill")
@@ -192,13 +152,13 @@ struct EmailSettingsView: View {
                     .font(.chatMessage)
                     .foregroundStyle(.textPrimary)
                 Spacer()
-                Text(lastPollTime ?? "Never")
+                Text(emailVM.lastPollTime ?? "Never")
                     .font(.toolDetail)
                     .foregroundStyle(.trust)
             }
             .frame(minHeight: LoveMeTheme.minTouchTarget)
             .listRowBackground(Color.surface)
-            .accessibilityLabel("Last poll: \(lastPollTime ?? "Never")")
+            .accessibilityLabel("Last poll: \(emailVM.lastPollTime ?? "Never")")
         } header: {
             Text("ACTIVITY")
                 .font(.sectionHeader)
@@ -209,7 +169,8 @@ struct EmailSettingsView: View {
 
     private var pollingSection: some View {
         Section {
-            Picker(selection: $pollingInterval) {
+            @Bindable var vm = emailVM
+            Picker(selection: $vm.pollingInterval) {
                 ForEach(pollingOptions, id: \.seconds) { option in
                     Text(option.label).tag(option.seconds)
                 }
@@ -228,8 +189,8 @@ struct EmailSettingsView: View {
             .frame(minHeight: LoveMeTheme.minTouchTarget)
             .listRowBackground(Color.surface)
             .accessibilityLabel("Polling interval")
-            .onChange(of: pollingInterval) { _, newValue in
-                updatePollingInterval(newValue)
+            .onChange(of: emailVM.pollingInterval) { _, newValue in
+                emailVM.updatePollingInterval(newValue)
             }
         } header: {
             Text("POLLING")
@@ -242,80 +203,5 @@ struct EmailSettingsView: View {
                 .foregroundStyle(.trust)
                 .padding(.top, LoveMeTheme.xs)
         }
-    }
-
-    // MARK: - Actions
-
-    private func requestEmailStatus() {
-        webSocket.send(WSMessage(type: WSMessageType.emailStatus))
-    }
-
-    private func connectGmail() {
-        isConnecting = true
-        HapticManager.messageSent()
-        webSocket.send(WSMessage(type: WSMessageType.emailAuthStart))
-
-        // The daemon will respond with an auth URL via a message.
-        // The app's message router should handle opening it in Safari
-        // and updating isConnecting when the auth flow completes.
-    }
-
-    private func disconnectEmail() {
-        HapticManager.connectionLost()
-        webSocket.send(WSMessage(type: WSMessageType.emailAuthDisconnect))
-        withAnimation(.easeInOut(duration: LoveMeTheme.springDuration)) {
-            isEmailConnected = false
-            connectedEmail = ""
-            lastPollTime = nil
-            emailsProcessed = 0
-        }
-    }
-
-    private func updatePollingInterval(_ seconds: Int) {
-        webSocket.send(WSMessage(
-            type: WSMessageType.emailUpdatePolling,
-            metadata: ["intervalSeconds": .int(seconds)]
-        ))
-    }
-
-    // MARK: - Message Handling
-
-    /// Called by the app's message router when email status messages arrive.
-    func handleEmailStatus(_ msg: WSMessage) {
-        guard let meta = msg.metadata else { return }
-
-        if let connected = meta["connected"]?.boolValue {
-            isEmailConnected = connected
-        }
-        if let email = meta["email"]?.stringValue {
-            connectedEmail = email
-        }
-        if let lastPoll = meta["lastPollTime"]?.stringValue {
-            lastPollTime = lastPoll
-        }
-        if let processed = meta["emailsProcessed"]?.intValue {
-            emailsProcessed = processed
-        }
-        if let interval = meta["pollingInterval"]?.intValue {
-            pollingInterval = interval
-        }
-
-        // Clear connecting state if auth completed
-        if isConnecting && isEmailConnected {
-            isConnecting = false
-            HapticManager.connectionEstablished()
-        }
-    }
-
-    /// Called when the daemon returns an auth URL to open in Safari.
-    func handleAuthURL(_ msg: WSMessage) {
-        guard let urlString = msg.metadata?["url"]?.stringValue,
-              let url = URL(string: urlString) else {
-            isConnecting = false
-            HapticManager.toolError()
-            return
-        }
-
-        UIApplication.shared.open(url)
     }
 }

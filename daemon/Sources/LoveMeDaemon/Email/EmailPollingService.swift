@@ -14,12 +14,12 @@ enum EmailPollingError: Error, LocalizedError {
         case .alreadyRunning:
             return "Email polling is already running"
         case .clientNotAvailable:
-            return "Gmail client is not available"
+            return "AgentMail client is not available"
         }
     }
 }
 
-/// Polls Gmail for new messages on a configurable interval, publishes events to `EventBus`,
+/// Polls AgentMail for new messages on a configurable interval, publishes events to `EventBus`,
 /// and invokes an `onEmailReceived` callback for each new message.
 ///
 /// State (last-seen message ID/timestamp) is persisted to the specified state file path
@@ -29,7 +29,7 @@ actor EmailPollingService {
 
     // MARK: - Dependencies
 
-    private let gmailClient: GmailClient
+    private let agentMailClient: AgentMailClient
     private let eventBus: EventBus
     private let configStore: EmailConfigStore
 
@@ -75,13 +75,8 @@ actor EmailPollingService {
 
     // MARK: - Init
 
-    /// - Parameters:
-    ///   - gmailClient: The Gmail API client for fetching messages.
-    ///   - eventBus: The event bus for publishing `WorkflowEvent`s.
-    ///   - configStore: The email configuration store (provides polling interval).
-    ///   - statePath: Full file path for persisting `EmailPollingState` (e.g. `~/.love-me/email-state.json`).
-    init(gmailClient: GmailClient, eventBus: EventBus, configStore: EmailConfigStore, statePath: String) {
-        self.gmailClient = gmailClient
+    init(agentMailClient: AgentMailClient, eventBus: EventBus, configStore: EmailConfigStore, statePath: String) {
+        self.agentMailClient = agentMailClient
         self.eventBus = eventBus
         self.configStore = configStore
         self.stateFilePath = statePath
@@ -90,15 +85,12 @@ actor EmailPollingService {
 
     // MARK: - Public API
 
-    /// Set the callback invoked for each new email. This is how `EmailConversationBridge` receives emails.
-    ///
-    /// The handler is called once per new email, from within the polling actor's context.
+    /// Set the callback invoked for each new email.
     func setOnEmailReceived(_ handler: @escaping EmailHandler) {
         self.onEmailReceived = handler
     }
 
     /// Start the polling loop. Loads persisted state and begins periodic fetches.
-    /// Logs a warning and returns if email is not configured or polling is already active.
     func start() async {
         guard !isRunning else {
             Logger.info("EmailPollingService: already running, ignoring start()")
@@ -157,7 +149,6 @@ actor EmailPollingService {
     }
 
     /// Trigger an immediate poll and return the number of new emails processed.
-    /// This is used by the "poll now" WebSocket command for on-demand checks.
     func pollNow() async -> Int {
         let beforeCount = pollingState.totalProcessed
         await pollOnce()
@@ -169,35 +160,30 @@ actor EmailPollingService {
     /// Execute a single poll cycle: fetch new messages, process them, persist state.
     private func pollOnce() async {
         do {
-            let query = buildQuery()
-            let (summaries, _) = try await gmailClient.listMessages(query: query, maxResults: 20, pageToken: nil)
+            // AgentMail returns full messages from list (no two-step fetch)
+            let afterDate = pollingState.lastSeenTimestamp ?? Date().addingTimeInterval(-3600)
+            let messages = try await agentMailClient.listMessages(after: afterDate, limit: 20)
 
-            if summaries.isEmpty {
+            if messages.isEmpty {
                 Logger.info("EmailPollingService: poll complete, no new emails")
                 resetBackoff()
                 return
             }
 
-            Logger.info("EmailPollingService: poll found \(summaries.count) new message(s)")
+            Logger.info("EmailPollingService: poll found \(messages.count) new message(s)")
 
-            // Process each message (newest messages come first from Gmail; process oldest first)
-            for summary in summaries.reversed() {
+            // Process oldest first (API returns newest first)
+            for message in messages.reversed() {
                 // Skip if we already processed this message
-                if let lastId = pollingState.lastSeenMessageId, summary.id == lastId {
+                if let lastId = pollingState.lastSeenMessageId, message.id == lastId {
                     continue
                 }
 
-                do {
-                    let message = try await gmailClient.getMessage(id: summary.id)
-                    await processNewEmail(message)
-                } catch {
-                    Logger.error("EmailPollingService: failed to fetch message \(summary.id): \(error)")
-                    // Continue processing other messages
-                }
+                await processNewEmail(message)
             }
 
             // Update last-seen marker to the newest message
-            if let newest = summaries.first {
+            if let newest = messages.first {
                 pollingState.lastSeenMessageId = newest.id
                 pollingState.lastSeenTimestamp = Date()
             }
@@ -209,19 +195,6 @@ actor EmailPollingService {
             Logger.error("EmailPollingService: poll failed: \(error)")
             applyBackoff()
         }
-    }
-
-    /// Build the Gmail search query. Uses `after:` timestamp if we have a last-seen date,
-    /// otherwise fetches recent messages.
-    private func buildQuery() -> String {
-        if let lastTimestamp = pollingState.lastSeenTimestamp {
-            // Gmail "after:" uses epoch seconds
-            let epoch = Int(lastTimestamp.timeIntervalSince1970)
-            return "after:\(epoch)"
-        }
-        // First poll: only fetch emails from the last hour to avoid flooding
-        let oneHourAgo = Int(Date().timeIntervalSince1970) - 3600
-        return "after:\(oneHourAgo)"
     }
 
     /// Process a single new email: publish event to EventBus and invoke callback.

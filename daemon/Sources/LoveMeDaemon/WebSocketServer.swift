@@ -88,6 +88,7 @@ actor WebSocketServer {
         }
 
         let newListener = try NWListener(using: params, on: nwPort)
+        newListener.service = NWListener.Service(name: "love.Me", type: "_loveme._tcp")
 
         newListener.stateUpdateHandler = { state in
             switch state {

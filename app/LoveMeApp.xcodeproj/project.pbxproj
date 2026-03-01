@@ -3,11 +3,13 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 63;
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A1B2C3D4E5F60718192A3B4C /* BonjourBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718192A3B4D /* BonjourBrowser.swift */; };
 		024660B030D9DA2FD44FDEB8 /* WorkflowDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29CD3B3FA7ED7CF3391BABF3 /* WorkflowDetailView.swift */; };
+		172E26AE31E9D15D29FAD710 /* EmailSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBAB90B5366DFAAC1309B6DD /* EmailSettingsView.swift */; };
 		2736A36EB25810A9D548FA20 /* WorkflowPreviewCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B1C0551B102E349B32CA49D /* WorkflowPreviewCard.swift */; };
 		2E7199394B1B105CA8148A12 /* WorkflowBuilderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 250210591A3F2F9DE821065B /* WorkflowBuilderView.swift */; };
 		3514D4B93B2480FB3D3D3BA9 /* ThinkingPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D575BD1A5173A3916F7D9AD /* ThinkingPanel.swift */; };
@@ -30,16 +32,18 @@
 		9CC0D236A5455DAEE7FC74BF /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C934430A65F81F55D43D411 /* Theme.swift */; };
 		AA9E5F8314511AB6F624A1FB /* WebSocketMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ADC742D1AC83496380B9613 /* WebSocketMessage.swift */; };
 		B211458F665A84895FF44520 /* InputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B108799742FC44169DE33DA4 /* InputBar.swift */; };
-		172E26AE31E9D15D29FAD710 /* EmailSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBAB90B5366DFAAC1309B6DD /* EmailSettingsView.swift */; };
-		EA734A29167DC252BE3C0512 /* EmailTriggersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 507B46DABC0079BDC637D157 /* EmailTriggersView.swift */; };
 		B9DBB28048FDED103A899627 /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 721D711231E025E6E7D22354 /* EmptyStateView.swift */; };
 		C8CDB55A0E0A1A1B221CA908 /* WorkflowExecutionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 239984BDB5B06C5F5AA127E9 /* WorkflowExecutionView.swift */; };
 		EA22E42948C42A43394268EF /* ConversationListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F9683C6A0C7EACE0FA68AD9 /* ConversationListView.swift */; };
+		E1F4A83D2C7B9E0F00A1B2C3 /* EmailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F4A83C2C7B9E0F00A1B2C3 /* EmailViewModel.swift */; };
+		EA734A29167DC252BE3C0512 /* EmailTriggersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 507B46DABC0079BDC637D157 /* EmailTriggersView.swift */; };
 		F3FBD3E8F4B303D2F519D76A /* ConnectionBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBE12B2E96ED817B70C3B6FD /* ConnectionBanner.swift */; };
 		F4387B295CC63DBF3DE864D0 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 176BC2E06CFDBA18907AA518 /* ContentView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A1B2C3D4E5F60718192A3B4D /* BonjourBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BonjourBrowser.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718192A3B4E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		176BC2E06CFDBA18907AA518 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		20A39B3AA07F0FD11EBA9239 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		239984BDB5B06C5F5AA127E9 /* WorkflowExecutionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowExecutionView.swift; sourceTree = "<group>"; };
@@ -48,20 +52,20 @@
 		29CD3B3FA7ED7CF3391BABF3 /* WorkflowDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowDetailView.swift; sourceTree = "<group>"; };
 		2B1C0551B102E349B32CA49D /* WorkflowPreviewCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowPreviewCard.swift; sourceTree = "<group>"; };
 		329C17EDC450485F75098ECE /* WorkflowViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowViewModel.swift; sourceTree = "<group>"; };
+		E1F4A83C2C7B9E0F00A1B2C3 /* EmailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailViewModel.swift; sourceTree = "<group>"; };
 		34E2683792F27CE368A3B65B /* ToolCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolCard.swift; sourceTree = "<group>"; };
 		4D6DF452C51A884B99D83E4E /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		507B46DABC0079BDC637D157 /* EmailTriggersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailTriggersView.swift; sourceTree = "<group>"; };
 		5ADC742D1AC83496380B9613 /* WebSocketMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketMessage.swift; sourceTree = "<group>"; };
 		5C934430A65F81F55D43D411 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		5F9683C6A0C7EACE0FA68AD9 /* ConversationListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationListView.swift; sourceTree = "<group>"; };
-		FBAB90B5366DFAAC1309B6DD /* EmailSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailSettingsView.swift; sourceTree = "<group>"; };
-		507B46DABC0079BDC637D157 /* EmailTriggersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailTriggersView.swift; sourceTree = "<group>"; };
 		721D711231E025E6E7D22354 /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
 		7F78B1B97ED626ED28DBDA80 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
 		842D7A428DCA9812A2D6EAA6 /* MessageBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubble.swift; sourceTree = "<group>"; };
 		85CB1D36FFA570D9FADB0ADF /* WorkflowListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowListView.swift; sourceTree = "<group>"; };
 		8B743237B7D6998033A5C46A /* ConversationListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationListViewModel.swift; sourceTree = "<group>"; };
 		8D575BD1A5173A3916F7D9AD /* ThinkingPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinkingPanel.swift; sourceTree = "<group>"; };
-		98C597C81A9E6419B20EE2FB /* LoveMeApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = LoveMeApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		98C597C81A9E6419B20EE2FB /* LoveMeApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LoveMeApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9FA6350DDCEA9D963D5F3CB6 /* WebSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketClient.swift; sourceTree = "<group>"; };
 		A8394523FAC9063A0EFD32DB /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
 		B108799742FC44169DE33DA4 /* InputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputBar.swift; sourceTree = "<group>"; };
@@ -70,6 +74,7 @@
 		DB9CD2AD190B2666562291D5 /* MarkdownRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRenderer.swift; sourceTree = "<group>"; };
 		DBE12B2E96ED817B70C3B6FD /* ConnectionBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionBanner.swift; sourceTree = "<group>"; };
 		FA964706C90AB2ADB8F48737 /* WorkflowEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowEditorView.swift; sourceTree = "<group>"; };
+		FBAB90B5366DFAAC1309B6DD /* EmailSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailSettingsView.swift; sourceTree = "<group>"; };
 		FF610C4AEFAC2266E2E2CDBE /* Conversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Conversation.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -77,6 +82,7 @@
 		67BA5AFD83F05A3B927852DD /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				A1B2C3D4E5F60718192A3B4D /* BonjourBrowser.swift */,
 				D50AD61F5240C4A072DD9DDD /* HapticManager.swift */,
 				DB9CD2AD190B2666562291D5 /* MarkdownRenderer.swift */,
 				9FA6350DDCEA9D963D5F3CB6 /* WebSocketClient.swift */,
@@ -108,6 +114,7 @@
 			children = (
 				A8394523FAC9063A0EFD32DB /* ChatViewModel.swift */,
 				8B743237B7D6998033A5C46A /* ConversationListViewModel.swift */,
+				E1F4A83C2C7B9E0F00A1B2C3 /* EmailViewModel.swift */,
 				329C17EDC450485F75098ECE /* WorkflowViewModel.swift */,
 			);
 			path = ViewModels;
@@ -133,6 +140,7 @@
 			isa = PBXGroup;
 			children = (
 				7A7453811DD5B1830EA0DC50 /* App */,
+				A1B2C3D4E5F60718192A3B4E /* Info.plist */,
 				6DE0E69F8977FF120EE0C5FD /* Models */,
 				67BA5AFD83F05A3B927852DD /* Services */,
 				8E7AC94A36A626A64811B315 /* ViewModels */,
@@ -195,11 +203,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
-				TargetAttributes = {
-					198F911E9CF41F27F45261B2 = {
-						DevelopmentTeam = "";
-					};
-				};
 			};
 			buildConfigurationList = A4B5EA58786AA6F96045F2A8 /* Build configuration list for PBXProject "LoveMeApp" */;
 			compatibilityVersion = "Xcode 14.0";
@@ -211,7 +214,6 @@
 			);
 			mainGroup = C5BE4CBC6D02F2F172297DD3;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -225,6 +227,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1B2C3D4E5F60718192A3B4C /* BonjourBrowser.swift in Sources */,
 				58D3E2D1D250A008AACBD117 /* ChatView.swift in Sources */,
 				8D33F5BAE722580CC8D65538 /* ChatViewModel.swift in Sources */,
 				F3FBD3E8F4B303D2F519D76A /* ConnectionBanner.swift in Sources */,
@@ -234,6 +237,7 @@
 				461136E0BB5E451E9E610E4E /* ConversationListViewModel.swift in Sources */,
 				172E26AE31E9D15D29FAD710 /* EmailSettingsView.swift in Sources */,
 				EA734A29167DC252BE3C0512 /* EmailTriggersView.swift in Sources */,
+				E1F4A83D2C7B9E0F00A1B2C3 /* EmailViewModel.swift in Sources */,
 				B9DBB28048FDED103A899627 /* EmptyStateView.swift in Sources */,
 				49F265B8DD360D6B66FF3601 /* HapticManager.swift in Sources */,
 				B211458F665A84895FF44520 /* InputBar.swift in Sources */,
@@ -327,7 +331,9 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 936939DZC3;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Sources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = love.Me;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -419,7 +425,9 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 936939DZC3;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Sources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = love.Me;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

@@ -85,14 +85,12 @@ final class ConversationListViewModel {
             }
 
             let messageCount = dict["messageCount"]?.intValue ?? 0
-            let sourceType = dict["sourceType"]?.stringValue
 
             loaded.append(Conversation(
                 id: id,
                 title: title,
                 lastMessageAt: lastMessageAt,
-                messageCount: messageCount,
-                sourceType: sourceType
+                messageCount: messageCount
             ))
         }
 

@@ -2,14 +2,12 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(WebSocketClient.self) private var webSocket
+    @Environment(BonjourBrowser.self) private var bonjourBrowser
     @Environment(\.dismiss) private var dismiss
     @AppStorage("ws_host") private var host = "localhost"
     @AppStorage("ws_port") private var port = 9200
     @State private var testState: TestState = .idle
     @State private var showDeleteAlert = false
-    @State private var isEmailConnected = false
-    @State private var connectedEmail = ""
-    @State private var triggerRuleCount = 0
 
     enum TestState {
         case idle
@@ -21,8 +19,8 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
+                discoveredDaemonsSection
                 connectionSection
-                emailSection
                 aboutSection
                 dataSection
             }
@@ -45,6 +43,71 @@ struct SettingsView: View {
     }
 
     // MARK: - Sections
+
+    private var discoveredDaemonsSection: some View {
+        Section {
+            if bonjourBrowser.discoveredDaemons.isEmpty {
+                if bonjourBrowser.permissionDenied {
+                    VStack(alignment: .leading, spacing: LoveMeTheme.xs) {
+                        Text("Local Network access denied")
+                            .foregroundStyle(.softRed)
+                        Text("Enable in Settings > Privacy > Local Network")
+                            .font(.toolDetail)
+                            .foregroundStyle(.trust)
+                    }
+                    .listRowBackground(Color.surface)
+                } else {
+                    HStack {
+                        if bonjourBrowser.isSearching {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                                .tint(.trust)
+                            Text("Searching for daemons...")
+                                .foregroundStyle(.trust)
+                                .padding(.leading, LoveMeTheme.sm)
+                        } else {
+                            Text("No daemons found")
+                                .foregroundStyle(.trust)
+                        }
+                        Spacer()
+                    }
+                    .listRowBackground(Color.surface)
+                }
+            } else {
+                ForEach(bonjourBrowser.discoveredDaemons) { daemon in
+                    Button {
+                        selectDaemon(daemon)
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(daemon.name)
+                                    .foregroundStyle(.textPrimary)
+                                Text(daemon.displayAddress)
+                                    .font(.toolDetail)
+                                    .foregroundStyle(.trust)
+                            }
+                            Spacer()
+                            if host == daemon.host && port == Int(daemon.port) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.sageGreen)
+                            }
+                        }
+                    }
+                    .listRowBackground(Color.surface)
+                }
+            }
+            // Debug info
+            Text(bonjourBrowser.debugStatus)
+                .font(.toolDetail)
+                .foregroundStyle(.trust.opacity(0.6))
+                .listRowBackground(Color.surface)
+        } header: {
+            Text("DISCOVERED DAEMONS")
+                .font(.sectionHeader)
+                .foregroundStyle(.trust)
+                .tracking(1.2)
+        }
+    }
 
     private var connectionSection: some View {
         Section {
@@ -83,74 +146,6 @@ struct SettingsView: View {
             .listRowBackground(Color.surface)
         } header: {
             Text("CONNECTION")
-                .font(.sectionHeader)
-                .foregroundStyle(.trust)
-                .tracking(1.2)
-        }
-    }
-
-    private var emailSection: some View {
-        Section {
-            NavigationLink {
-                EmailSettingsView()
-            } label: {
-                HStack(spacing: LoveMeTheme.md) {
-                    Image(systemName: "envelope.fill")
-                        .font(.toolTitle)
-                        .foregroundStyle(.trust)
-                        .frame(width: 20)
-                    Text("Email")
-                        .font(.chatMessage)
-                        .foregroundStyle(.textPrimary)
-                    Spacer()
-                    if isEmailConnected {
-                        HStack(spacing: LoveMeTheme.sm) {
-                            Circle()
-                                .fill(Color.sageGreen)
-                                .frame(width: LoveMeTheme.connectionDotSize,
-                                       height: LoveMeTheme.connectionDotSize)
-                            Text(connectedEmail)
-                                .font(.toolDetail)
-                                .foregroundStyle(.trust)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                    } else {
-                        Text("Not connected")
-                            .font(.toolDetail)
-                            .foregroundStyle(.trust)
-                    }
-                }
-            }
-            .frame(minHeight: LoveMeTheme.minTouchTarget)
-            .listRowBackground(Color.surface)
-            .accessibilityLabel("Email settings, \(isEmailConnected ? "connected as \(connectedEmail)" : "not connected")")
-
-            NavigationLink {
-                EmailTriggersView()
-            } label: {
-                HStack(spacing: LoveMeTheme.md) {
-                    Image(systemName: "envelope.badge.fill")
-                        .font(.toolTitle)
-                        .foregroundStyle(.trust)
-                        .frame(width: 20)
-                    Text("Email Rules")
-                        .font(.chatMessage)
-                        .foregroundStyle(.textPrimary)
-                    Spacer()
-                    if triggerRuleCount > 0 {
-                        Text("\(triggerRuleCount)")
-                            .font(.toolDetail)
-                            .foregroundStyle(.trust)
-                            .monospacedDigit()
-                    }
-                }
-            }
-            .frame(minHeight: LoveMeTheme.minTouchTarget)
-            .listRowBackground(Color.surface)
-            .accessibilityLabel("Email rules, \(triggerRuleCount) active")
-        } header: {
-            Text("EMAIL")
                 .font(.sectionHeader)
                 .foregroundStyle(.trust)
                 .tracking(1.2)
@@ -264,6 +259,15 @@ struct SettingsView: View {
     }
 
     // MARK: - Actions
+
+    private func selectDaemon(_ daemon: DiscoveredDaemon) {
+        host = daemon.host
+        port = Int(daemon.port)
+        webSocket.disconnect()
+        webSocket.connect()
+        testState = .idle
+        HapticManager.connectionEstablished()
+    }
 
     private func testConnection() {
         testState = .testing
