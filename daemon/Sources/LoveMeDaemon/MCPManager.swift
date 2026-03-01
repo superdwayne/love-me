@@ -68,7 +68,7 @@ actor MCPManager {
     private func startHTTPServer(name: String, config: MCPServerConfig) async {
         guard let url = config.url else { return }
 
-        let process = MCPHTTPServerProcess(name: name, url: url)
+        let process = MCPHTTPServerProcess(name: name, url: url, headers: config.headers)
 
         do {
             try await withTimeout(seconds: 30) {

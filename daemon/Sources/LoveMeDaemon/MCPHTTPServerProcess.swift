@@ -4,12 +4,14 @@ import Foundation
 final class MCPHTTPServerProcess: Sendable {
     let name: String
     private let endpointURL: URL
+    private let customHeaders: [String: String]
     private let session: URLSession
     private let state: MCPHTTPState
 
-    init(name: String, url: String) {
+    init(name: String, url: String, headers: [String: String]? = nil) {
         self.name = name
         self.endpointURL = URL(string: url)!
+        self.customHeaders = headers ?? [:]
         self.state = MCPHTTPState()
 
         let config = URLSessionConfiguration.default
@@ -175,6 +177,11 @@ final class MCPHTTPServerProcess: Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json, text/event-stream", forHTTPHeaderField: "Accept")
 
+        // Apply custom headers (e.g. API keys for authenticated MCP servers)
+        for (key, value) in customHeaders {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+
         if let sessionId = state.withLock({ $0.sessionId }) {
             request.setValue(sessionId, forHTTPHeaderField: "Mcp-Session-Id")
         }
@@ -220,6 +227,10 @@ final class MCPHTTPServerProcess: Sendable {
         request.httpMethod = "POST"
         request.httpBody = body
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        for (key, value) in customHeaders {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
 
         if let sessionId = state.withLock({ $0.sessionId }) {
             request.setValue(sessionId, forHTTPHeaderField: "Mcp-Session-Id")

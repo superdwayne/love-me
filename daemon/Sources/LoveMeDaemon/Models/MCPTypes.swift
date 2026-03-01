@@ -55,7 +55,8 @@ struct MCPServerConfig: Codable, Sendable {
     let command: String?
     let args: [String]?
     let env: [String: String]?
-    let url: String?  // SSE/HTTP transport (not yet supported)
+    let url: String?
+    let headers: [String: String]?
 
     /// Whether this is a stdio-based server (has command)
     var isStdio: Bool { command != nil }
