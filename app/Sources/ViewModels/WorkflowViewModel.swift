@@ -109,6 +109,8 @@ struct BuilderWorkflowResult: Sendable {
     let scheduleDescription: String
     let steps: [BuilderStepResult]
     let needsConfiguration: Bool
+    let triggerType: String
+    let inputParams: [InputParamInfo]?
 }
 
 struct BuilderStepResult: Identifiable, Sendable {
@@ -287,15 +289,25 @@ final class WorkflowViewModel {
             )
         }
 
+        let trigger: WorkflowTriggerInfo
+        if result.triggerType == "manual" {
+            trigger = WorkflowTriggerInfo(
+                type: "manual",
+                inputParams: result.inputParams
+            )
+        } else {
+            trigger = WorkflowTriggerInfo(
+                type: "cron",
+                cronExpression: result.cronExpression
+            )
+        }
+
         let detail = WorkflowDetail(
             id: result.id,
             name: result.name,
             description: result.description,
             enabled: true,
-            trigger: WorkflowTriggerInfo(
-                type: "cron",
-                cronExpression: result.cronExpression
-            ),
+            trigger: trigger,
             steps: steps,
             notifyOnStart: false,
             notifyOnComplete: true,
@@ -797,6 +809,17 @@ final class WorkflowViewModel {
             }
         }
 
+        let triggerType = meta["triggerType"]?.stringValue ?? "cron"
+        var inputParams: [InputParamInfo]?
+        if case .array(let paramsArr) = meta["inputParams"] {
+            inputParams = paramsArr.compactMap { item -> InputParamInfo? in
+                guard case .object(let dict) = item,
+                      let name = dict["name"]?.stringValue,
+                      let label = dict["label"]?.stringValue else { return nil }
+                return InputParamInfo(name: name, label: label, placeholder: dict["placeholder"]?.stringValue)
+            }
+        }
+
         builderResult = BuilderWorkflowResult(
             id: meta["id"]?.stringValue ?? UUID().uuidString,
             name: meta["name"]?.stringValue ?? "Untitled Workflow",
@@ -804,7 +827,9 @@ final class WorkflowViewModel {
             cronExpression: meta["cronExpression"]?.stringValue ?? "0 * * * *",
             scheduleDescription: meta["scheduleDescription"]?.stringValue ?? "Every hour",
             steps: steps,
-            needsConfiguration: meta["needsConfiguration"]?.boolValue ?? false
+            needsConfiguration: meta["needsConfiguration"]?.boolValue ?? false,
+            triggerType: triggerType,
+            inputParams: inputParams
         )
     }
 
@@ -899,12 +924,23 @@ final class WorkflowViewModel {
             eventFilter = parsed
         }
 
+        var inputParams: [InputParamInfo]?
+        if case .array(let paramsArr) = dict["inputParams"] {
+            inputParams = paramsArr.compactMap { item -> InputParamInfo? in
+                guard case .object(let paramDict) = item,
+                      let name = paramDict["name"]?.stringValue,
+                      let label = paramDict["label"]?.stringValue else { return nil }
+                return InputParamInfo(name: name, label: label, placeholder: paramDict["placeholder"]?.stringValue)
+            }
+        }
+
         return WorkflowTriggerInfo(
             type: dict["type"]?.stringValue ?? "cron",
             cronExpression: dict["cronExpression"]?.stringValue,
             eventSource: dict["eventSource"]?.stringValue,
             eventType: dict["eventType"]?.stringValue,
-            eventFilter: eventFilter
+            eventFilter: eventFilter,
+            inputParams: inputParams
         )
     }
 

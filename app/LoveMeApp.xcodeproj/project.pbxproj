@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C2D3E4F5A6B7C8D9E0F1A2B3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C2D3E4F5A6B7C8D9E0F1A2B4 /* Assets.xcassets */; };
 		A1B2C3D4E5F60718192A3B4C /* BonjourBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718192A3B4D /* BonjourBrowser.swift */; };
 		024660B030D9DA2FD44FDEB8 /* WorkflowDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29CD3B3FA7ED7CF3391BABF3 /* WorkflowDetailView.swift */; };
 		172E26AE31E9D15D29FAD710 /* EmailSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBAB90B5366DFAAC1309B6DD /* EmailSettingsView.swift */; };
@@ -36,12 +37,14 @@
 		C8CDB55A0E0A1A1B221CA908 /* WorkflowExecutionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 239984BDB5B06C5F5AA127E9 /* WorkflowExecutionView.swift */; };
 		EA22E42948C42A43394268EF /* ConversationListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F9683C6A0C7EACE0FA68AD9 /* ConversationListView.swift */; };
 		E1F4A83D2C7B9E0F00A1B2C3 /* EmailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F4A83C2C7B9E0F00A1B2C3 /* EmailViewModel.swift */; };
+		F1A2B3C4D5E6F7081920ABCD /* EmailApprovalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F7081920ABCE /* EmailApprovalView.swift */; };
 		EA734A29167DC252BE3C0512 /* EmailTriggersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 507B46DABC0079BDC637D157 /* EmailTriggersView.swift */; };
 		F3FBD3E8F4B303D2F519D76A /* ConnectionBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBE12B2E96ED817B70C3B6FD /* ConnectionBanner.swift */; };
 		F4387B295CC63DBF3DE864D0 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 176BC2E06CFDBA18907AA518 /* ContentView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		C2D3E4F5A6B7C8D9E0F1A2B4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718192A3B4D /* BonjourBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BonjourBrowser.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718192A3B4E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		176BC2E06CFDBA18907AA518 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -55,6 +58,7 @@
 		E1F4A83C2C7B9E0F00A1B2C3 /* EmailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailViewModel.swift; sourceTree = "<group>"; };
 		34E2683792F27CE368A3B65B /* ToolCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolCard.swift; sourceTree = "<group>"; };
 		4D6DF452C51A884B99D83E4E /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		F1A2B3C4D5E6F7081920ABCE /* EmailApprovalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailApprovalView.swift; sourceTree = "<group>"; };
 		507B46DABC0079BDC637D157 /* EmailTriggersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailTriggersView.swift; sourceTree = "<group>"; };
 		5ADC742D1AC83496380B9613 /* WebSocketMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketMessage.swift; sourceTree = "<group>"; };
 		5C934430A65F81F55D43D411 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
@@ -132,8 +136,17 @@
 			isa = PBXGroup;
 			children = (
 				CB6112CFC79FF376AB0A301F /* Sources */,
+				C2D3E4F5A6B7C8D9E0F1A2B5 /* Resources */,
 				B59C3BF8D35D514958E0DBC7 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		C2D3E4F5A6B7C8D9E0F1A2B5 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				C2D3E4F5A6B7C8D9E0F1A2B4 /* Assets.xcassets */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		CB6112CFC79FF376AB0A301F /* Sources */ = {
@@ -156,6 +169,7 @@
 				DBE12B2E96ED817B70C3B6FD /* ConnectionBanner.swift */,
 				176BC2E06CFDBA18907AA518 /* ContentView.swift */,
 				5F9683C6A0C7EACE0FA68AD9 /* ConversationListView.swift */,
+				F1A2B3C4D5E6F7081920ABCE /* EmailApprovalView.swift */,
 				FBAB90B5366DFAAC1309B6DD /* EmailSettingsView.swift */,
 				507B46DABC0079BDC637D157 /* EmailTriggersView.swift */,
 				721D711231E025E6E7D22354 /* EmptyStateView.swift */,
@@ -183,6 +197,7 @@
 			buildConfigurationList = 8FCB6C247424871B0DFB4C8F /* Build configuration list for PBXNativeTarget "LoveMeApp" */;
 			buildPhases = (
 				5623E1BD70144CE89C7FC710 /* Sources */,
+				C2D3E4F5A6B7C8D9E0F1A2B6 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -222,6 +237,17 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		C2D3E4F5A6B7C8D9E0F1A2B6 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C2D3E4F5A6B7C8D9E0F1A2B3 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		5623E1BD70144CE89C7FC710 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -235,6 +261,7 @@
 				37FA24722DA341E0FC0E2AA2 /* Conversation.swift in Sources */,
 				EA22E42948C42A43394268EF /* ConversationListView.swift in Sources */,
 				461136E0BB5E451E9E610E4E /* ConversationListViewModel.swift in Sources */,
+				F1A2B3C4D5E6F7081920ABCD /* EmailApprovalView.swift in Sources */,
 				172E26AE31E9D15D29FAD710 /* EmailSettingsView.swift in Sources */,
 				EA734A29167DC252BE3C0512 /* EmailTriggersView.swift in Sources */,
 				E1F4A83D2C7B9E0F00A1B2C3 /* EmailViewModel.swift in Sources */,

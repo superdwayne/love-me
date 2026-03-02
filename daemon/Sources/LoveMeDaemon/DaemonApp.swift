@@ -1133,19 +1133,13 @@ actor DaemonApp {
         )
         self.emailConversationBridge = bridge
 
-        // Wire the workflow builder so the bridge can create workflows for approval
-        await bridge.setWorkflowBuilder { [weak self] prompt in
-            guard let self = self else { return nil }
-            return await self.buildWorkflowFromPrompt(prompt)
-        }
-
-        // Wire the email classifier using Claude
+        // Wire the email classifier/summarizer using Claude
         let claudeClient = self.claudeClient
         await bridge.setClassifyEmail { emailText in
             let messages = [MessageParam(role: "user", text: emailText)]
             return try await claudeClient.singleRequest(
                 messages: messages,
-                systemPrompt: "You are an email classifier. Respond only with the requested JSON."
+                systemPrompt: "You are an email analyzer. Respond only with the requested JSON."
             )
         }
 
@@ -1168,11 +1162,11 @@ actor DaemonApp {
         )
         self.emailPollingService = polling
 
-        // Wire polling to bridge + chat conversation creation
+        // Wire polling: create conversation first (get ID), then pass to bridge
         await polling.setOnEmailReceived { [weak self] (email: EmailMessage) in
             guard let self = self else { return }
-            await self.emailConversationBridge?.handleIncomingEmail(email)
-            await self.createEmailConversation(email)
+            let conversationId = await self.createEmailConversation(email)
+            await self.emailConversationBridge?.handleIncomingEmail(email, conversationId: conversationId)
         }
 
         await polling.start()
@@ -1180,15 +1174,16 @@ actor DaemonApp {
     }
 
     // MARK: - Email → Chat Conversation
-
-    /// Creates a chat conversation from an incoming email with auto-analysis from Claude.
-    /// Runs in the background so the analysis is ready when the user opens the conversation.
-    private func createEmailConversation(_ email: EmailMessage) async {
+    /// Claude analysis continues in background after the ID is returned.
+    @discardableResult
+    private func createEmailConversation(_ email: EmailMessage) async -> String? {
         do {
             let conversation = try await conversationStore.create(
                 title: "Email: \(email.subject)",
                 sourceType: "email"
             )
+
+            let conversationId = conversation.id
 
             let dateFormatter = DateFormatter()
             dateFormatter.dateStyle = .medium
@@ -1211,46 +1206,69 @@ actor DaemonApp {
                     "emailFrom": email.from
                 ]
             )
-            _ = try await conversationStore.addMessage(to: conversation.id, message: emailMsg)
+            _ = try await conversationStore.addMessage(to: conversationId, message: emailMsg)
 
-            // Run Claude analysis in background
-            let analysisPrompt = """
-            You received an email. Analyze it and provide:
-            1. A brief summary (1-2 sentences)
-            2. Key action items or requests, if any
-            3. Suggested next steps — what you can help with (e.g. draft a reply, create a workflow, look something up)
+            // Run Claude analysis in background (don't block the caller)
+            let conversationStore = self.conversationStore
+            let claudeClient = self.claudeClient
+            let server = self.server
+            let title = conversation.title
+            Task {
+                do {
+                    let analysisPrompt = """
+                    You received an email. Analyze it and provide:
+                    1. A brief summary (1-2 sentences)
+                    2. Key action items or requests, if any
+                    3. Suggested next steps — what you can help with (e.g. draft a reply, create a workflow, look something up)
 
-            Be concise and helpful. The user can continue chatting with you about this email.
-            """
+                    Be concise and helpful. The user can continue chatting with you about this email.
+                    """
 
-            let analysisMessages = [
-                MessageParam(role: "user", text: emailContent),
-                MessageParam(role: "user", text: analysisPrompt)
-            ]
+                    let analysisMessages = [
+                        MessageParam(role: "user", text: emailContent),
+                        MessageParam(role: "user", text: analysisPrompt)
+                    ]
 
-            let analysis = try await claudeClient.singleRequest(
-                messages: analysisMessages,
-                systemPrompt: "You are a helpful AI assistant integrated into the love.Me app. The user has received an email that was forwarded to you for analysis. Provide a concise analysis and offer to help."
-            )
+                    let analysis = try await claudeClient.singleRequest(
+                        messages: analysisMessages,
+                        systemPrompt: "You are a helpful AI assistant integrated into the love.Me app. The user has received an email that was forwarded to you for analysis. Provide a concise analysis and offer to help."
+                    )
 
-            let analysisMsg = StoredMessage(role: "assistant", content: analysis)
-            _ = try await conversationStore.addMessage(to: conversation.id, message: analysisMsg)
+                    let analysisMsg = StoredMessage(role: "assistant", content: analysis)
+                    _ = try await conversationStore.addMessage(to: conversationId, message: analysisMsg)
 
-            // Broadcast to all clients so the conversation list updates
-            let broadcastMsg = WSMessage(
-                type: WSMessageType.conversationCreated,
-                conversationId: conversation.id,
-                metadata: [
-                    "title": .string(conversation.title),
-                    "sourceType": .string("email"),
-                    "messageCount": .int(2)
-                ]
-            )
-            await server.broadcast(broadcastMsg)
+                    let broadcastMsg = WSMessage(
+                        type: WSMessageType.conversationCreated,
+                        conversationId: conversationId,
+                        metadata: [
+                            "title": .string(title),
+                            "sourceType": .string("email"),
+                            "messageCount": .int(2)
+                        ]
+                    )
+                    await server.broadcast(broadcastMsg)
 
-            Logger.info("Created email conversation '\(conversation.title)' (\(conversation.id))")
+                    Logger.info("Created email conversation '\(title)' (\(conversationId))")
+                } catch {
+                    Logger.error("Failed to complete email conversation analysis: \(error)")
+                    // Still broadcast the conversation even if analysis failed
+                    let broadcastMsg = WSMessage(
+                        type: WSMessageType.conversationCreated,
+                        conversationId: conversationId,
+                        metadata: [
+                            "title": .string(title),
+                            "sourceType": .string("email"),
+                            "messageCount": .int(1)
+                        ]
+                    )
+                    await server.broadcast(broadcastMsg)
+                }
+            }
+
+            return conversationId
         } catch {
             Logger.error("Failed to create email conversation: \(error)")
+            return nil
         }
     }
 
@@ -1520,6 +1538,8 @@ actor DaemonApp {
             return
         }
 
+        let action = message.metadata?["action"]?.stringValue
+
         do {
             try await store.update(id: approvalId, status: .approved)
 
@@ -1533,13 +1553,25 @@ actor DaemonApp {
             )
             await server.broadcast(updateMsg)
 
-            switch approval.classification {
-            case .workflow:
-                await executeApprovedWorkflow(approval)
-            case .simpleReply:
-                await sendSimpleReply(approval)
-            case .noAction:
-                break
+            switch action {
+            case "chat":
+                // Client handles navigation to the conversation — no server action needed
+                Logger.info("Approval \(approvalId) approved for chat")
+
+            case "auto_workflow":
+                // Build workflow on-demand from email body, save, execute, reply
+                await buildAndExecuteWorkflowForApproval(approval)
+
+            default:
+                // Legacy fallback: route based on classification
+                switch approval.classification {
+                case .workflow:
+                    await executeApprovedWorkflow(approval)
+                case .simpleReply:
+                    await sendSimpleReply(approval)
+                case .noAction:
+                    break
+                }
             }
         } catch {
             await sendError(to: client, message: "Failed to approve: \(error)", code: "APPROVAL_ERROR")
@@ -1563,12 +1595,6 @@ actor DaemonApp {
 
         do {
             try await store.update(id: approvalId, status: .dismissed)
-
-            // Delete pre-created workflow if it exists
-            if let workflowId = approval.workflowId {
-                try? await workflowStore.delete(id: workflowId)
-                Logger.info("Deleted pre-created workflow \(workflowId) for dismissed approval")
-            }
 
             var updatedApproval = approval
             updatedApproval.status = .dismissed
@@ -1644,6 +1670,83 @@ actor DaemonApp {
             }
         } catch {
             Logger.error("Failed to load workflow for approval \(approval.id): \(error)")
+        }
+    }
+
+    /// Builds a workflow on-demand from the email body text, saves it, executes it, and sends a reply.
+    private func buildAndExecuteWorkflowForApproval(_ approval: PendingEmailApproval) async {
+        let prompt = """
+        Analyze this email brief and create a workflow to accomplish what it describes.
+
+        From: \(approval.email.from)
+        Subject: \(approval.email.subject)
+        Body:
+        \(approval.email.bodyText)
+        """
+
+        do {
+            guard let workflow = await buildWorkflowFromPrompt(prompt) else {
+                Logger.error("buildWorkflowFromPrompt returned nil for approval \(approval.id)")
+                try? await emailApprovalStore?.update(id: approval.id, status: .failed)
+                return
+            }
+
+            try await workflowStore.create(workflow)
+
+            // Broadcast workflow created
+            let wfMsg = WSMessage(
+                type: WSMessageType.workflowCreated,
+                metadata: [
+                    "workflowId": .string(workflow.id),
+                    "name": .string(workflow.name),
+                    "stepCount": .int(workflow.steps.count)
+                ]
+            )
+            await server.broadcast(wfMsg)
+
+            Logger.info("On-demand workflow '\(workflow.name)' created for approval \(approval.id)")
+
+            let executor = self.workflowExecutor
+            let approvalId = approval.id
+
+            Task {
+                let execution = await executor.execute(
+                    workflow: workflow,
+                    triggerInfo: "email_approval_auto: \(approval.email.subject)"
+                )
+
+                switch execution.status {
+                case .completed:
+                    Logger.info("On-demand workflow '\(workflow.name)' completed")
+                    await self.composeAndSendReply(approval: approval, execution: execution)
+                case .failed:
+                    Logger.error("On-demand workflow '\(workflow.name)' failed")
+                    try? await self.emailApprovalStore?.update(id: approvalId, status: .failed)
+                    let failMsg = WSMessage(
+                        type: WSMessageType.emailAutoReplyStatus,
+                        id: approvalId,
+                        metadata: [
+                            "status": .string("failed"),
+                            "reason": .string("Workflow execution failed")
+                        ]
+                    )
+                    await self.server.broadcast(failMsg)
+                default:
+                    break
+                }
+            }
+        } catch {
+            Logger.error("Failed to build workflow for approval \(approval.id): \(error)")
+            try? await emailApprovalStore?.update(id: approval.id, status: .failed)
+            let failMsg = WSMessage(
+                type: WSMessageType.emailAutoReplyStatus,
+                id: approval.id,
+                metadata: [
+                    "status": .string("failed"),
+                    "reason": .string("Failed to build workflow: \(error.localizedDescription)")
+                ]
+            )
+            await server.broadcast(failMsg)
         }
     }
 
@@ -1788,6 +1891,9 @@ actor DaemonApp {
         if let wfName = approval.workflowName { meta["workflowName"] = .string(wfName) }
         if let count = approval.workflowStepCount { meta["workflowStepCount"] = .int(count) }
         if let reply = approval.suggestedReply { meta["suggestedReply"] = .string(reply) }
+        if let convId = approval.conversationId { meta["conversationId"] = .string(convId) }
+        if let summary = approval.summary { meta["summary"] = .string(summary) }
+        if let rec = approval.recommendation { meta["recommendation"] = .string(rec) }
         return meta
     }
 

@@ -54,6 +54,13 @@ struct ContentView: View {
             .tag(AppTab.agentMail)
         }
         .tint(.heart)
+        .onChange(of: emailVM.navigateToConversationId) { _, conversationId in
+            guard let conversationId else { return }
+            selectedTab = .chat
+            selectedConversation = conversationId
+            chatVM.loadConversation(conversationId)
+            emailVM.navigateToConversationId = nil
+        }
     }
 }
 
@@ -67,6 +74,7 @@ struct AgentMailTabView: View {
         List {
             connectionStatusSection
             if emailVM.isEmailConnected {
+                pendingApprovalsSection
                 inboxMessagesSection
                 actionsSection
                 navigationSection
@@ -143,6 +151,42 @@ struct AgentMailTabView: View {
             }
             .padding(.vertical, LoveMeTheme.xs)
             .listRowBackground(Color.surface)
+        }
+    }
+
+    // MARK: - Pending Approvals
+
+    @ViewBuilder
+    private var pendingApprovalsSection: some View {
+        let approvals = emailVM.pendingApprovals.filter { $0.isPending }
+        if !approvals.isEmpty {
+            Section {
+                ForEach(approvals) { approval in
+                    EmailApprovalView(
+                        approval: approval,
+                        onChat: { emailVM.openEmailChat(approvalId: approval.id) },
+                        onAutoWorkflow: { emailVM.autoCreateWorkflow(approvalId: approval.id) },
+                        onDismiss: { emailVM.dismissEmail(approvalId: approval.id) }
+                    )
+                    .listRowBackground(Color.surface)
+                    .listRowInsets(EdgeInsets())
+                }
+            } header: {
+                HStack {
+                    Text("PENDING APPROVALS")
+                        .font(.sectionHeader)
+                        .foregroundStyle(.trust)
+                        .tracking(1.2)
+                    Spacer()
+                    Text("\(approvals.count)")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.heart)
+                        .clipShape(Capsule())
+                }
+            }
         }
     }
 

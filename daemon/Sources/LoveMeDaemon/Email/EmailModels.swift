@@ -93,6 +93,85 @@ struct EmailTriggerConditions: Codable, Sendable {
     }
 }
 
+// MARK: - Email Classification
+
+enum EmailClassification: String, Codable, Sendable {
+    case workflow
+    case simpleReply
+    case noAction
+}
+
+enum ApprovalStatus: String, Codable, Sendable {
+    case pending
+    case approved
+    case dismissed
+    case completed
+    case failed
+}
+
+struct EmailMessageSummary: Codable, Sendable {
+    let messageId: String
+    let threadId: String
+    let from: String
+    let subject: String
+    let preview: String
+    let bodyText: String
+    let receivedAt: Date
+
+    init(from email: EmailMessage) {
+        self.messageId = email.id
+        self.threadId = email.threadId
+        self.from = email.from
+        self.subject = email.subject
+        self.preview = String(email.bodyText.prefix(200))
+        self.bodyText = String(email.bodyText.prefix(4000))
+        self.receivedAt = email.receivedAt
+    }
+}
+
+struct PendingEmailApproval: Codable, Sendable, Identifiable {
+    let id: String
+    let email: EmailMessageSummary
+    let classification: EmailClassification
+    var workflowId: String?
+    var workflowName: String?
+    var workflowStepCount: Int?
+    var suggestedReply: String?
+    var conversationId: String?
+    var summary: String?
+    var recommendation: String?
+    let createdAt: Date
+    var status: ApprovalStatus
+
+    init(
+        id: String = UUID().uuidString,
+        email: EmailMessageSummary,
+        classification: EmailClassification,
+        workflowId: String? = nil,
+        workflowName: String? = nil,
+        workflowStepCount: Int? = nil,
+        suggestedReply: String? = nil,
+        conversationId: String? = nil,
+        summary: String? = nil,
+        recommendation: String? = nil,
+        createdAt: Date = Date(),
+        status: ApprovalStatus = .pending
+    ) {
+        self.id = id
+        self.email = email
+        self.classification = classification
+        self.workflowId = workflowId
+        self.workflowName = workflowName
+        self.workflowStepCount = workflowStepCount
+        self.suggestedReply = suggestedReply
+        self.conversationId = conversationId
+        self.summary = summary
+        self.recommendation = recommendation
+        self.createdAt = createdAt
+        self.status = status
+    }
+}
+
 // MARK: - Email Polling State
 
 struct EmailPollingState: Codable, Sendable {

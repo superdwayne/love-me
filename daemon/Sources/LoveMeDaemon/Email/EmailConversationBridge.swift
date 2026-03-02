@@ -1,6 +1,10 @@
 import Foundation
 
-/// Handles incoming emails: evaluates trigger rules and auto-creates workflows from email briefs.
+/// Handles incoming emails: evaluates trigger rules and creates unified approval cards.
+///
+/// Previously this bridge classified emails and pre-built workflows. Now it performs
+/// a lightweight summarize-only Claude call, creating a single unified approval that
+/// lets the user choose between Chat or Auto Workflow on the client side.
 actor EmailConversationBridge {
 
     // MARK: - Dependencies
@@ -9,19 +13,19 @@ actor EmailConversationBridge {
     private let workflowStore: WorkflowStore
     private let workflowExecutor: WorkflowExecutor
     private let eventBus: EventBus
+    private let approvalStore: EmailApprovalStore
 
     // MARK: - Callbacks
 
-    /// Called when a workflow is auto-created from an email brief.
-    typealias BriefWorkflowHandler = @Sendable (String, String, String) async -> Void  // workflowId, workflowName, emailSubject
+    /// Classifies an email using Claude. Input: email text. Output: raw classification response.
+    typealias EmailClassifier = @Sendable (String) async throws -> String
 
-    /// Set via `setOnBriefWorkflowCreated(_:)` to broadcast to connected clients.
-    private var onBriefWorkflowCreated: BriefWorkflowHandler?
+    private var classifyEmail: EmailClassifier?
 
-    /// Reference to the workflow builder (injected from DaemonApp).
-    typealias WorkflowBuilder = @Sendable (String) async throws -> WorkflowDefinition?
+    /// Called when a new approval is created — broadcasts to connected clients.
+    typealias ApprovalCreatedHandler = @Sendable (PendingEmailApproval) async -> Void
 
-    private var buildWorkflowFromPrompt: WorkflowBuilder?
+    private var onApprovalCreated: ApprovalCreatedHandler?
 
     // MARK: - Init
 
@@ -29,22 +33,24 @@ actor EmailConversationBridge {
         triggerStore: EmailTriggerStore,
         workflowStore: WorkflowStore,
         workflowExecutor: WorkflowExecutor,
-        eventBus: EventBus
+        eventBus: EventBus,
+        approvalStore: EmailApprovalStore
     ) {
         self.triggerStore = triggerStore
         self.workflowStore = workflowStore
         self.workflowExecutor = workflowExecutor
         self.eventBus = eventBus
+        self.approvalStore = approvalStore
     }
 
     // MARK: - Configuration
 
-    func setOnBriefWorkflowCreated(_ handler: @escaping BriefWorkflowHandler) {
-        self.onBriefWorkflowCreated = handler
+    func setClassifyEmail(_ classifier: @escaping EmailClassifier) {
+        self.classifyEmail = classifier
     }
 
-    func setWorkflowBuilder(_ builder: @escaping WorkflowBuilder) {
-        self.buildWorkflowFromPrompt = builder
+    func setOnApprovalCreated(_ handler: @escaping ApprovalCreatedHandler) {
+        self.onApprovalCreated = handler
     }
 
     // MARK: - Public API
@@ -53,65 +59,129 @@ actor EmailConversationBridge {
     /// `EmailPollingService.onEmailReceived`.
     ///
     /// 1. Evaluates trigger rules and executes matching workflows.
-    /// 2. Auto-creates a workflow from the email brief using Claude.
-    func handleIncomingEmail(_ email: EmailMessage) async {
+    /// 2. Summarizes the email and creates a unified approval for user review.
+    func handleIncomingEmail(_ email: EmailMessage, conversationId: String? = nil) async {
         Logger.info("EmailConversationBridge: handling email '\(email.subject)' from \(email.from)")
 
-        // Evaluate trigger rules
+        // Evaluate trigger rules (these still auto-execute)
         await evaluateTriggers(for: email)
 
-        // Auto-create workflow from email brief
-        await createAndExecuteWorkflowFromBrief(email)
+        // Summarize and create unified approval
+        await summarizeAndCreateApproval(email, conversationId: conversationId)
     }
 
-    // MARK: - Auto-Workflow from Brief
+    // MARK: - Email Summarization
 
-    /// Build a prompt from the email, call Claude to generate a workflow, save it, and execute.
-    private func createAndExecuteWorkflowFromBrief(_ email: EmailMessage) async {
-        guard let builder = buildWorkflowFromPrompt else {
-            Logger.error("EmailConversationBridge: workflow builder not configured")
+    private func summarizeAndCreateApproval(_ email: EmailMessage, conversationId: String?) async {
+        guard let classifier = classifyEmail else {
+            Logger.error("EmailConversationBridge: classifier not configured, creating approval with no summary")
+            await createUnifiedApproval(email, summary: nil, recommendation: "chat", conversationId: conversationId)
             return
         }
 
         let prompt = """
-        Analyze this email brief and create a workflow to accomplish what it describes.
+        Analyze this email briefly. Respond with ONLY a JSON object.
 
+        Email:
         From: \(email.from)
         Subject: \(email.subject)
         Body:
         \(String(email.bodyText.prefix(4000)))
+
+        Respond with JSON:
+        {
+          "summary": "one sentence summary of what this email is about",
+          "recommendation": "chat" or "workflow" or "dismiss"
+        }
+
+        Recommendation rules:
+        - "workflow": The email describes a clear, actionable task that could be automated
+        - "chat": The email needs discussion, clarification, or a nuanced response
+        - "dismiss": Spam, newsletters, notifications, or auto-generated messages that need no response
         """
 
         do {
-            guard let workflow = try await builder(prompt) else {
-                Logger.info("EmailConversationBridge: builder returned nil for email '\(email.subject)'")
+            let response = try await classifier(prompt)
+            let result = parseSummaryResponse(response)
+
+            if result.recommendation == "dismiss" {
+                Logger.info("EmailConversationBridge: recommended dismiss for '\(email.subject)', skipping approval")
                 return
             }
 
-            // Save the workflow
-            try await workflowStore.create(workflow)
-            Logger.info("EmailConversationBridge: created workflow '\(workflow.name)' from email brief")
+            await createUnifiedApproval(
+                email,
+                summary: result.summary,
+                recommendation: result.recommendation,
+                conversationId: conversationId
+            )
+        } catch {
+            Logger.error("EmailConversationBridge: summarization failed, creating approval anyway: \(error)")
+            await createUnifiedApproval(email, summary: nil, recommendation: "chat", conversationId: conversationId)
+        }
+    }
 
-            // Notify connected clients
-            if let handler = onBriefWorkflowCreated {
-                await handler(workflow.id, workflow.name, email.subject)
+    private struct SummaryResult {
+        let summary: String?
+        let recommendation: String
+    }
+
+    private func parseSummaryResponse(_ response: String) -> SummaryResult {
+        var cleaned = response.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleaned.hasPrefix("```") {
+            if let firstNewline = cleaned.firstIndex(of: "\n") {
+                cleaned = String(cleaned[cleaned.index(after: firstNewline)...])
             }
+            if cleaned.hasSuffix("```") {
+                cleaned = String(cleaned.dropLast(3)).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
 
-            // Execute immediately
-            let executor = self.workflowExecutor
-            Task {
-                let execution = await executor.execute(workflow: workflow, triggerInfo: "email_brief: \(email.subject)")
-                switch execution.status {
-                case .completed:
-                    Logger.info("EmailConversationBridge: workflow '\(workflow.name)' completed from email brief")
-                case .failed:
-                    Logger.error("EmailConversationBridge: workflow '\(workflow.name)' failed from email brief")
-                default:
-                    break
-                }
+        guard let data = cleaned.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            Logger.error("EmailConversationBridge: failed to parse summary response, defaulting to chat")
+            return SummaryResult(summary: nil, recommendation: "chat")
+        }
+
+        let recommendation: String
+        if let rec = json["recommendation"] as? String,
+           ["chat", "workflow", "dismiss"].contains(rec.lowercased()) {
+            recommendation = rec.lowercased()
+        } else {
+            recommendation = "chat"
+        }
+
+        return SummaryResult(
+            summary: json["summary"] as? String,
+            recommendation: recommendation
+        )
+    }
+
+    // MARK: - Unified Approval Creation
+
+    private func createUnifiedApproval(
+        _ email: EmailMessage,
+        summary: String?,
+        recommendation: String,
+        conversationId: String?
+    ) async {
+        let emailSummary = EmailMessageSummary(from: email)
+        let approval = PendingEmailApproval(
+            email: emailSummary,
+            classification: .workflow,
+            conversationId: conversationId,
+            summary: summary,
+            recommendation: recommendation
+        )
+
+        do {
+            try await approvalStore.add(approval)
+
+            if let handler = onApprovalCreated {
+                await handler(approval)
             }
         } catch {
-            Logger.error("EmailConversationBridge: failed to create workflow from email brief: \(error)")
+            Logger.error("EmailConversationBridge: failed to create approval: \(error)")
         }
     }
 

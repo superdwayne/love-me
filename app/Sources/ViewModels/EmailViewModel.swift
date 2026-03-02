@@ -45,6 +45,47 @@ struct TriggerRuleDisplay: Identifiable {
     }
 }
 
+/// Display model for email approval items.
+struct EmailApprovalDisplay: Identifiable {
+    let id: String
+    let classification: String
+    let emailFrom: String
+    let emailSubject: String
+    let emailPreview: String
+    var workflowId: String?
+    var workflowName: String?
+    var workflowStepCount: Int?
+    var suggestedReply: String?
+    var conversationId: String?
+    var summary: String?
+    var recommendation: String?
+    let createdAt: Date
+    var status: String
+
+    var isPending: Bool { status == "pending" }
+    var isCompleted: Bool { status == "completed" }
+    var isFailed: Bool { status == "failed" }
+
+    var recommendationLabel: String? {
+        switch recommendation {
+        case "chat": return "Suggested: Open in Chat"
+        case "workflow": return "Suggested: Auto Workflow"
+        default: return nil
+        }
+    }
+
+    var statusLabel: String {
+        switch status {
+        case "pending": return "Pending"
+        case "approved": return "Approved"
+        case "dismissed": return "Dismissed"
+        case "completed": return "Completed"
+        case "failed": return "Failed"
+        default: return status.capitalized
+        }
+    }
+}
+
 @Observable
 @MainActor
 final class EmailViewModel {
@@ -59,6 +100,9 @@ final class EmailViewModel {
     var inboxMessages: [InboxMessage] = []
     var triggerRules: [TriggerRuleDisplay] = []
     var isLoadingTriggers = false
+    var pendingApprovals: [EmailApprovalDisplay] = []
+    var showApprovalBanner = false
+    var navigateToConversationId: String?
 
     private let webSocket: WebSocketClient
 
@@ -88,9 +132,20 @@ final class EmailViewModel {
             handleMessagesListResult(msg)
 
         case WSMessageType.emailBriefWorkflowCreated:
-            // Refresh messages list when a workflow is created from a brief
             requestInboxMessages()
             HapticManager.connectionEstablished()
+
+        case WSMessageType.emailApprovalPending:
+            handleApprovalPending(msg)
+
+        case WSMessageType.emailApprovalUpdated:
+            handleApprovalUpdated(msg)
+
+        case WSMessageType.emailApprovalsListResult:
+            handleApprovalsListResult(msg)
+
+        case WSMessageType.emailAutoReplyStatus:
+            handleAutoReplyStatus(msg)
 
         case WSMessageType.emailTriggersListResult:
             handleTriggersListResult(msg)
@@ -201,6 +256,54 @@ final class EmailViewModel {
         updateTriggerRule(updated)
     }
 
+    // MARK: - Approval Actions
+
+    func requestPendingApprovals() {
+        webSocket.send(WSMessage(type: WSMessageType.emailApprovalsList))
+    }
+
+    func openEmailChat(approvalId: String) {
+        guard let index = pendingApprovals.firstIndex(where: { $0.id == approvalId }) else { return }
+        let conversationId = pendingApprovals[index].conversationId
+
+        webSocket.send(WSMessage(
+            type: WSMessageType.emailApprovalApprove,
+            id: approvalId,
+            metadata: ["action": .string("chat")]
+        ))
+
+        // Optimistic update
+        pendingApprovals[index].status = "approved"
+
+        // Trigger navigation to the conversation
+        if let convId = conversationId {
+            navigateToConversationId = convId
+        }
+        HapticManager.toolCompleted()
+    }
+
+    func autoCreateWorkflow(approvalId: String) {
+        webSocket.send(WSMessage(
+            type: WSMessageType.emailApprovalApprove,
+            id: approvalId,
+            metadata: ["action": .string("auto_workflow")]
+        ))
+        // Optimistic update
+        if let index = pendingApprovals.firstIndex(where: { $0.id == approvalId }) {
+            pendingApprovals[index].status = "approved"
+        }
+        HapticManager.toolCompleted()
+    }
+
+    func dismissEmail(approvalId: String) {
+        webSocket.send(WSMessage(
+            type: WSMessageType.emailApprovalDismiss,
+            id: approvalId
+        ))
+        pendingApprovals.removeAll { $0.id == approvalId }
+        HapticManager.messageSent()
+    }
+
     // MARK: - Private Handlers
 
     private func handleEmailStatus(_ msg: WSMessage) {
@@ -230,9 +333,10 @@ final class EmailViewModel {
             HapticManager.connectionEstablished()
         }
 
-        // Auto-load inbox messages when connected
+        // Auto-load inbox messages and approvals when connected
         if isEmailConnected {
             requestInboxMessages()
+            requestPendingApprovals()
         }
     }
 
@@ -247,8 +351,9 @@ final class EmailViewModel {
         isEmailConnected = true
         HapticManager.connectionEstablished()
 
-        // Load inbox messages
+        // Load inbox messages and pending approvals
         requestInboxMessages()
+        requestPendingApprovals()
     }
 
     private func handleMessagesListResult(_ msg: WSMessage) {
@@ -327,6 +432,87 @@ final class EmailViewModel {
     private func handleTriggerDeleted(_ msg: WSMessage) {
         guard let id = msg.metadata?["id"]?.stringValue ?? msg.id else { return }
         triggerRules.removeAll { $0.id == id }
+    }
+
+    // MARK: - Approval Handlers
+
+    private func handleApprovalPending(_ msg: WSMessage) {
+        guard let meta = msg.metadata else { return }
+        if let display = parseApprovalFromMetadata(meta) {
+            pendingApprovals.insert(display, at: 0)
+            showApprovalBanner = true
+            HapticManager.connectionEstablished()
+        }
+    }
+
+    private func handleApprovalUpdated(_ msg: WSMessage) {
+        guard let meta = msg.metadata,
+              let approvalId = meta["approvalId"]?.stringValue else { return }
+        if let index = pendingApprovals.firstIndex(where: { $0.id == approvalId }) {
+            if let status = meta["status"]?.stringValue {
+                pendingApprovals[index].status = status
+            }
+        }
+    }
+
+    private func handleApprovalsListResult(_ msg: WSMessage) {
+        guard case .array(let items) = msg.metadata?["approvals"] else { return }
+
+        var loaded: [EmailApprovalDisplay] = []
+        for item in items {
+            guard case .object(let dict) = item else { continue }
+            if let display = parseApprovalFromMetadata(dict) {
+                loaded.append(display)
+            }
+        }
+
+        pendingApprovals = loaded
+        showApprovalBanner = loaded.contains { $0.isPending }
+    }
+
+    private func handleAutoReplyStatus(_ msg: WSMessage) {
+        guard let meta = msg.metadata,
+              let approvalId = msg.id else { return }
+        if let index = pendingApprovals.firstIndex(where: { $0.id == approvalId }) {
+            if let status = meta["status"]?.stringValue {
+                pendingApprovals[index].status = status
+            }
+        }
+        if meta["status"]?.stringValue == "completed" {
+            HapticManager.toolCompleted()
+        } else {
+            HapticManager.toolError()
+        }
+    }
+
+    private func parseApprovalFromMetadata(_ meta: [String: MetadataValue]) -> EmailApprovalDisplay? {
+        guard let approvalId = meta["approvalId"]?.stringValue else { return nil }
+
+        let dateFormatter = ISO8601DateFormatter()
+        let createdAt: Date
+        if let dateStr = meta["createdAt"]?.stringValue,
+           let parsed = dateFormatter.date(from: dateStr) {
+            createdAt = parsed
+        } else {
+            createdAt = Date()
+        }
+
+        return EmailApprovalDisplay(
+            id: approvalId,
+            classification: meta["classification"]?.stringValue ?? "workflow",
+            emailFrom: meta["emailFrom"]?.stringValue ?? "",
+            emailSubject: meta["emailSubject"]?.stringValue ?? "(no subject)",
+            emailPreview: meta["emailPreview"]?.stringValue ?? "",
+            workflowId: meta["workflowId"]?.stringValue,
+            workflowName: meta["workflowName"]?.stringValue,
+            workflowStepCount: meta["workflowStepCount"]?.intValue,
+            suggestedReply: meta["suggestedReply"]?.stringValue,
+            conversationId: meta["conversationId"]?.stringValue,
+            summary: meta["summary"]?.stringValue,
+            recommendation: meta["recommendation"]?.stringValue,
+            createdAt: createdAt,
+            status: meta["status"]?.stringValue ?? "pending"
+        )
     }
 
     private func encodeTriggerRule(_ rule: TriggerRuleDisplay) -> [String: MetadataValue] {

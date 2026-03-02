@@ -185,7 +185,7 @@ actor EmailPollingService {
             // Update last-seen marker to the newest message
             if let newest = messages.first {
                 pollingState.lastSeenMessageId = newest.id
-                pollingState.lastSeenTimestamp = Date()
+                pollingState.lastSeenTimestamp = newest.receivedAt
             }
 
             persistState()

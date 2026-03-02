@@ -153,4 +153,15 @@ enum WSMessageType {
     static let emailTriggerDeleted = "email_trigger_deleted"
     static let emailPollResult = "email_poll_result"
     static let emailReceived = "email_received"
+
+    // Client -> Server (Email Approval)
+    static let emailApprovalApprove = "email_approval_approve"
+    static let emailApprovalDismiss = "email_approval_dismiss"
+    static let emailApprovalsList = "email_approvals_list"
+
+    // Server -> Client (Email Approval)
+    static let emailApprovalPending = "email_approval_pending"
+    static let emailApprovalUpdated = "email_approval_updated"
+    static let emailApprovalsListResult = "email_approvals_list_result"
+    static let emailAutoReplyStatus = "email_auto_reply_status"
 }
