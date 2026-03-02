@@ -62,6 +62,7 @@ enum ContentBlock: Codable, Sendable {
     case thinking(ThinkingContent)
     case toolUse(ToolUseContent)
     case toolResult(ToolResultContent)
+    case image(ImageContent)
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -80,6 +81,8 @@ enum ContentBlock: Codable, Sendable {
             self = .toolUse(try singleContainer.decode(ToolUseContent.self))
         case "tool_result":
             self = .toolResult(try singleContainer.decode(ToolResultContent.self))
+        case "image":
+            self = .image(try singleContainer.decode(ImageContent.self))
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .type, in: container,
@@ -97,6 +100,8 @@ enum ContentBlock: Codable, Sendable {
         case .toolUse(let content):
             try content.encode(to: encoder)
         case .toolResult(let content):
+            try content.encode(to: encoder)
+        case .image(let content):
             try content.encode(to: encoder)
         }
     }
@@ -147,6 +152,28 @@ struct ToolResultContent: Codable, Sendable {
         self.tool_use_id = tool_use_id
         self.content = content
         self.is_error = is_error
+    }
+}
+
+struct ImageContent: Codable, Sendable {
+    let type: String
+    let source: ImageSource
+
+    init(source: ImageSource) {
+        self.type = "image"
+        self.source = source
+    }
+}
+
+struct ImageSource: Codable, Sendable {
+    let type: String
+    let media_type: String
+    let data: String
+
+    init(mediaType: String, data: String) {
+        self.type = "base64"
+        self.media_type = mediaType
+        self.data = data
     }
 }
 

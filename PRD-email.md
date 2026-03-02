@@ -125,7 +125,7 @@ This turns the agent from a chat-only assistant into an always-available agent t
 - [ ] Calendar invites (.ics): parse event summary, date, time, location, attendees
 - [ ] Other types: store file, provide filename and MIME type metadata only
 - [ ] All processed attachments stored in `~/.love-me/attachments/{emailId}/`
-- [ ] Large attachments (>10MB) skipped with a log warning
+- [ ] Large attachments (>50MB) skipped with a log warning
 - [ ] Typecheck passes
 
 ### US-010: WebSocket Messages for Email Management

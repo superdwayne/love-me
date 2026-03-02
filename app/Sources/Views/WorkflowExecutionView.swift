@@ -29,6 +29,13 @@ struct WorkflowExecutionView: View {
                     }
                     .padding(.bottom, LoveMeTheme.xxl)
 
+                    // Cancel button (while running)
+                    if execution.status == "running" {
+                        cancelButton(execution)
+                            .padding(.horizontal, LoveMeTheme.chatHorizontalPadding)
+                            .padding(.bottom, LoveMeTheme.md)
+                    }
+
                     // Run again button
                     if execution.status == "completed" || execution.status == "failed" || execution.status == "cancelled" {
                         runAgainButton(execution)
@@ -344,6 +351,37 @@ struct WorkflowExecutionView: View {
         }
         .padding(.horizontal, LoveMeTheme.md)
         .padding(.bottom, LoveMeTheme.md)
+    }
+
+    // MARK: - Cancel
+
+    @State private var showCancelConfirmation = false
+
+    private func cancelButton(_ execution: ExecutionItem) -> some View {
+        Button {
+            showCancelConfirmation = true
+        } label: {
+            HStack(spacing: LoveMeTheme.sm) {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 14))
+                Text("Stop Execution")
+                    .font(.system(size: 16, weight: .semibold))
+            }
+            .foregroundStyle(.softRed)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, LoveMeTheme.md)
+            .background(.softRed.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.sm))
+        }
+        .accessibilityLabel("Stop this workflow execution")
+        .alert("Stop Execution?", isPresented: $showCancelConfirmation) {
+            Button("Stop", role: .destructive) {
+                workflowVM.cancelExecution(id: execution.id)
+            }
+            Button("Continue Running", role: .cancel) {}
+        } message: {
+            Text("This will cancel the current execution. Any completed steps will keep their results.")
+        }
     }
 
     // MARK: - Run Again

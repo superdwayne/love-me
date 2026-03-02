@@ -79,6 +79,7 @@ actor WebSocketServer {
     func start() throws {
         let wsOptions = NWProtocolWebSocket.Options()
         wsOptions.autoReplyPing = true
+        wsOptions.maximumMessageSize = 10 * 1024 * 1024  // 10MB for image attachments
 
         let params = NWParameters.tcp
         params.defaultProtocolStack.applicationProtocols.insert(wsOptions, at: 0)

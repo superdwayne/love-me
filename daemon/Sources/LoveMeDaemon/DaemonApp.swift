@@ -16,6 +16,10 @@ actor DaemonApp {
     private let notificationService: NotificationService
     private let eventBus: EventBus
 
+    // Image server for serving generated/attached images to the iOS app
+    private let imageServer: ImageServer
+    private let generatedImagesDirectory: String
+
     // Email subsystem
     private let emailConfigStore: EmailConfigStore
     private let emailTriggerStore: EmailTriggerStore
@@ -24,6 +28,9 @@ actor DaemonApp {
     private var emailPollingService: EmailPollingService?
     private var emailConversationBridge: EmailConversationBridge?
     private var emailApprovalStore: EmailApprovalStore?
+
+    // Active generation task tracking for cancellation
+    private var activeGenerationTasks: [String: Task<Void, Never>] = [:]
 
     init(config: DaemonConfig) {
         self.config = config
@@ -41,9 +48,13 @@ actor DaemonApp {
         self.notificationService = NotificationService(server: server)
         self.eventBus = EventBus()
 
-        // Email components
+        // Image server for generated/attached images
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
         let basePath = "\(homeDir)/.love-me"
+        self.generatedImagesDirectory = "\(basePath)/generated"
+        self.imageServer = ImageServer(port: 9201, imageDirectory: "\(basePath)/generated")
+
+        // Email components
         self.emailConfigStore = EmailConfigStore(basePath: basePath)
         self.emailTriggerStore = EmailTriggerStore(basePath: basePath)
         self.attachmentProcessor = AttachmentProcessor(basePath: basePath)
@@ -74,6 +85,9 @@ actor DaemonApp {
     func start() async throws {
         // Ensure directories exist
         try config.ensureDirectories()
+
+        // Start image server for serving generated/attached images
+        try await imageServer.start()
 
         // Start MCP servers
         await mcpManager.startAll()
@@ -162,6 +176,9 @@ actor DaemonApp {
 
         case WSMessageType.userMessage:
             await handleUserMessage(message, client: client)
+
+        case WSMessageType.cancelGeneration:
+            await handleCancelGeneration(message, client: client)
 
         case WSMessageType.newConversation:
             await handleNewConversation(client: client)
@@ -274,7 +291,14 @@ actor DaemonApp {
             await sendError(to: client, message: "Missing conversationId", code: "MISSING_FIELD")
             return
         }
-        guard let content = message.content, !content.isEmpty else {
+        let content = message.content ?? ""
+        let hasAttachments: Bool
+        if case .array(let arr) = message.metadata?["attachments"], !arr.isEmpty {
+            hasAttachments = true
+        } else {
+            hasAttachments = false
+        }
+        guard !content.isEmpty || hasAttachments else {
             await sendError(to: client, message: "Missing message content", code: "MISSING_FIELD")
             return
         }
@@ -289,8 +313,27 @@ actor DaemonApp {
             return
         }
 
+        // Process image attachments if present
+        var msgMetadata: [String: String]? = nil
+        if case .array(let attachments) = message.metadata?["attachments"] {
+            var savedFilenames: [String] = []
+            for attachment in attachments {
+                guard case .object(let att) = attachment,
+                      let b64Data = att["data"]?.stringValue,
+                      let mimeType = att["mimeType"]?.stringValue else { continue }
+                if let filename = ImageFileHelper.saveBase64Image(
+                    data: b64Data, mimeType: mimeType, directory: generatedImagesDirectory
+                ) {
+                    savedFilenames.append(filename)
+                }
+            }
+            if !savedFilenames.isEmpty {
+                msgMetadata = ["attachmentFiles": savedFilenames.joined(separator: ",")]
+            }
+        }
+
         // Save user message to conversation
-        let userMsg = StoredMessage(role: "user", content: content)
+        let userMsg = StoredMessage(role: "user", content: content, metadata: msgMetadata)
         do {
             _ = try await conversationStore.addMessage(to: conversationId, message: userMsg)
         } catch {
@@ -298,8 +341,41 @@ actor DaemonApp {
             return
         }
 
-        // Start the Claude API streaming loop (may involve tool calls)
-        await streamClaudeResponse(conversationId: conversationId, client: client)
+        // Start the Claude API streaming loop in a trackable task for cancellation
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.streamClaudeResponse(conversationId: conversationId, client: client)
+            await self.removeGenerationTask(conversationId: conversationId)
+        }
+        activeGenerationTasks[conversationId] = task
+        await task.value
+    }
+
+    private func removeGenerationTask(conversationId: String) {
+        activeGenerationTasks.removeValue(forKey: conversationId)
+    }
+
+    private func handleCancelGeneration(_ message: WSMessage, client: WebSocketClient) async {
+        guard let conversationId = message.conversationId else {
+            await sendError(to: client, message: "Missing conversationId", code: "MISSING_FIELD")
+            return
+        }
+
+        if let task = activeGenerationTasks[conversationId] {
+            Logger.info("Cancelling generation for conversation \(conversationId)")
+            task.cancel()
+            activeGenerationTasks.removeValue(forKey: conversationId)
+
+            // Send assistant_done to cleanly end the stream on the client
+            let done = WSMessage(
+                type: WSMessageType.assistantDone,
+                conversationId: conversationId,
+                metadata: ["cancelled": .bool(true)]
+            )
+            try? await client.send(done)
+        } else {
+            Logger.info("Cancel requested for conversation \(conversationId) but no active generation")
+        }
     }
 
     private func buildSystemPrompt() async -> String {
@@ -360,6 +436,17 @@ actor DaemonApp {
             var hasToolCalls = false
 
             for try await event in stream {
+                // Check for cancellation between stream events
+                if Task.isCancelled {
+                    Logger.info("streamClaudeResponse: cancelled for conversation \(conversationId)")
+                    // Save partial response if any text was generated
+                    if !fullText.isEmpty {
+                        let partialMsg = StoredMessage(role: "assistant", content: fullText + "\n\n[Generation cancelled]")
+                        _ = try? await conversationStore.addMessage(to: conversationId, message: partialMsg)
+                    }
+                    return
+                }
+
                 switch event {
                 case .thinkingStart:
                     thinkingStartTime = Date()
@@ -450,6 +537,12 @@ actor DaemonApp {
 
                 // Execute tool calls and store results
                 for toolCall in pendingToolCalls {
+                    // Check for cancellation before each tool execution
+                    if Task.isCancelled {
+                        Logger.info("streamClaudeResponse: cancelled during tool execution for conversation \(conversationId)")
+                        return
+                    }
+
                     let startTime = Date()
 
                     // Built-in create_workflow tool — intercept before MCP
@@ -584,17 +677,25 @@ actor DaemonApp {
                         let clientResult = result.content.count > 4_000
                             ? String(result.content.prefix(4_000)) + "\n[...truncated]"
                             : result.content
+
+                        var doneMeta: [String: MetadataValue] = [
+                            "toolName": .string(toolCall.name),
+                            "serverName": .string(serverName),
+                            "success": .bool(!result.isError),
+                            "result": .string(clientResult),
+                            "duration": .double(duration)
+                        ]
+
+                        // Extract image URL from tool results for inline display
+                        if let imageURL = Self.extractImageURL(from: result.content) {
+                            doneMeta["imageURL"] = .string(imageURL)
+                        }
+
                         let doneMsg = WSMessage(
                             type: WSMessageType.toolCallDone,
                             id: toolCall.id,
                             conversationId: conversationId,
-                            metadata: [
-                                "toolName": .string(toolCall.name),
-                                "serverName": .string(serverName),
-                                "success": .bool(!result.isError),
-                                "result": .string(clientResult),
-                                "duration": .double(duration)
-                            ]
+                            metadata: doneMeta
                         )
                         try? await client.send(doneMsg)
                     } catch {
@@ -1129,7 +1230,9 @@ actor DaemonApp {
             workflowStore: workflowStore,
             workflowExecutor: workflowExecutor,
             eventBus: eventBus,
-            approvalStore: approvalStore
+            approvalStore: approvalStore,
+            agentMailClient: client,
+            attachmentProcessor: attachmentProcessor
         )
         self.emailConversationBridge = bridge
 
@@ -2431,6 +2534,35 @@ actor DaemonApp {
             metadata: metadata
         )
         try? await client.send(msg)
+    }
+
+    // MARK: - Image URL Extraction
+
+    /// Extract an image URL from tool result content for inline display in chat.
+    /// Matches common image hosting URLs (Leonardo, CDN URLs, direct image links).
+    private static func extractImageURL(from content: String) -> String? {
+        // Match URLs ending in common image extensions or from known image CDNs
+        let patterns = [
+            // Direct image URLs (.png, .jpg, .jpeg, .webp, .gif)
+            "https?://[^\\s\"'<>]+\\.(?:png|jpg|jpeg|webp|gif)(?:\\?[^\\s\"'<>]*)?",
+            // Leonardo AI CDN URLs
+            "https?://cdn\\.leonardo\\.ai/[^\\s\"'<>]+",
+            // General CDN image URLs
+            "https?://[^\\s\"'<>]*(?:image|img|photo|generated)[^\\s\"'<>]*\\.(?:png|jpg|jpeg|webp|gif)(?:\\?[^\\s\"'<>]*)?"
+        ]
+
+        for pattern in patterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+                let range = NSRange(content.startIndex..<content.endIndex, in: content)
+                if let match = regex.firstMatch(in: content, range: range) {
+                    if let matchRange = Range(match.range, in: content) {
+                        return String(content[matchRange])
+                    }
+                }
+            }
+        }
+
+        return nil
     }
 
     // MARK: - Error Helper

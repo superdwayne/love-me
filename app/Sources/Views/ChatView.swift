@@ -100,6 +100,14 @@ struct ChatView: View {
                         let spacing = spacingBefore(message: message, previous: prevMessage)
 
                         VStack(spacing: 0) {
+                            if message.role == .user && !message.attachments.isEmpty {
+                                // User attachment images
+                                attachmentImages(for: message)
+                                    .padding(.horizontal, LoveMeTheme.chatHorizontalPadding)
+                                    .padding(.top, spacing)
+                                    .padding(.bottom, LoveMeTheme.xs)
+                            }
+
                             if message.role == .assistant {
                                 // Thinking panel
                                 if message.thinkingContent != nil {
@@ -114,12 +122,41 @@ struct ChatView: View {
                                     ToolCard(toolCall: toolCall)
                                         .padding(.horizontal, LoveMeTheme.chatHorizontalPadding)
                                         .padding(.bottom, LoveMeTheme.xs)
+
+                                    // Inline image preview from image-generating tools (e.g. Leonardo)
+                                    if let imageURL = toolCall.imageURL,
+                                       let url = chatVM.daemonImageURL(from: imageURL) {
+                                        AsyncImage(url: url) { phase in
+                                            switch phase {
+                                            case .empty:
+                                                RoundedRectangle(cornerRadius: LoveMeTheme.sm)
+                                                    .fill(Color.surfaceElevated)
+                                                    .frame(height: 200)
+                                                    .overlay {
+                                                        ProgressView()
+                                                            .tint(.trust)
+                                                    }
+                                            case .success(let image):
+                                                image
+                                                    .resizable()
+                                                    .aspectRatio(contentMode: .fit)
+                                                    .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.sm))
+                                            case .failure:
+                                                EmptyView()
+                                            @unknown default:
+                                                EmptyView()
+                                            }
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.horizontal, LoveMeTheme.chatHorizontalPadding)
+                                        .padding(.bottom, LoveMeTheme.xs)
+                                    }
                                 }
                             }
 
                             MessageBubble(message: message)
                                 .padding(.horizontal, LoveMeTheme.chatHorizontalPadding)
-                                .padding(.top, message.thinkingContent == nil && message.toolCalls.isEmpty ? spacing : LoveMeTheme.xs)
+                                .padding(.top, message.thinkingContent == nil && message.toolCalls.isEmpty && message.attachments.isEmpty ? spacing : LoveMeTheme.xs)
                         }
                         .id(message.id)
                     }
@@ -171,6 +208,52 @@ struct ChatView: View {
         }
         .transition(.move(edge: .bottom).combined(with: .opacity))
         .zIndex(Double(ZLayer.overlay.rawValue))
+    }
+
+    // MARK: - Attachment Images
+
+    @ViewBuilder
+    private func attachmentImages(for message: Message) -> some View {
+        HStack(alignment: .top, spacing: LoveMeTheme.sm) {
+            Spacer()
+            ForEach(message.attachments) { attachment in
+                if let thumbData = attachment.thumbnailData,
+                   let uiImage = UIImage(data: thumbData) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(maxWidth: 150, maxHeight: 150)
+                        .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.sm))
+                } else if let urlStr = attachment.imageURL,
+                          let url = chatVM.daemonImageURL(from: urlStr) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .empty:
+                            RoundedRectangle(cornerRadius: LoveMeTheme.sm)
+                                .fill(Color.surfaceElevated)
+                                .frame(width: 150, height: 150)
+                                .overlay { ProgressView().tint(.trust) }
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(maxWidth: 150, maxHeight: 150)
+                                .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.sm))
+                        case .failure:
+                            RoundedRectangle(cornerRadius: LoveMeTheme.sm)
+                                .fill(Color.surfaceElevated)
+                                .frame(width: 100, height: 100)
+                                .overlay {
+                                    Image(systemName: "photo.badge.exclamationmark")
+                                        .foregroundStyle(.textSecondary)
+                                }
+                        @unknown default:
+                            EmptyView()
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Helpers

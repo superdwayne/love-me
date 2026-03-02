@@ -130,10 +130,12 @@ private struct AgentMailMessage: Codable {
     let preview: String?        // List endpoint only
     let text: String?           // Detail endpoint only
     let html: String?           // Detail endpoint only
+    let extracted_text: String? // Detail endpoint: extracted text from attachments
     let timestamp: String?      // When the email was sent
     let created_at: String?     // When AgentMail received it
     let labels: [String]?
     let size: Int?
+    let attachments: [AgentMailAttachment]?
 
     func toEmailMessage() -> EmailMessage {
         let dateFormatter = ISO8601DateFormatter()
@@ -150,6 +152,18 @@ private struct AgentMailMessage: Codable {
             receivedAt = Date()
         }
 
+        let parsedAttachments = (attachments ?? []).map { att in
+            EmailAttachment(
+                id: att.attachment_id ?? att.filename ?? UUID().uuidString,
+                filename: att.filename ?? "unknown",
+                mimeType: att.content_type ?? "application/octet-stream",
+                size: att.size ?? 0
+            )
+        }
+
+        // Prefer extracted_text (includes attachment text) over plain text/preview
+        let bodyContent = extracted_text ?? text ?? preview ?? ""
+
         return EmailMessage(
             id: message_id,
             threadId: thread_id ?? message_id,
@@ -157,9 +171,9 @@ private struct AgentMailMessage: Codable {
             to: to ?? [],
             cc: cc ?? [],
             subject: subject ?? "(no subject)",
-            bodyText: text ?? preview ?? "",
+            bodyText: bodyContent,
             bodyHtml: html,
-            attachments: [],
+            attachments: parsedAttachments,
             receivedAt: receivedAt,
             labels: labels ?? []
         )
@@ -173,6 +187,14 @@ private struct AgentMailMessage: Codable {
         }
         return value
     }
+}
+
+/// Attachment metadata from AgentMail API.
+private struct AgentMailAttachment: Codable {
+    let attachment_id: String?
+    let filename: String?
+    let content_type: String?
+    let size: Int?
 }
 
 private struct AgentMailSendRequest: Codable {

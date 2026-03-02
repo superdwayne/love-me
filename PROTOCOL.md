@@ -24,6 +24,7 @@ All messages are JSON objects with this structure:
 | `delete_conversation` | `conversationId` | Delete a conversation |
 | `list_conversations` | — | Request conversation list |
 | `ping` | — | Keep-alive ping |
+| `cancel_generation` | `conversationId` | Cancel active streaming/tool execution |
 
 ### Server → Client (Daemon → iOS App)
 
@@ -34,7 +35,7 @@ All messages are JSON objects with this structure:
 | `thinking_chunk` | `conversationId`, `content` | Streamed thinking text |
 | `thinking_done` | `conversationId`, `metadata.thinkingDuration` | Thinking complete |
 | `tool_call_start` | `conversationId`, `id`, `metadata.toolName`, `metadata.serverName`, `metadata.input` | Tool execution started |
-| `tool_call_done` | `conversationId`, `id`, `metadata.toolName`, `metadata.success`, `metadata.result`, `metadata.error`, `metadata.duration` | Tool execution completed |
+| `tool_call_done` | `conversationId`, `id`, `metadata.toolName`, `metadata.success`, `metadata.result`, `metadata.error`, `metadata.duration`, `metadata.imageURL` (optional) | Tool execution completed. `imageURL` included when tool result contains a generated image. |
 | `error` | `content`, `metadata.code` | Error occurred |
 | `status` | `metadata.connected`, `metadata.hasApiKey`, `metadata.toolCount`, `metadata.daemonVersion` | Daemon status update |
 | `pong` | — | Keep-alive response |
@@ -127,6 +128,7 @@ enum WSMessageType {
     static let deleteConversation = "delete_conversation"
     static let listConversations = "list_conversations"
     static let ping = "ping"
+    static let cancelGeneration = "cancel_generation"
 
     // Server → Client
     static let assistantChunk = "assistant_chunk"

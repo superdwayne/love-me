@@ -79,6 +79,7 @@ enum WSMessageType {
     static let deleteConversation = "delete_conversation"
     static let listConversations = "list_conversations"
     static let ping = "ping"
+    static let cancelGeneration = "cancel_generation"
 
     // Server -> Client
     static let assistantChunk = "assistant_chunk"

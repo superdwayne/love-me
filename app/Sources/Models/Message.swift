@@ -1,6 +1,28 @@
 import Foundation
 import Observation
 
+struct MessageAttachment: Identifiable, Sendable {
+    let id: String
+    let fileName: String
+    let mimeType: String
+    let thumbnailData: Data?
+    let imageURL: String?
+
+    init(
+        id: String = UUID().uuidString,
+        fileName: String,
+        mimeType: String,
+        thumbnailData: Data? = nil,
+        imageURL: String? = nil
+    ) {
+        self.id = id
+        self.fileName = fileName
+        self.mimeType = mimeType
+        self.thumbnailData = thumbnailData
+        self.imageURL = imageURL
+    }
+}
+
 @Observable
 final class Message: Identifiable, @unchecked Sendable {
     let id: String
@@ -11,6 +33,7 @@ final class Message: Identifiable, @unchecked Sendable {
     var isStreaming: Bool
     var isThinkingStreaming: Bool
     var toolCalls: [ToolCall]
+    var attachments: [MessageAttachment]
     var sendFailed: Bool
     let timestamp: Date
 
@@ -23,6 +46,7 @@ final class Message: Identifiable, @unchecked Sendable {
         isStreaming: Bool = false,
         isThinkingStreaming: Bool = false,
         toolCalls: [ToolCall] = [],
+        attachments: [MessageAttachment] = [],
         sendFailed: Bool = false,
         timestamp: Date = Date()
     ) {
@@ -34,6 +58,7 @@ final class Message: Identifiable, @unchecked Sendable {
         self.isStreaming = isStreaming
         self.isThinkingStreaming = isThinkingStreaming
         self.toolCalls = toolCalls
+        self.attachments = attachments
         self.sendFailed = sendFailed
         self.timestamp = timestamp
     }
@@ -53,6 +78,7 @@ struct ToolCall: Identifiable, Sendable {
     var error: String?
     var status: ToolStatus
     var duration: Double?
+    var imageURL: String?
 
     enum ToolStatus: Sendable {
         case running
@@ -68,7 +94,8 @@ struct ToolCall: Identifiable, Sendable {
         result: String? = nil,
         error: String? = nil,
         status: ToolStatus = .running,
-        duration: Double? = nil
+        duration: Double? = nil,
+        imageURL: String? = nil
     ) {
         self.id = id
         self.toolName = toolName
@@ -78,5 +105,6 @@ struct ToolCall: Identifiable, Sendable {
         self.error = error
         self.status = status
         self.duration = duration
+        self.imageURL = imageURL
     }
 }

@@ -36,13 +36,13 @@ struct ProcessedAttachment: Sendable {
 /// Processes email attachments by extracting text, storing files, and parsing structured content.
 ///
 /// All attachments are stored under `~/.love-me/attachments/{emailId}/`.
-/// Large attachments (>10 MB) are skipped with a warning.
+/// Large attachments (>50 MB) are skipped with a warning.
 actor AttachmentProcessor {
     private let basePath: String
     private let attachmentsDirectory: String
 
-    /// Maximum attachment size in bytes (10 MB).
-    private static let maxAttachmentSize = 10 * 1024 * 1024
+    /// Maximum attachment size in bytes (50 MB).
+    private static let maxAttachmentSize = 50 * 1024 * 1024
 
     init(basePath: String) {
         self.basePath = basePath
@@ -68,7 +68,7 @@ actor AttachmentProcessor {
         // Check size limit
         if data.count > Self.maxAttachmentSize {
             let sizeMB = String(format: "%.1f", Double(data.count) / 1_048_576.0)
-            let reason = "Attachment too large (\(sizeMB) MB exceeds 10 MB limit)"
+            let reason = "Attachment too large (\(sizeMB) MB exceeds 50 MB limit)"
             Logger.info("AttachmentProcessor: skipping \(filename) — \(reason)")
             return ProcessedAttachment(filename: filename, mimeType: mimeType, contentType: .skipped(reason))
         }

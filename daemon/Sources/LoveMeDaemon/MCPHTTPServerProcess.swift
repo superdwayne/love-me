@@ -124,8 +124,21 @@ final class MCPHTTPServerProcess: Sendable {
                 case "image":
                     let mimeType: String
                     if case .string(let m) = contentObj["mimeType"] { mimeType = m } else { mimeType = "image/png" }
-                    if !resultText.isEmpty { resultText += "\n" }
-                    resultText += "[Image returned: \(mimeType)]"
+                    // Save base64 image to disk and return a serveable URL
+                    if case .string(let b64Data) = contentObj["data"] {
+                        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+                        let generatedDir = "\(homeDir)/.love-me/generated"
+                        if let filename = ImageFileHelper.saveBase64Image(data: b64Data, mimeType: mimeType, directory: generatedDir) {
+                            if !resultText.isEmpty { resultText += "\n" }
+                            resultText += "http://localhost:9201/images/\(filename)"
+                        } else {
+                            if !resultText.isEmpty { resultText += "\n" }
+                            resultText += "[Image returned: \(mimeType) — failed to save]"
+                        }
+                    } else {
+                        if !resultText.isEmpty { resultText += "\n" }
+                        resultText += "[Image returned: \(mimeType)]"
+                    }
                 case "resource":
                     if case .object(let resource) = contentObj["resource"],
                        case .string(let uri) = resource["uri"] {

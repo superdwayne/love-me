@@ -14,6 +14,8 @@ actor EmailConversationBridge {
     private let workflowExecutor: WorkflowExecutor
     private let eventBus: EventBus
     private let approvalStore: EmailApprovalStore
+    private let agentMailClient: AgentMailClient?
+    private let attachmentProcessor: AttachmentProcessor?
 
     // MARK: - Callbacks
 
@@ -34,13 +36,17 @@ actor EmailConversationBridge {
         workflowStore: WorkflowStore,
         workflowExecutor: WorkflowExecutor,
         eventBus: EventBus,
-        approvalStore: EmailApprovalStore
+        approvalStore: EmailApprovalStore,
+        agentMailClient: AgentMailClient? = nil,
+        attachmentProcessor: AttachmentProcessor? = nil
     ) {
         self.triggerStore = triggerStore
         self.workflowStore = workflowStore
         self.workflowExecutor = workflowExecutor
         self.eventBus = eventBus
         self.approvalStore = approvalStore
+        self.agentMailClient = agentMailClient
+        self.attachmentProcessor = attachmentProcessor
     }
 
     // MARK: - Configuration
@@ -58,25 +64,86 @@ actor EmailConversationBridge {
     /// Handle an incoming email. This is the primary entry point, intended to be wired as
     /// `EmailPollingService.onEmailReceived`.
     ///
-    /// 1. Evaluates trigger rules and executes matching workflows.
-    /// 2. Summarizes the email and creates a unified approval for user review.
+    /// 1. Auto-processes attachments (PDF text extraction, image storage, etc.).
+    /// 2. Evaluates trigger rules and executes matching workflows.
+    /// 3. Summarizes the email and creates a unified approval for user review.
     func handleIncomingEmail(_ email: EmailMessage, conversationId: String? = nil) async {
         Logger.info("EmailConversationBridge: handling email '\(email.subject)' from \(email.from)")
+
+        // Auto-process attachments in background (download + extract text/images)
+        var attachmentSummaries: [String] = []
+        if !email.attachments.isEmpty {
+            attachmentSummaries = await autoProcessAttachments(email)
+        }
 
         // Evaluate trigger rules (these still auto-execute)
         await evaluateTriggers(for: email)
 
-        // Summarize and create unified approval
-        await summarizeAndCreateApproval(email, conversationId: conversationId)
+        // Summarize and create unified approval (include attachment info)
+        await summarizeAndCreateApproval(email, attachmentSummaries: attachmentSummaries, conversationId: conversationId)
+    }
+
+    // MARK: - Attachment Auto-Processing
+
+    /// Download and process all attachments for an email. Returns a summary per attachment.
+    private func autoProcessAttachments(_ email: EmailMessage) async -> [String] {
+        guard let client = agentMailClient, let processor = attachmentProcessor else {
+            Logger.info("EmailConversationBridge: skipping attachment processing (client or processor not configured)")
+            return []
+        }
+
+        var summaries: [String] = []
+
+        for attachment in email.attachments {
+            do {
+                let data = try await client.getAttachment(
+                    messageId: email.id,
+                    attachmentId: attachment.id
+                )
+
+                let processed = try await processor.process(
+                    emailId: email.id,
+                    attachmentId: attachment.id,
+                    filename: attachment.filename,
+                    mimeType: attachment.mimeType,
+                    data: data
+                )
+
+                Logger.info("EmailConversationBridge: processed attachment '\(attachment.filename)' (\(processed.contentType))")
+                summaries.append("[\(attachment.filename)] \(processed.summary)")
+
+            } catch {
+                Logger.error("EmailConversationBridge: failed to process attachment '\(attachment.filename)': \(error)")
+                summaries.append("[\(attachment.filename)] Failed to process: \(error.localizedDescription)")
+            }
+        }
+
+        return summaries
     }
 
     // MARK: - Email Summarization
 
-    private func summarizeAndCreateApproval(_ email: EmailMessage, conversationId: String?) async {
+    private func summarizeAndCreateApproval(_ email: EmailMessage, attachmentSummaries: [String] = [], conversationId: String?) async {
         guard let classifier = classifyEmail else {
             Logger.error("EmailConversationBridge: classifier not configured, creating approval with no summary")
             await createUnifiedApproval(email, summary: nil, recommendation: "chat", conversationId: conversationId)
             return
+        }
+
+        var attachmentInfo = ""
+        if !email.attachments.isEmpty {
+            let attachmentLines = email.attachments.map { att in
+                let sizeMB = String(format: "%.1f", Double(att.size) / 1_048_576.0)
+                let sizeKB = String(format: "%.1f", Double(att.size) / 1_024.0)
+                let sizeStr = att.size > 1_048_576 ? "\(sizeMB) MB" : "\(sizeKB) KB"
+                return "  - \(att.filename) (\(att.mimeType), \(sizeStr))"
+            }
+            attachmentInfo = "\nAttachments (\(email.attachments.count)):\n\(attachmentLines.joined(separator: "\n"))"
+
+            // Include processed attachment content (e.g. extracted PDF text)
+            if !attachmentSummaries.isEmpty {
+                attachmentInfo += "\n\nProcessed Attachment Content:\n\(attachmentSummaries.joined(separator: "\n"))"
+            }
         }
 
         let prompt = """
@@ -84,7 +151,7 @@ actor EmailConversationBridge {
 
         Email:
         From: \(email.from)
-        Subject: \(email.subject)
+        Subject: \(email.subject)\(attachmentInfo)
         Body:
         \(String(email.bodyText.prefix(4000)))
 
@@ -95,7 +162,7 @@ actor EmailConversationBridge {
         }
 
         Recommendation rules:
-        - "workflow": The email describes a clear, actionable task that could be automated
+        - "workflow": The email describes a clear, actionable task that could be automated (includes emails with attachments to process)
         - "chat": The email needs discussion, clarification, or a nuanced response
         - "dismiss": Spam, newsletters, notifications, or auto-generated messages that need no response
         """

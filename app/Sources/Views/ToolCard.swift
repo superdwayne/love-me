@@ -6,6 +6,7 @@ struct ToolCard: View {
     @State private var appeared = false
     @State private var gearRotation: Double = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(ChatViewModel.self) private var chatVM
 
     var body: some View {
         VStack(spacing: 0) {
@@ -150,6 +151,51 @@ struct ToolCard: View {
                         .padding(LoveMeTheme.sm)
                         .background(.codeBg)
                         .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.xs))
+                }
+            }
+
+            // Inline generated image
+            if let imageURL = toolCall.imageURL, let url = chatVM.daemonImageURL(from: imageURL) {
+                VStack(alignment: .leading, spacing: LoveMeTheme.xs) {
+                    Text("GENERATED IMAGE")
+                        .font(.sectionHeader)
+                        .foregroundStyle(.trust)
+                        .tracking(1.2)
+
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .empty:
+                            RoundedRectangle(cornerRadius: LoveMeTheme.sm)
+                                .fill(Color.surfaceElevated)
+                                .frame(height: 200)
+                                .overlay {
+                                    ProgressView()
+                                        .tint(.trust)
+                                }
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.sm))
+                        case .failure:
+                            RoundedRectangle(cornerRadius: LoveMeTheme.sm)
+                                .fill(Color.surfaceElevated)
+                                .frame(height: 100)
+                                .overlay {
+                                    VStack(spacing: LoveMeTheme.xs) {
+                                        Image(systemName: "photo.badge.exclamationmark")
+                                            .font(.system(size: 20))
+                                            .foregroundStyle(.trust)
+                                        Text("Failed to load image")
+                                            .font(.toolDetail)
+                                            .foregroundStyle(.trust)
+                                    }
+                                }
+                        @unknown default:
+                            EmptyView()
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
                 }
             }
 

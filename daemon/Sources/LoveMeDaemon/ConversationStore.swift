@@ -43,11 +43,14 @@ struct ConversationSummary: Sendable {
 /// Persistence layer for conversations
 actor ConversationStore {
     private let directory: String
+    private let generatedImagesDirectory: String
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
-    init(directory: String) {
+    init(directory: String, generatedImagesDirectory: String? = nil) {
         self.directory = directory
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        self.generatedImagesDirectory = generatedImagesDirectory ?? "\(homeDir)/.love-me/generated"
 
         let enc = JSONEncoder()
         enc.dateEncodingStrategy = .iso8601
@@ -220,6 +223,41 @@ actor ConversationStore {
             switch msg.role {
             case "user":
                 apiRole = "user"
+                // Check for image attachments saved as files
+                if let attachmentFiles = msg.metadata?["attachmentFiles"], !attachmentFiles.isEmpty {
+                    // Build multi-content block: images first, then text
+                    var blocks: [ContentBlock] = []
+                    let filenames = attachmentFiles.split(separator: ",").map(String.init)
+                    for filename in filenames {
+                        let filePath = "\(generatedImagesDirectory)/\(filename)"
+                        if let imageData = try? Data(contentsOf: URL(fileURLWithPath: filePath)) {
+                            let base64 = imageData.base64EncodedString()
+                            let ext = (filename as NSString).pathExtension.lowercased()
+                            let mediaType: String
+                            switch ext {
+                            case "jpg", "jpeg": mediaType = "image/jpeg"
+                            case "gif": mediaType = "image/gif"
+                            case "webp": mediaType = "image/webp"
+                            default: mediaType = "image/png"
+                            }
+                            blocks.append(.image(ImageContent(source: ImageSource(mediaType: mediaType, data: base64))))
+                        }
+                    }
+                    if !msg.content.isEmpty {
+                        blocks.append(.text(TextContent(text: msg.content)))
+                    }
+                    // Handle multi-block user message by appending all blocks
+                    if apiRole != currentRole {
+                        if let role = currentRole, !currentBlocks.isEmpty {
+                            apiMessages.append(MessageParam(role: role, content: currentBlocks))
+                        }
+                        currentRole = apiRole
+                        currentBlocks = blocks
+                    } else {
+                        currentBlocks.append(contentsOf: blocks)
+                    }
+                    continue
+                }
                 block = .text(TextContent(text: msg.content))
             case "assistant":
                 apiRole = "assistant"

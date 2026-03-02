@@ -2,6 +2,14 @@ import Foundation
 import Observation
 import SwiftUI
 
+struct PendingAttachment: Identifiable {
+    let id = UUID().uuidString
+    let data: Data
+    let mimeType: String
+    let fileName: String
+    let thumbnail: UIImage?
+}
+
 @Observable
 @MainActor
 final class ChatViewModel {
@@ -10,27 +18,67 @@ final class ChatViewModel {
     var isStreaming: Bool = false
     var currentConversationId: String?
     var errorMessage: String?
+    var pendingAttachments: [PendingAttachment] = []
 
     private let webSocket: WebSocketClient
 
+    /// The daemon host (used to rewrite localhost image URLs for network access)
+    var daemonHost: String {
+        UserDefaults.standard.string(forKey: "ws_host") ?? "localhost"
+    }
+
     init(webSocket: WebSocketClient) {
         self.webSocket = webSocket
+    }
+
+    /// Rewrite a daemon image URL: replace localhost with the actual daemon host
+    func daemonImageURL(from urlString: String) -> URL? {
+        let rewritten = urlString.replacingOccurrences(of: "localhost", with: daemonHost)
+            .replacingOccurrences(of: "127.0.0.1", with: daemonHost)
+        return URL(string: rewritten)
+    }
+
+    func addAttachment(data: Data, mimeType: String, fileName: String) {
+        let thumbnail = UIImage(data: data)
+        let pending = PendingAttachment(
+            data: data,
+            mimeType: mimeType,
+            fileName: fileName,
+            thumbnail: thumbnail
+        )
+        pendingAttachments.append(pending)
+    }
+
+    func removeAttachment(_ attachment: PendingAttachment) {
+        pendingAttachments.removeAll { $0.id == attachment.id }
     }
 
     // MARK: - Public Actions
 
     func sendMessage() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        let attachments = pendingAttachments
+        guard !text.isEmpty || !attachments.isEmpty else { return }
         guard !isStreaming else { return }
+
+        // Build message attachments for display
+        let messageAttachments = attachments.map { pending in
+            MessageAttachment(
+                fileName: pending.fileName,
+                mimeType: pending.mimeType,
+                thumbnailData: pending.data
+            )
+        }
 
         let userMessage = Message(
             role: .user,
             content: text,
+            attachments: messageAttachments,
             timestamp: Date()
         )
         messages.append(userMessage)
         inputText = ""
+        pendingAttachments = []
 
         HapticManager.messageSent()
 
@@ -39,11 +87,24 @@ final class ChatViewModel {
             currentConversationId = UUID().uuidString
         }
 
-        // Send to daemon
+        // Build WebSocket message with attachment data
+        var metadata: [String: MetadataValue]? = nil
+        if !attachments.isEmpty {
+            let attachmentValues: [MetadataValue] = attachments.map { pending in
+                .object([
+                    "data": .string(pending.data.base64EncodedString()),
+                    "mimeType": .string(pending.mimeType),
+                    "fileName": .string(pending.fileName)
+                ])
+            }
+            metadata = ["attachments": .array(attachmentValues)]
+        }
+
         let wsMsg = WSMessage(
             type: WSMessageType.userMessage,
             conversationId: currentConversationId,
-            content: text
+            content: text.isEmpty ? " " : text,
+            metadata: metadata
         )
         webSocket.send(wsMsg)
 
@@ -97,6 +158,31 @@ final class ChatViewModel {
     func newConversation() {
         currentConversationId = UUID().uuidString
         messages = []
+        isStreaming = false
+    }
+
+    func cancelGeneration() {
+        guard isStreaming else { return }
+
+        let wsMsg = WSMessage(
+            type: WSMessageType.cancelGeneration,
+            conversationId: currentConversationId
+        )
+        webSocket.send(wsMsg)
+
+        // Immediately update local state
+        if let assistant = currentAssistantMessage {
+            assistant.isStreaming = false
+            assistant.isThinkingStreaming = false
+            // Mark any running tool calls as cancelled
+            for i in assistant.toolCalls.indices where assistant.toolCalls[i].status == .running {
+                assistant.toolCalls[i].status = .error
+                assistant.toolCalls[i].error = "Cancelled by user"
+            }
+            if assistant.content.isEmpty {
+                assistant.content = "Generation stopped."
+            }
+        }
         isStreaming = false
     }
 
@@ -218,6 +304,7 @@ final class ChatViewModel {
             assistant.toolCalls[index].result = msg.metadata?["result"]?.stringValue
             assistant.toolCalls[index].error = msg.metadata?["error"]?.stringValue
             assistant.toolCalls[index].duration = msg.metadata?["duration"]?.doubleValue
+            assistant.toolCalls[index].imageURL = msg.metadata?["imageURL"]?.stringValue
 
             if success {
                 HapticManager.toolCompleted()
@@ -245,6 +332,7 @@ final class ChatViewModel {
         guard case .array(let messageValues) = msg.metadata?["messages"] else { return }
 
         var loadedMessages: [Message] = []
+        let host = daemonHost
         for value in messageValues {
             guard case .object(let dict) = value else { continue }
             guard let roleStr = dict["role"]?.stringValue,
@@ -252,10 +340,35 @@ final class ChatViewModel {
                   let content = dict["content"]?.stringValue else { continue }
 
             let msgId = dict["id"]?.stringValue ?? UUID().uuidString
+
+            // Parse attachments from metadata
+            var attachments: [MessageAttachment] = []
+            if case .object(let meta) = dict["metadata"],
+               let filesStr = meta["attachmentFiles"]?.stringValue, !filesStr.isEmpty {
+                let filenames = filesStr.split(separator: ",").map(String.init)
+                attachments = filenames.map { filename in
+                    let url = "http://\(host):9201/images/\(filename)"
+                    let ext = (filename as NSString).pathExtension.lowercased()
+                    let mimeType: String
+                    switch ext {
+                    case "jpg", "jpeg": mimeType = "image/jpeg"
+                    case "gif": mimeType = "image/gif"
+                    case "webp": mimeType = "image/webp"
+                    default: mimeType = "image/png"
+                    }
+                    return MessageAttachment(
+                        fileName: filename,
+                        mimeType: mimeType,
+                        imageURL: url
+                    )
+                }
+            }
+
             let message = Message(
                 id: msgId,
                 role: role,
                 content: content,
+                attachments: attachments,
                 timestamp: Date()
             )
 

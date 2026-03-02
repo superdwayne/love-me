@@ -9,6 +9,7 @@ struct DaemonConfig: Sendable {
     let workflowsDirectory: String
     let executionsDirectory: String
     let skillsDirectory: String
+    let generatedImagesDirectory: String
     let systemPrompt: String
     let daemonVersion: String
 
@@ -38,6 +39,7 @@ struct DaemonConfig: Sendable {
         self.workflowsDirectory = "\(basePath)/workflows"
         self.executionsDirectory = "\(basePath)/executions"
         self.skillsDirectory = "\(basePath)/skills"
+        self.generatedImagesDirectory = "\(basePath)/generated"
         self.systemPrompt = Self.defaultSystemPrompt
         self.daemonVersion = Self.version
     }
@@ -68,7 +70,7 @@ struct DaemonConfig: Sendable {
     /// Creates required directories if they don't exist
     func ensureDirectories() throws {
         let fm = FileManager.default
-        for dir in [conversationsDirectory, workflowsDirectory, executionsDirectory, skillsDirectory] {
+        for dir in [conversationsDirectory, workflowsDirectory, executionsDirectory, skillsDirectory, generatedImagesDirectory] {
             if !fm.fileExists(atPath: dir) {
                 try fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
             }
