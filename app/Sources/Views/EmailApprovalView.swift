@@ -4,12 +4,13 @@ struct EmailApprovalView: View {
     let approval: EmailApprovalDisplay
     let onChat: () -> Void
     let onAutoWorkflow: () -> Void
+    let onSaveAutoFlow: () -> Void
     let onDismiss: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: LoveMeTheme.md) {
+        VStack(alignment: .leading, spacing: SolaceTheme.md) {
             // Header: from + time
-            HStack(spacing: LoveMeTheme.sm) {
+            HStack(spacing: SolaceTheme.sm) {
                 Image(systemName: "envelope.fill")
                     .font(.system(size: 14))
                     .foregroundStyle(.heart)
@@ -48,7 +49,7 @@ struct EmailApprovalView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(.textPrimary.opacity(0.85))
                     .lineLimit(3)
-                    .padding(LoveMeTheme.sm)
+                    .padding(SolaceTheme.sm)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.surface.opacity(0.5))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -72,47 +73,72 @@ struct EmailApprovalView: View {
 
             // Action buttons or status
             if approval.isPending {
-                HStack(spacing: LoveMeTheme.sm) {
-                    // Dismiss (tertiary)
-                    Button(action: onDismiss) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(.trust)
-                            .frame(width: 40, height: 36)
-                            .background(Color.trust.opacity(0.1))
+                VStack(spacing: SolaceTheme.sm) {
+                    HStack(spacing: SolaceTheme.sm) {
+                        // Dismiss (tertiary)
+                        Button(action: onDismiss) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(.trust)
+                                .frame(width: 40, height: 36)
+                                .background(Color.trust.opacity(0.1))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+
+                        // Chat (primary when recommended)
+                        Button(action: onChat) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "bubble.left.and.bubble.right")
+                                Text("Chat")
+                            }
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(approval.recommendation == "chat" ? .white : .electricBlue)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, SolaceTheme.sm)
+                            .background(approval.recommendation == "chat" ? Color.electricBlue : Color.electricBlue.opacity(0.12))
                             .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+
+                        // Auto Workflow (primary when recommended)
+                        Button(action: onAutoWorkflow) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "gearshape")
+                                Text("Auto")
+                            }
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(approval.recommendation == "workflow" ? .white : .sageGreen)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, SolaceTheme.sm)
+                            .background(approval.recommendation == "workflow" ? Color.sageGreen : Color.sageGreen.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
                     }
 
-                    // Chat (primary when recommended)
-                    Button(action: onChat) {
+                    // Save Auto Flow (full width, second row)
+                    Button(action: onSaveAutoFlow) {
                         HStack(spacing: 4) {
-                            Image(systemName: "bubble.left.and.bubble.right")
-                            Text("Chat")
+                            Image(systemName: "repeat")
+                            Text("Save as Auto Flow")
                         }
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(approval.recommendation == "chat" ? .white : .electricBlue)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.amberGlow)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, LoveMeTheme.sm)
-                        .background(approval.recommendation == "chat" ? Color.electricBlue : Color.electricBlue.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-
-                    // Auto Workflow (primary when recommended)
-                    Button(action: onAutoWorkflow) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "gearshape")
-                            Text("Auto Workflow")
-                        }
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(approval.recommendation == "workflow" ? .white : .sageGreen)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, LoveMeTheme.sm)
-                        .background(approval.recommendation == "workflow" ? Color.sageGreen : Color.sageGreen.opacity(0.12))
+                        .padding(.vertical, SolaceTheme.sm)
+                        .background(Color.amberGlow.opacity(0.12))
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                 }
+            } else if approval.isBuilding {
+                HStack(spacing: SolaceTheme.sm) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.amberGlow)
+                    Text("Building workflow...")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.amberGlow)
+                }
             } else {
-                HStack(spacing: LoveMeTheme.sm) {
+                HStack(spacing: SolaceTheme.sm) {
                     Image(systemName: statusIcon)
                         .font(.system(size: 12))
                         .foregroundStyle(statusColor)
@@ -122,7 +148,7 @@ struct EmailApprovalView: View {
                 }
             }
         }
-        .padding(LoveMeTheme.md)
+        .padding(SolaceTheme.md)
     }
 
     private var statusIcon: String {

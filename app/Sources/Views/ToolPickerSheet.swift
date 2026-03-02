@@ -26,7 +26,7 @@ struct ToolPickerSheet: View {
         NavigationStack {
             Group {
                 if isLoading {
-                    VStack(spacing: LoveMeTheme.md) {
+                    VStack(spacing: SolaceTheme.md) {
                         ProgressView()
                             .tint(.heart)
                         Text("Loading tools...")
@@ -35,7 +35,7 @@ struct ToolPickerSheet: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if tools.isEmpty {
-                    VStack(spacing: LoveMeTheme.md) {
+                    VStack(spacing: SolaceTheme.md) {
                         Image(systemName: "wrench.and.screwdriver")
                             .font(.system(size: 40))
                             .foregroundStyle(.trust.opacity(0.5))
@@ -55,7 +55,7 @@ struct ToolPickerSheet: View {
                                     Button {
                                         onSelect(tool)
                                     } label: {
-                                        HStack(spacing: LoveMeTheme.md) {
+                                        HStack(spacing: SolaceTheme.md) {
                                             Circle()
                                                 .fill(Color.electricBlue.opacity(0.15))
                                                 .frame(width: 36, height: 36)

@@ -30,7 +30,10 @@ extension Color {
     static let electricBlue = Color(red: 59/255, green: 130/255, blue: 246/255)
     static let sageGreen = Color(red: 52/255, green: 211/255, blue: 153/255)
     static let softRed = Color(red: 239/255, green: 68/255, blue: 68/255)
-    static let codeBg = Color(red: 55/255, green: 65/255, blue: 81/255)
+    static let codeBg = Color.adaptive(
+        dark: Color(red: 55/255, green: 65/255, blue: 81/255),
+        light: Color(red: 243/255, green: 244/255, blue: 246/255)
+    )
 }
 
 // MARK: - Adaptive Surface Colors
@@ -105,14 +108,16 @@ extension Font {
     static let toolDetail = Font.system(size: 12, design: .monospaced)
     static let timestamp = Font.system(size: 11)
     static let sectionHeader = Font.system(size: 12, weight: .bold)
-    static let emptyStateTitle = Font.system(size: 28, weight: .light)
-    static let navTitle = Font.system(size: 20, weight: .semibold)
+    static let emptyStateTitle = Font.system(size: 28, weight: .light, design: .rounded)
+    static let navTitle = Font.system(size: 20, weight: .semibold, design: .rounded)
     static let codeFont = Font.system(size: 14, design: .monospaced)
+    static let displayTitle = Font.system(size: 22, weight: .semibold, design: .rounded)
+    static let displaySubtitle = Font.system(size: 17, weight: .semibold, design: .rounded)
 }
 
 // MARK: - Theme Constants
 
-struct LoveMeTheme {
+struct SolaceTheme {
     // Spacing (4px base unit)
     static let xs: CGFloat = 4
     static let sm: CGFloat = 8
@@ -139,7 +144,7 @@ struct LoveMeTheme {
     static let minTouchTarget: CGFloat = 44
     static let toolCardCollapsedHeight: CGFloat = 44
     static let thinkingCollapsedHeight: CGFloat = 36
-    static let thinkingMaxExpandedHeight: CGFloat = 200
+    static let thinkingMaxExpandedHeight: CGFloat = 350
     static let toolCardLeftBorderWidth: CGFloat = 3
 
     // Animation Durations

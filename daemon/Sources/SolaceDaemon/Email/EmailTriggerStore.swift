@@ -18,7 +18,7 @@ enum EmailTriggerStoreError: Error, LocalizedError {
 
 /// Persistence layer for `EmailTriggerRule` definitions.
 ///
-/// Rules are stored as a JSON array at the specified file path (e.g. `~/.love-me/email-triggers.json`).
+/// Rules are stored as a JSON array at the specified file path (e.g. `~/.solace/email-triggers.json`).
 /// All operations are thread-safe via the actor model.
 actor EmailTriggerStore {
 
@@ -44,7 +44,7 @@ actor EmailTriggerStore {
 
     // MARK: - Init
 
-    /// - Parameter basePath: Base directory path (e.g. `~/.love-me`). The triggers file
+    /// - Parameter basePath: Base directory path (e.g. `~/.solace`). The triggers file
     ///   will be stored at `<basePath>/email-triggers.json`.
     init(basePath: String) {
         self.filePath = "\(basePath)/email-triggers.json"

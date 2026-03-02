@@ -15,12 +15,12 @@ struct DaemonConfig: Sendable {
 
     static let defaultPort: UInt16 = 9200
     static let defaultModel = "claude-sonnet-4-5-20250929"
-    static let defaultSystemPrompt = "You are love.Me, a personal AI assistant. You have access to tools to execute tasks on the user's computer. Be concise and helpful."
+    static let defaultSystemPrompt = "You are Solace, a personal AI assistant. You have access to tools to execute tasks on the user's computer. Be concise and helpful."
     static let version = "0.1.0"
 
     init() {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
-        let basePath = "\(homeDir)/.love-me"
+        let basePath = "\(homeDir)/.solace"
 
         // Parse command-line arguments
         var port = Self.defaultPort
@@ -44,7 +44,7 @@ struct DaemonConfig: Sendable {
         self.daemonVersion = Self.version
     }
 
-    /// Load API key from env var or ~/.love-me/.env file
+    /// Load API key from env var or ~/.solace/.env file
     private static func loadAPIKey(basePath: String) -> String? {
         // 1. Check environment variable first
         if let envKey = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"],

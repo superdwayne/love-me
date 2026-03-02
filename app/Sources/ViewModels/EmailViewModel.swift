@@ -63,6 +63,7 @@ struct EmailApprovalDisplay: Identifiable {
     var status: String
 
     var isPending: Bool { status == "pending" }
+    var isBuilding: Bool { status == "building" }
     var isCompleted: Bool { status == "completed" }
     var isFailed: Bool { status == "failed" }
 
@@ -77,6 +78,7 @@ struct EmailApprovalDisplay: Identifiable {
     var statusLabel: String {
         switch status {
         case "pending": return "Pending"
+        case "building": return "Building workflow..."
         case "approved": return "Approved"
         case "dismissed": return "Dismissed"
         case "completed": return "Completed"
@@ -295,6 +297,19 @@ final class EmailViewModel {
         HapticManager.toolCompleted()
     }
 
+    func saveAutoFlow(approvalId: String) {
+        webSocket.send(WSMessage(
+            type: WSMessageType.emailApprovalApprove,
+            id: approvalId,
+            metadata: ["action": .string("save_auto_flow")]
+        ))
+        // Optimistic update — show building state
+        if let index = pendingApprovals.firstIndex(where: { $0.id == approvalId }) {
+            pendingApprovals[index].status = "building"
+        }
+        HapticManager.messageSent()
+    }
+
     func dismissEmail(approvalId: String) {
         webSocket.send(WSMessage(
             type: WSMessageType.emailApprovalDismiss,
@@ -478,9 +493,12 @@ final class EmailViewModel {
                 pendingApprovals[index].status = status
             }
         }
-        if meta["status"]?.stringValue == "completed" {
+        switch meta["status"]?.stringValue {
+        case "completed":
             HapticManager.toolCompleted()
-        } else {
+        case "building":
+            break // No haptic for in-progress building
+        default:
             HapticManager.toolError()
         }
     }

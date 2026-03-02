@@ -57,7 +57,11 @@ struct MCPServerConfig: Codable, Sendable {
     let env: [String: String]?
     let url: String?
     let headers: [String: String]?
+    let enabled: Bool?
 
     /// Whether this is a stdio-based server (has command)
     var isStdio: Bool { command != nil }
+
+    /// Resolved enabled state (defaults to true when nil)
+    var isEnabled: Bool { enabled ?? true }
 }

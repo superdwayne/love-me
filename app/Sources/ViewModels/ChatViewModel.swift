@@ -19,6 +19,7 @@ final class ChatViewModel {
     var currentConversationId: String?
     var errorMessage: String?
     var pendingAttachments: [PendingAttachment] = []
+    var replyingToMessage: Message?
 
     private let webSocket: WebSocketClient
 
@@ -53,6 +54,14 @@ final class ChatViewModel {
         pendingAttachments.removeAll { $0.id == attachment.id }
     }
 
+    func quoteReply(_ message: Message) {
+        replyingToMessage = message
+    }
+
+    func clearReply() {
+        replyingToMessage = nil
+    }
+
     // MARK: - Public Actions
 
     func sendMessage() {
@@ -60,6 +69,13 @@ final class ChatViewModel {
         let attachments = pendingAttachments
         guard !text.isEmpty || !attachments.isEmpty else { return }
         guard !isStreaming else { return }
+
+        // Build quoted context if replying
+        var fullText = text
+        if let reply = replyingToMessage {
+            let quoted = reply.content.prefix(200)
+            fullText = "> \(quoted)\n\n\(text)"
+        }
 
         // Build message attachments for display
         let messageAttachments = attachments.map { pending in
@@ -72,13 +88,14 @@ final class ChatViewModel {
 
         let userMessage = Message(
             role: .user,
-            content: text,
+            content: fullText,
             attachments: messageAttachments,
             timestamp: Date()
         )
         messages.append(userMessage)
         inputText = ""
         pendingAttachments = []
+        replyingToMessage = nil
 
         HapticManager.messageSent()
 

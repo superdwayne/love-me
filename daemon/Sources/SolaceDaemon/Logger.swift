@@ -13,13 +13,13 @@ enum Logger: Sendable {
     }
 
     static func info(_ message: String) {
-        let line = "[love.Me] [\(timestamp())] \(message)\n"
+        let line = "[Solace] [\(timestamp())] \(message)\n"
         FileHandle.standardError.write(Data(line.utf8))
     }
 
     static func error(_ message: String) {
         FileHandle.standardError.write(
-            Data("[love.Me] [\(timestamp())] ERROR: \(message)\n".utf8)
+            Data("[Solace] [\(timestamp())] ERROR: \(message)\n".utf8)
         )
     }
 }

@@ -2,14 +2,14 @@
 import PackageDescription
 
 let package = Package(
-    name: "LoveMeDaemon",
+    name: "SolaceDaemon",
     platforms: [
         .macOS(.v14)
     ],
     targets: [
         .executableTarget(
-            name: "LoveMeDaemon",
-            path: "Sources/LoveMeDaemon",
+            name: "SolaceDaemon",
+            path: "Sources/SolaceDaemon",
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency")
             ]

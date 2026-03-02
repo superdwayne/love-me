@@ -77,10 +77,14 @@ actor EmailConversationBridge {
         }
 
         // Evaluate trigger rules (these still auto-execute)
-        await evaluateTriggers(for: email)
+        let triggersMatched = await evaluateTriggers(for: email)
 
-        // Summarize and create unified approval (include attachment info)
-        await summarizeAndCreateApproval(email, attachmentSummaries: attachmentSummaries, conversationId: conversationId)
+        // Only create an approval card if no trigger rules already handled this email
+        if !triggersMatched {
+            await summarizeAndCreateApproval(email, attachmentSummaries: attachmentSummaries, conversationId: conversationId)
+        } else {
+            Logger.info("EmailConversationBridge: trigger rules matched, skipping approval for '\(email.subject)'")
+        }
     }
 
     // MARK: - Attachment Auto-Processing
@@ -255,13 +259,15 @@ actor EmailConversationBridge {
     // MARK: - Trigger Evaluation
 
     /// Evaluate all enabled trigger rules against the incoming email.
-    private func evaluateTriggers(for email: EmailMessage) async {
+    /// Returns `true` if any rules matched and were executed.
+    @discardableResult
+    private func evaluateTriggers(for email: EmailMessage) async -> Bool {
         let rules = await triggerStore.listAll()
         let matchingRules = rules.filter { $0.enabled && $0.conditions.matches(email) }
 
         if matchingRules.isEmpty {
             Logger.info("EmailConversationBridge: no trigger rules matched for email \(email.id)")
-            return
+            return false
         }
 
         Logger.info("EmailConversationBridge: \(matchingRules.count) trigger rule(s) matched for email \(email.id)")
@@ -293,5 +299,7 @@ actor EmailConversationBridge {
                 Logger.error("EmailConversationBridge: failed to load workflow \(rule.workflowId) for trigger \(rule.id): \(error)")
             }
         }
+
+        return true
     }
 }

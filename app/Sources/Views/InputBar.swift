@@ -20,12 +20,44 @@ struct InputBar: View {
                 .fill(Color.divider)
                 .frame(height: 1)
 
+            // Reply preview
+            if let replyMsg = chatVM.replyingToMessage {
+                HStack(spacing: SolaceTheme.sm) {
+                    Rectangle()
+                        .fill(Color.heart)
+                        .frame(width: 3)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(replyMsg.role == .user ? "You" : "Solace")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.heart)
+                        Text(replyMsg.content.prefix(80))
+                            .font(.system(size: 13))
+                            .foregroundStyle(.trust)
+                            .lineLimit(1)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        chatVM.clearReply()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 18))
+                            .foregroundStyle(.trust)
+                    }
+                }
+                .padding(.horizontal, SolaceTheme.lg)
+                .padding(.vertical, SolaceTheme.sm)
+                .background(.surfaceElevated)
+            }
+
             // Attachment preview strip
             if !chatVM.pendingAttachments.isEmpty {
                 attachmentPreview
             }
 
-            HStack(alignment: .bottom, spacing: LoveMeTheme.sm) {
+            HStack(alignment: .bottom, spacing: SolaceTheme.sm) {
                 // Attachment button
                 PhotosPicker(
                     selection: $selectedPhotos,
@@ -45,17 +77,25 @@ struct InputBar: View {
                 }
 
                 // Text input
-                TextField("Message love.Me...", text: $vm.inputText, axis: .vertical)
+                TextField("Message Solace...", text: $vm.inputText, axis: .vertical)
                     .font(.chatMessage)
                     .foregroundStyle(.textPrimary)
                     .lineLimit(1...5)
-                    .padding(.horizontal, LoveMeTheme.md)
-                    .padding(.vertical, LoveMeTheme.sm)
+                    .padding(.horizontal, SolaceTheme.md)
+                    .padding(.vertical, SolaceTheme.sm)
                     .background(.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.inputFieldRadius))
+                    .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.inputFieldRadius))
                     .focused($isFocused)
+                    .onSubmit {
+                        if canSend {
+                            chatVM.sendMessage()
+                        }
+                    }
                     .accessibilityLabel("Message input")
-                    .accessibilityHint("Type a message to send to love.Me")
+                    .accessibilityHint("Type a message to send to Solace")
+                    .onChange(of: chatVM.inputText) { _, newValue in
+                        detectAndFetchImageURL(in: newValue)
+                    }
 
                 if chatVM.isStreaming {
                     // Stop button (while streaming/executing)
@@ -65,8 +105,8 @@ struct InputBar: View {
                         Image(systemName: "stop.fill")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(.white)
-                            .frame(width: LoveMeTheme.sendButtonSize,
-                                   height: LoveMeTheme.sendButtonSize)
+                            .frame(width: SolaceTheme.sendButtonSize,
+                                   height: SolaceTheme.sendButtonSize)
                             .background(.softRed)
                             .clipShape(Circle())
                     }
@@ -80,8 +120,8 @@ struct InputBar: View {
                         Image(systemName: "arrow.up")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(.white)
-                            .frame(width: LoveMeTheme.sendButtonSize,
-                                   height: LoveMeTheme.sendButtonSize)
+                            .frame(width: SolaceTheme.sendButtonSize,
+                                   height: SolaceTheme.sendButtonSize)
                             .background(.heart)
                             .clipShape(Circle())
                     }
@@ -89,8 +129,8 @@ struct InputBar: View {
                     .transition(.scale.combined(with: .opacity))
                 }
             }
-            .padding(.horizontal, LoveMeTheme.lg)
-            .padding(.vertical, LoveMeTheme.sm)
+            .padding(.horizontal, SolaceTheme.lg)
+            .padding(.vertical, SolaceTheme.sm)
         }
         .background(.inputBg)
         .animation(.easeInOut(duration: 0.15), value: canSend)
@@ -100,7 +140,7 @@ struct InputBar: View {
 
     private var attachmentPreview: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: LoveMeTheme.sm) {
+            HStack(spacing: SolaceTheme.sm) {
                 ForEach(chatVM.pendingAttachments) { attachment in
                     ZStack(alignment: .topTrailing) {
                         if let thumbnail = attachment.thumbnail {
@@ -108,9 +148,9 @@ struct InputBar: View {
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
                                 .frame(width: 60, height: 60)
-                                .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.sm))
+                                .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.sm))
                         } else {
-                            RoundedRectangle(cornerRadius: LoveMeTheme.sm)
+                            RoundedRectangle(cornerRadius: SolaceTheme.sm)
                                 .fill(Color.surfaceElevated)
                                 .frame(width: 60, height: 60)
                                 .overlay {
@@ -132,8 +172,8 @@ struct InputBar: View {
                     }
                 }
             }
-            .padding(.horizontal, LoveMeTheme.lg)
-            .padding(.vertical, LoveMeTheme.sm)
+            .padding(.horizontal, SolaceTheme.lg)
+            .padding(.vertical, SolaceTheme.sm)
         }
     }
 
@@ -151,6 +191,54 @@ struct InputBar: View {
             await MainActor.run {
                 chatVM.addAttachment(data: compressed, mimeType: mimeType, fileName: fileName)
             }
+        }
+    }
+
+    // MARK: - Image URL Detection
+
+    private static let imageURLPattern = try! NSRegularExpression(
+        pattern: #"https?://\S+\.(?:jpg|jpeg|png|gif|webp)(?:\?\S*)?"#,
+        options: .caseInsensitive
+    )
+
+    private func detectAndFetchImageURL(in text: String) {
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = Self.imageURLPattern.firstMatch(in: text, range: range),
+              let matchRange = Range(match.range, in: text) else { return }
+
+        let urlString = String(text[matchRange])
+        // Remove the URL from the text field immediately
+        chatVM.inputText = text.replacingCharacters(in: matchRange, with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        Task {
+            await fetchImageFromURL(urlString)
+        }
+    }
+
+    private func fetchImageFromURL(_ urlString: String) async {
+        guard let url = URL(string: urlString) else { return }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+
+            // Validate response is an image
+            if let httpResponse = response as? HTTPURLResponse,
+               let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type"),
+               !contentType.hasPrefix("image/") {
+                return
+            }
+
+            let compressed = compressImage(data: data, maxDimension: 1024, quality: 0.8)
+            let ext = (urlString as NSString).pathExtension.lowercased()
+            let mimeType = ext == "png" ? "image/png" : "image/jpeg"
+            let fileName = "url_\(UUID().uuidString.prefix(8)).\(ext.isEmpty ? "jpg" : ext)"
+
+            await MainActor.run {
+                chatVM.addAttachment(data: compressed, mimeType: mimeType, fileName: fileName)
+            }
+        } catch {
+            // Silently fail — user can still type/paste normally
         }
     }
 

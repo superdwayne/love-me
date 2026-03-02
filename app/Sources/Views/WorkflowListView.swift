@@ -55,7 +55,7 @@ struct WorkflowListView: View {
         .navigationTitle("Workflows")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: LoveMeTheme.lg) {
+                HStack(spacing: SolaceTheme.lg) {
                     Button {
                         showBuilder = true
                     } label: {
@@ -108,17 +108,29 @@ struct WorkflowListView: View {
     // MARK: - Subviews
 
     private func workflowRow(_ workflow: WorkflowItem) -> some View {
-        HStack(spacing: LoveMeTheme.md) {
+        HStack(spacing: SolaceTheme.md) {
             // Status dot
             statusDot(for: workflow.lastRunStatus)
 
-            VStack(alignment: .leading, spacing: LoveMeTheme.xs) {
-                Text(workflow.name)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(.textPrimary)
-                    .lineLimit(1)
+            VStack(alignment: .leading, spacing: SolaceTheme.xs) {
+                HStack(spacing: SolaceTheme.sm) {
+                    Text(workflow.name)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(.textPrimary)
+                        .lineLimit(1)
 
-                HStack(spacing: LoveMeTheme.sm) {
+                    if !workflow.enabled {
+                        Text("OFF")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.trust)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.trust.opacity(0.12))
+                            .clipShape(Capsule())
+                    }
+                }
+
+                HStack(spacing: SolaceTheme.sm) {
                     triggerBadge(workflow.triggerType)
 
                     if !workflow.triggerDetail.isEmpty {
@@ -138,21 +150,11 @@ struct WorkflowListView: View {
 
             Spacer()
 
-            // Enabled toggle
-            Toggle("", isOn: Binding(
-                get: { workflow.enabled },
-                set: { _ in
-                    workflowVM.toggleWorkflowEnabled(id: workflow.id)
-                }
-            ))
-            .labelsHidden()
-            .tint(.heart)
-
             Image(systemName: "chevron.right")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.trust)
         }
-        .padding(.vertical, LoveMeTheme.xs)
+        .padding(.vertical, SolaceTheme.xs)
         .accessibilityLabel("\(workflow.name), \(workflow.triggerType) trigger, \(workflow.enabled ? "enabled" : "disabled")")
     }
 
@@ -175,7 +177,7 @@ struct WorkflowListView: View {
         Text(type.uppercased())
             .font(.system(size: 10, weight: .bold))
             .foregroundStyle(type == "cron" ? .electricBlue : .amberGlow)
-            .padding(.horizontal, LoveMeTheme.sm)
+            .padding(.horizontal, SolaceTheme.sm)
             .padding(.vertical, 2)
             .background(
                 (type == "cron" ? Color.electricBlue : Color.amberGlow).opacity(0.15)
@@ -184,7 +186,7 @@ struct WorkflowListView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: LoveMeTheme.md) {
+        VStack(spacing: SolaceTheme.md) {
             Spacer()
                 .frame(height: 80)
 
@@ -193,12 +195,47 @@ struct WorkflowListView: View {
                 .foregroundStyle(.trust.opacity(0.5))
 
             Text("No workflows yet")
+                .font(.displaySubtitle)
+                .foregroundStyle(.textPrimary)
+
+            Text("Automate tasks with scheduled or on-demand workflows.")
                 .font(.chatMessage)
                 .foregroundStyle(.trust)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, SolaceTheme.xxl)
 
-            Text("Tap + to create your first workflow.")
-                .font(.toolDetail)
-                .foregroundStyle(.trust.opacity(0.7))
+            HStack(spacing: SolaceTheme.md) {
+                Button {
+                    showBuilder = true
+                } label: {
+                    HStack(spacing: SolaceTheme.sm) {
+                        Image(systemName: "wand.and.stars")
+                        Text("Build with AI")
+                    }
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, SolaceTheme.xl)
+                    .padding(.vertical, SolaceTheme.md)
+                    .background(Color.heart)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+
+                Button {
+                    showEditor = true
+                } label: {
+                    HStack(spacing: SolaceTheme.sm) {
+                        Image(systemName: "plus")
+                        Text("Manual")
+                    }
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.textPrimary)
+                    .padding(.horizontal, SolaceTheme.lg)
+                    .padding(.vertical, SolaceTheme.md)
+                    .background(Color.surfaceElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+            }
+            .padding(.top, SolaceTheme.sm)
 
             Spacer()
         }
@@ -206,12 +243,12 @@ struct WorkflowListView: View {
     }
 
     private var skeletonRow: some View {
-        HStack(spacing: LoveMeTheme.md) {
+        HStack(spacing: SolaceTheme.md) {
             Circle()
                 .fill(Color.surfaceElevated)
                 .frame(width: 10, height: 10)
 
-            VStack(alignment: .leading, spacing: LoveMeTheme.sm) {
+            VStack(alignment: .leading, spacing: SolaceTheme.sm) {
                 RoundedRectangle(cornerRadius: 4)
                     .fill(Color.surfaceElevated)
                     .frame(width: 160, height: 16)
@@ -223,7 +260,7 @@ struct WorkflowListView: View {
 
             Spacer()
         }
-        .padding(.vertical, LoveMeTheme.xs)
+        .padding(.vertical, SolaceTheme.xs)
         .redacted(reason: .placeholder)
     }
 }

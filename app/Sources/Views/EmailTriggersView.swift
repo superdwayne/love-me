@@ -76,8 +76,8 @@ struct EmailTriggersView: View {
         .background(.appBackground)
         .navigationTitle("Email Rules")
         .navigationBarTitleDisplayMode(.inline)
-        .animation(.easeInOut(duration: LoveMeTheme.springDuration), value: emailVM.triggerRules.count)
-        .animation(.easeInOut(duration: LoveMeTheme.springDuration), value: emailVM.isLoadingTriggers)
+        .animation(.easeInOut(duration: SolaceTheme.springDuration), value: emailVM.triggerRules.count)
+        .animation(.easeInOut(duration: SolaceTheme.springDuration), value: emailVM.isLoadingTriggers)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -86,8 +86,8 @@ struct EmailTriggersView: View {
                 } label: {
                     Image(systemName: "plus")
                         .foregroundStyle(.heart)
-                        .frame(minWidth: LoveMeTheme.minTouchTarget,
-                               minHeight: LoveMeTheme.minTouchTarget)
+                        .frame(minWidth: SolaceTheme.minTouchTarget,
+                               minHeight: SolaceTheme.minTouchTarget)
                 }
                 .accessibilityLabel("Add email rule")
             }
@@ -125,14 +125,14 @@ struct EmailTriggersView: View {
     // MARK: - Subviews
 
     private func ruleRow(_ rule: TriggerRuleDisplay) -> some View {
-        HStack(spacing: LoveMeTheme.lg) {
+        HStack(spacing: SolaceTheme.lg) {
             // Left accent indicator
             RoundedRectangle(cornerRadius: 1.5)
                 .fill(rule.enabled ? Color.sageGreen : Color.trust.opacity(0.3))
-                .frame(width: LoveMeTheme.toolCardLeftBorderWidth)
+                .frame(width: SolaceTheme.toolCardLeftBorderWidth)
 
-            VStack(alignment: .leading, spacing: LoveMeTheme.xs) {
-                HStack(spacing: LoveMeTheme.sm) {
+            VStack(alignment: .leading, spacing: SolaceTheme.xs) {
+                HStack(spacing: SolaceTheme.sm) {
                     Image(systemName: "envelope.badge.fill")
                         .font(.toolTitle)
                         .foregroundStyle(.trust)
@@ -163,13 +163,13 @@ struct EmailTriggersView: View {
             .accessibilityLabel("\(rule.workflowName) toggle")
             .accessibilityValue(rule.enabled ? "Enabled" : "Disabled")
         }
-        .padding(.vertical, LoveMeTheme.sm)
+        .padding(.vertical, SolaceTheme.sm)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(rule.workflowName) rule, \(rule.conditionsSummary), \(rule.enabled ? "enabled" : "disabled")")
     }
 
     private var emptyState: some View {
-        VStack(spacing: LoveMeTheme.lg) {
+        VStack(spacing: SolaceTheme.lg) {
             Spacer()
                 .frame(height: 80)
 
@@ -177,7 +177,7 @@ struct EmailTriggersView: View {
                 .font(.system(size: 48, weight: .light))
                 .foregroundStyle(.trust.opacity(0.4))
 
-            VStack(spacing: LoveMeTheme.sm) {
+            VStack(spacing: SolaceTheme.sm) {
                 Text("No email rules yet")
                     .font(.emptyStateTitle)
                     .foregroundStyle(.textPrimary)
@@ -192,20 +192,20 @@ struct EmailTriggersView: View {
             Button {
                 showAddSheet = true
             } label: {
-                HStack(spacing: LoveMeTheme.sm) {
+                HStack(spacing: SolaceTheme.sm) {
                     Image(systemName: "plus")
                     Text("Create Rule")
                 }
                 .font(.toolTitle)
                 .foregroundStyle(.textPrimary)
-                .padding(.horizontal, LoveMeTheme.xl)
-                .padding(.vertical, LoveMeTheme.md)
+                .padding(.horizontal, SolaceTheme.xl)
+                .padding(.vertical, SolaceTheme.md)
                 .background(
-                    RoundedRectangle(cornerRadius: LoveMeTheme.inputFieldRadius)
+                    RoundedRectangle(cornerRadius: SolaceTheme.inputFieldRadius)
                         .stroke(Color.trust.opacity(0.3), lineWidth: 1)
                 )
             }
-            .padding(.top, LoveMeTheme.sm)
+            .padding(.top, SolaceTheme.sm)
             .accessibilityLabel("Create first email rule")
 
             Spacer()
@@ -214,12 +214,12 @@ struct EmailTriggersView: View {
     }
 
     private var skeletonRow: some View {
-        HStack(spacing: LoveMeTheme.lg) {
+        HStack(spacing: SolaceTheme.lg) {
             RoundedRectangle(cornerRadius: 1.5)
                 .fill(Color.surfaceElevated.opacity(0.4))
-                .frame(width: LoveMeTheme.toolCardLeftBorderWidth)
+                .frame(width: SolaceTheme.toolCardLeftBorderWidth)
 
-            VStack(alignment: .leading, spacing: LoveMeTheme.sm) {
+            VStack(alignment: .leading, spacing: SolaceTheme.sm) {
                 RoundedRectangle(cornerRadius: 4)
                     .fill(Color.surfaceElevated)
                     .frame(width: 160, height: 16)
@@ -231,7 +231,7 @@ struct EmailTriggersView: View {
 
             Spacer()
         }
-        .padding(.vertical, LoveMeTheme.sm)
+        .padding(.vertical, SolaceTheme.sm)
         .shimmer()
     }
 
@@ -326,7 +326,7 @@ struct TriggerRuleFormView: View {
             Text("Leave a field empty to match all values. Multiple conditions are combined with AND.")
                 .font(.toolDetail)
                 .foregroundStyle(.trust)
-                .padding(.top, LoveMeTheme.xs)
+                .padding(.top, SolaceTheme.xs)
         }
     }
 
@@ -337,7 +337,7 @@ struct TriggerRuleFormView: View {
         text: Binding<String>,
         keyboard: UIKeyboardType = .default
     ) -> some View {
-        HStack(spacing: LoveMeTheme.md) {
+        HStack(spacing: SolaceTheme.md) {
             Image(systemName: icon)
                 .font(.toolTitle)
                 .foregroundStyle(.trust)
@@ -353,7 +353,7 @@ struct TriggerRuleFormView: View {
                 .textInputAutocapitalization(.never)
                 .keyboardType(keyboard)
         }
-        .frame(minHeight: LoveMeTheme.minTouchTarget)
+        .frame(minHeight: SolaceTheme.minTouchTarget)
         .listRowBackground(Color.surface)
         .accessibilityLabel("\(label) contains")
     }
@@ -361,7 +361,7 @@ struct TriggerRuleFormView: View {
     private var attachmentSection: some View {
         Section {
             Toggle(isOn: $rule.hasAttachment) {
-                HStack(spacing: LoveMeTheme.md) {
+                HStack(spacing: SolaceTheme.md) {
                     Image(systemName: "paperclip")
                         .font(.toolTitle)
                         .foregroundStyle(.trust)
@@ -372,7 +372,7 @@ struct TriggerRuleFormView: View {
                 }
             }
             .tint(.sageGreen)
-            .frame(minHeight: LoveMeTheme.minTouchTarget)
+            .frame(minHeight: SolaceTheme.minTouchTarget)
             .listRowBackground(Color.surface)
             .accessibilityLabel("Require attachment")
             .accessibilityValue(rule.hasAttachment ? "Required" : "Not required")
@@ -387,7 +387,7 @@ struct TriggerRuleFormView: View {
     private var workflowSection: some View {
         Section {
             if workflows.isEmpty {
-                HStack(spacing: LoveMeTheme.md) {
+                HStack(spacing: SolaceTheme.md) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.toolTitle)
                         .foregroundStyle(.amberGlow)
@@ -395,7 +395,7 @@ struct TriggerRuleFormView: View {
                         .font(.chatMessage)
                         .foregroundStyle(.trust)
                 }
-                .frame(minHeight: LoveMeTheme.minTouchTarget)
+                .frame(minHeight: SolaceTheme.minTouchTarget)
                 .listRowBackground(Color.surface)
             } else {
                 Picker(selection: $rule.workflowId) {
@@ -407,7 +407,7 @@ struct TriggerRuleFormView: View {
                             .tag(workflow.id)
                     }
                 } label: {
-                    HStack(spacing: LoveMeTheme.md) {
+                    HStack(spacing: SolaceTheme.md) {
                         Image(systemName: "bolt.fill")
                             .font(.toolTitle)
                             .foregroundStyle(.trust)
@@ -418,7 +418,7 @@ struct TriggerRuleFormView: View {
                     }
                 }
                 .tint(.trust)
-                .frame(minHeight: LoveMeTheme.minTouchTarget)
+                .frame(minHeight: SolaceTheme.minTouchTarget)
                 .listRowBackground(Color.surface)
                 .accessibilityLabel("Select workflow")
                 .onChange(of: rule.workflowId) { _, newId in
@@ -436,7 +436,7 @@ struct TriggerRuleFormView: View {
             Text("The workflow to run when an email matches these conditions.")
                 .font(.toolDetail)
                 .foregroundStyle(.trust)
-                .padding(.top, LoveMeTheme.xs)
+                .padding(.top, SolaceTheme.xs)
         }
     }
 }

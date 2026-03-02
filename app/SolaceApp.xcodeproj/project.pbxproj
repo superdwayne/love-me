@@ -23,7 +23,7 @@
 		5C50C2E23CBE783B447AA8D1 /* Message.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F78B1B97ED626ED28DBDA80 /* Message.swift */; };
 		71CD19A825D9987B16FECF75 /* WebSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FA6350DDCEA9D963D5F3CB6 /* WebSocketClient.swift */; };
 		7BF3F16281A22918112B3A4B /* MarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB9CD2AD190B2666562291D5 /* MarkdownRenderer.swift */; };
-		7F053177C3CA812DFABB6899 /* LoveMeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1B16832E32AD8C1FDA331E7 /* LoveMeApp.swift */; };
+		7F053177C3CA812DFABB6899 /* SolaceApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1B16832E32AD8C1FDA331E7 /* SolaceApp.swift */; };
 		8110AD50716D3CFD8F5501CD /* WorkflowListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85CB1D36FFA570D9FADB0ADF /* WorkflowListView.swift */; };
 		85875C15DC3D81FABC123267 /* WorkflowViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 329C17EDC450485F75098ECE /* WorkflowViewModel.swift */; };
 		88B36839BC327AFBD30C61DC /* ToolPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25A5A941DA6B5BD5C8DE3E63 /* ToolPickerSheet.swift */; };
@@ -41,6 +41,8 @@
 		EA734A29167DC252BE3C0512 /* EmailTriggersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 507B46DABC0079BDC637D157 /* EmailTriggersView.swift */; };
 		F3FBD3E8F4B303D2F519D76A /* ConnectionBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBE12B2E96ED817B70C3B6FD /* ConnectionBanner.swift */; };
 		F4387B295CC63DBF3DE864D0 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 176BC2E06CFDBA18907AA518 /* ContentView.swift */; };
+		A1C2D3E4F5A60001B2C3D4E5 /* MCPServerInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C2D3E4F5A60001B2C3D4E6 /* MCPServerInfo.swift */; };
+		A1C2D3E4F5A60002B2C3D4E5 /* SettingsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C2D3E4F5A60002B2C3D4E6 /* SettingsViewModel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -69,17 +71,19 @@
 		85CB1D36FFA570D9FADB0ADF /* WorkflowListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowListView.swift; sourceTree = "<group>"; };
 		8B743237B7D6998033A5C46A /* ConversationListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationListViewModel.swift; sourceTree = "<group>"; };
 		8D575BD1A5173A3916F7D9AD /* ThinkingPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinkingPanel.swift; sourceTree = "<group>"; };
-		98C597C81A9E6419B20EE2FB /* LoveMeApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LoveMeApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		98C597C81A9E6419B20EE2FB /* SolaceApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SolaceApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9FA6350DDCEA9D963D5F3CB6 /* WebSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketClient.swift; sourceTree = "<group>"; };
 		A8394523FAC9063A0EFD32DB /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
 		B108799742FC44169DE33DA4 /* InputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputBar.swift; sourceTree = "<group>"; };
-		D1B16832E32AD8C1FDA331E7 /* LoveMeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoveMeApp.swift; sourceTree = "<group>"; };
+		D1B16832E32AD8C1FDA331E7 /* SolaceApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SolaceApp.swift; sourceTree = "<group>"; };
 		D50AD61F5240C4A072DD9DDD /* HapticManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticManager.swift; sourceTree = "<group>"; };
 		DB9CD2AD190B2666562291D5 /* MarkdownRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRenderer.swift; sourceTree = "<group>"; };
 		DBE12B2E96ED817B70C3B6FD /* ConnectionBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionBanner.swift; sourceTree = "<group>"; };
 		FA964706C90AB2ADB8F48737 /* WorkflowEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowEditorView.swift; sourceTree = "<group>"; };
 		FBAB90B5366DFAAC1309B6DD /* EmailSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailSettingsView.swift; sourceTree = "<group>"; };
 		FF610C4AEFAC2266E2E2CDBE /* Conversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Conversation.swift; sourceTree = "<group>"; };
+		A1C2D3E4F5A60001B2C3D4E6 /* MCPServerInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServerInfo.swift; sourceTree = "<group>"; };
+		A1C2D3E4F5A60002B2C3D4E6 /* SettingsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewModel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -98,6 +102,7 @@
 			isa = PBXGroup;
 			children = (
 				FF610C4AEFAC2266E2E2CDBE /* Conversation.swift */,
+				A1C2D3E4F5A60001B2C3D4E6 /* MCPServerInfo.swift */,
 				7F78B1B97ED626ED28DBDA80 /* Message.swift */,
 				5C934430A65F81F55D43D411 /* Theme.swift */,
 				5ADC742D1AC83496380B9613 /* WebSocketMessage.swift */,
@@ -108,7 +113,7 @@
 		7A7453811DD5B1830EA0DC50 /* App */ = {
 			isa = PBXGroup;
 			children = (
-				D1B16832E32AD8C1FDA331E7 /* LoveMeApp.swift */,
+				D1B16832E32AD8C1FDA331E7 /* SolaceApp.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -119,6 +124,7 @@
 				A8394523FAC9063A0EFD32DB /* ChatViewModel.swift */,
 				8B743237B7D6998033A5C46A /* ConversationListViewModel.swift */,
 				E1F4A83C2C7B9E0F00A1B2C3 /* EmailViewModel.swift */,
+				A1C2D3E4F5A60002B2C3D4E6 /* SettingsViewModel.swift */,
 				329C17EDC450485F75098ECE /* WorkflowViewModel.swift */,
 			);
 			path = ViewModels;
@@ -127,7 +133,7 @@
 		B59C3BF8D35D514958E0DBC7 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				98C597C81A9E6419B20EE2FB /* LoveMeApp.app */,
+				98C597C81A9E6419B20EE2FB /* SolaceApp.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -192,9 +198,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		198F911E9CF41F27F45261B2 /* LoveMeApp */ = {
+		198F911E9CF41F27F45261B2 /* SolaceApp */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 8FCB6C247424871B0DFB4C8F /* Build configuration list for PBXNativeTarget "LoveMeApp" */;
+			buildConfigurationList = 8FCB6C247424871B0DFB4C8F /* Build configuration list for PBXNativeTarget "SolaceApp" */;
 			buildPhases = (
 				5623E1BD70144CE89C7FC710 /* Sources */,
 				C2D3E4F5A6B7C8D9E0F1A2B6 /* Resources */,
@@ -203,11 +209,11 @@
 			);
 			dependencies = (
 			);
-			name = LoveMeApp;
+			name = SolaceApp;
 			packageProductDependencies = (
 			);
-			productName = LoveMeApp;
-			productReference = 98C597C81A9E6419B20EE2FB /* LoveMeApp.app */;
+			productName = SolaceApp;
+			productReference = 98C597C81A9E6419B20EE2FB /* SolaceApp.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -219,7 +225,7 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
 			};
-			buildConfigurationList = A4B5EA58786AA6F96045F2A8 /* Build configuration list for PBXProject "LoveMeApp" */;
+			buildConfigurationList = A4B5EA58786AA6F96045F2A8 /* Build configuration list for PBXProject "SolaceApp" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -232,7 +238,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				198F911E9CF41F27F45261B2 /* LoveMeApp */,
+				198F911E9CF41F27F45261B2 /* SolaceApp */,
 			);
 		};
 /* End PBXProject section */
@@ -268,7 +274,7 @@
 				B9DBB28048FDED103A899627 /* EmptyStateView.swift in Sources */,
 				49F265B8DD360D6B66FF3601 /* HapticManager.swift in Sources */,
 				B211458F665A84895FF44520 /* InputBar.swift in Sources */,
-				7F053177C3CA812DFABB6899 /* LoveMeApp.swift in Sources */,
+				7F053177C3CA812DFABB6899 /* SolaceApp.swift in Sources */,
 				7BF3F16281A22918112B3A4B /* MarkdownRenderer.swift in Sources */,
 				5C50C2E23CBE783B447AA8D1 /* Message.swift in Sources */,
 				90691B6D2F9D335E47E7D586 /* MessageBubble.swift in Sources */,
@@ -285,6 +291,8 @@
 				C8CDB55A0E0A1A1B221CA908 /* WorkflowExecutionView.swift in Sources */,
 				8110AD50716D3CFD8F5501CD /* WorkflowListView.swift in Sources */,
 				2736A36EB25810A9D548FA20 /* WorkflowPreviewCard.swift in Sources */,
+				A1C2D3E4F5A60001B2C3D4E5 /* MCPServerInfo.swift in Sources */,
+				A1C2D3E4F5A60002B2C3D4E5 /* SettingsViewModel.swift in Sources */,
 				85875C15DC3D81FABC123267 /* WorkflowViewModel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -361,7 +369,7 @@
 				DEVELOPMENT_TEAM = 936939DZC3;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Sources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = love.Me;
+				INFOPLIST_KEY_CFBundleDisplayName = Solace;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -373,7 +381,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.love.LoveMeApp;
+				PRODUCT_BUNDLE_IDENTIFIER = app.solace.SolaceApp;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -455,7 +463,7 @@
 				DEVELOPMENT_TEAM = 936939DZC3;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Sources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = love.Me;
+				INFOPLIST_KEY_CFBundleDisplayName = Solace;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -467,7 +475,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.love.LoveMeApp;
+				PRODUCT_BUNDLE_IDENTIFIER = app.solace.SolaceApp;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -476,7 +484,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		8FCB6C247424871B0DFB4C8F /* Build configuration list for PBXNativeTarget "LoveMeApp" */ = {
+		8FCB6C247424871B0DFB4C8F /* Build configuration list for PBXNativeTarget "SolaceApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				DC9F931BD43A3DF89A2B5B47 /* Debug */,
@@ -485,7 +493,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		A4B5EA58786AA6F96045F2A8 /* Build configuration list for PBXProject "LoveMeApp" */ = {
+		A4B5EA58786AA6F96045F2A8 /* Build configuration list for PBXProject "SolaceApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D9984219B9A511191C689B34 /* Debug */,

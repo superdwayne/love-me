@@ -35,7 +35,7 @@ struct ProcessedAttachment: Sendable {
 
 /// Processes email attachments by extracting text, storing files, and parsing structured content.
 ///
-/// All attachments are stored under `~/.love-me/attachments/{emailId}/`.
+/// All attachments are stored under `~/.solace/attachments/{emailId}/`.
 /// Large attachments (>50 MB) are skipped with a warning.
 actor AttachmentProcessor {
     private let basePath: String
@@ -125,8 +125,8 @@ actor AttachmentProcessor {
         do {
             // Write PDF to a temporary file for pdftotext
             let tempDir = NSTemporaryDirectory()
-            let tempPDFPath = "\(tempDir)/loveme_\(UUID().uuidString).pdf"
-            let tempTextPath = "\(tempDir)/loveme_\(UUID().uuidString).txt"
+            let tempPDFPath = "\(tempDir)/solace_\(UUID().uuidString).pdf"
+            let tempTextPath = "\(tempDir)/solace_\(UUID().uuidString).txt"
 
             try data.write(to: URL(fileURLWithPath: tempPDFPath))
             defer {

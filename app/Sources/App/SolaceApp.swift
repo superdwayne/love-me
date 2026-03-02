@@ -2,12 +2,13 @@ import SwiftUI
 import UserNotifications
 
 @main @MainActor
-struct LoveMeApp: App {
+struct SolaceApp: App {
     @State private var webSocket: WebSocketClient
     @State private var chatVM: ChatViewModel
     @State private var conversationListVM: ConversationListViewModel
     @State private var workflowVM: WorkflowViewModel
     @State private var emailVM: EmailViewModel
+    @State private var settingsVM: SettingsViewModel
     @State private var bonjourBrowser = BonjourBrowser()
 
     init() {
@@ -16,6 +17,7 @@ struct LoveMeApp: App {
         let convList = ConversationListViewModel(webSocket: ws)
         let workflow = WorkflowViewModel(webSocket: ws)
         let email = EmailViewModel(webSocket: ws)
+        let settings = SettingsViewModel(webSocket: ws)
 
         // Wire up message routing to all view models
         ws.onMessage = { @MainActor message in
@@ -23,6 +25,7 @@ struct LoveMeApp: App {
             convList.handleMessage(message)
             workflow.handleMessage(message)
             email.handleMessage(message)
+            settings.handleMessage(message)
         }
 
         _webSocket = State(initialValue: ws)
@@ -30,6 +33,7 @@ struct LoveMeApp: App {
         _conversationListVM = State(initialValue: convList)
         _workflowVM = State(initialValue: workflow)
         _emailVM = State(initialValue: email)
+        _settingsVM = State(initialValue: settings)
 
         // Request notification permission
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
@@ -47,6 +51,7 @@ struct LoveMeApp: App {
                 .environment(conversationListVM)
                 .environment(workflowVM)
                 .environment(emailVM)
+                .environment(settingsVM)
                 .environment(bonjourBrowser)
                 .preferredColorScheme(.dark)
                 .task {

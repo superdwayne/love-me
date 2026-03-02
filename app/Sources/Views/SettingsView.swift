@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(WebSocketClient.self) private var webSocket
     @Environment(BonjourBrowser.self) private var bonjourBrowser
+    @Environment(SettingsViewModel.self) private var settingsVM
     @Environment(\.dismiss) private var dismiss
     @AppStorage("ws_host") private var host = "localhost"
     @AppStorage("ws_port") private var port = 9200
@@ -21,6 +22,7 @@ struct SettingsView: View {
             List {
                 discoveredDaemonsSection
                 connectionSection
+                mcpServersSection
                 aboutSection
                 dataSection
             }
@@ -48,7 +50,7 @@ struct SettingsView: View {
         Section {
             if bonjourBrowser.discoveredDaemons.isEmpty {
                 if bonjourBrowser.permissionDenied {
-                    VStack(alignment: .leading, spacing: LoveMeTheme.xs) {
+                    VStack(alignment: .leading, spacing: SolaceTheme.xs) {
                         Text("Local Network access denied")
                             .foregroundStyle(.softRed)
                         Text("Enable in Settings > Privacy > Local Network")
@@ -64,7 +66,7 @@ struct SettingsView: View {
                                 .tint(.trust)
                             Text("Searching for daemons...")
                                 .foregroundStyle(.trust)
-                                .padding(.leading, LoveMeTheme.sm)
+                                .padding(.leading, SolaceTheme.sm)
                         } else {
                             Text("No daemons found")
                                 .foregroundStyle(.trust)
@@ -160,7 +162,7 @@ struct SettingsView: View {
                 .foregroundStyle(.heart)
 
         case .testing:
-            HStack(spacing: LoveMeTheme.sm) {
+            HStack(spacing: SolaceTheme.sm) {
                 ProgressView()
                     .scaleEffect(0.8)
                     .tint(.trust)
@@ -169,7 +171,7 @@ struct SettingsView: View {
             }
 
         case .success:
-            HStack(spacing: LoveMeTheme.sm) {
+            HStack(spacing: SolaceTheme.sm) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.sageGreen)
                 Text("Connected")
@@ -177,8 +179,8 @@ struct SettingsView: View {
             }
 
         case .failed(let error):
-            VStack(spacing: LoveMeTheme.xs) {
-                HStack(spacing: LoveMeTheme.sm) {
+            VStack(spacing: SolaceTheme.xs) {
+                HStack(spacing: SolaceTheme.sm) {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.softRed)
                     Text("Connection Failed")
@@ -188,6 +190,57 @@ struct SettingsView: View {
                     .font(.toolDetail)
                     .foregroundStyle(.trust)
             }
+        }
+    }
+
+    private var mcpServersSection: some View {
+        Section {
+            if settingsVM.isLoadingServers {
+                HStack {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .tint(.trust)
+                    Text("Loading servers...")
+                        .foregroundStyle(.trust)
+                        .padding(.leading, SolaceTheme.sm)
+                    Spacer()
+                }
+                .listRowBackground(Color.surface)
+            } else if settingsVM.mcpServers.isEmpty {
+                Text("No MCP servers configured")
+                    .foregroundStyle(.trust)
+                    .listRowBackground(Color.surface)
+            } else {
+                ForEach(settingsVM.mcpServers) { server in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(server.name)
+                                .foregroundStyle(.textPrimary)
+                            Text("\(server.type) \u{00B7} \(server.toolCount) tool\(server.toolCount == 1 ? "" : "s")")
+                                .font(.toolDetail)
+                                .foregroundStyle(.trust)
+                        }
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { server.enabled },
+                            set: { newValue in
+                                settingsVM.toggleMCPServer(name: server.name, enabled: newValue)
+                            }
+                        ))
+                        .tint(.sageGreen)
+                        .labelsHidden()
+                    }
+                    .listRowBackground(Color.surface)
+                }
+            }
+        } header: {
+            Text("MCP SERVERS")
+                .font(.sectionHeader)
+                .foregroundStyle(.trust)
+                .tracking(1.2)
+        }
+        .onAppear {
+            settingsVM.requestMCPServersList()
         }
     }
 

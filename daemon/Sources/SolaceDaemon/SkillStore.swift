@@ -9,7 +9,7 @@ struct SkillDefinition: Sendable {
     let body: String
 }
 
-/// Loads and manages Agent Skills from ~/.love-me/skills/*/SKILL.md
+/// Loads and manages Agent Skills from ~/.solace/skills/*/SKILL.md
 actor SkillStore {
     private let skillsDirectory: String
     private var skills: [String: SkillDefinition] = [:]

@@ -10,7 +10,7 @@ struct WorkflowBuilderView: View {
         VStack(spacing: 0) {
             // Content area
             ScrollView {
-                VStack(spacing: LoveMeTheme.lg) {
+                VStack(spacing: SolaceTheme.lg) {
                     // Instructions
                     if workflowVM.builderResult == nil && !workflowVM.isBuilding {
                         onboardingSection
@@ -31,7 +31,7 @@ struct WorkflowBuilderView: View {
                         resultSection(result)
                     }
                 }
-                .padding(LoveMeTheme.lg)
+                .padding(SolaceTheme.lg)
             }
 
             Divider()
@@ -56,14 +56,14 @@ struct WorkflowBuilderView: View {
     // MARK: - Onboarding
 
     private var onboardingSection: some View {
-        VStack(spacing: LoveMeTheme.md) {
+        VStack(spacing: SolaceTheme.md) {
             Image(systemName: "wand.and.stars")
                 .font(.system(size: 40))
                 .foregroundStyle(.heart)
-                .padding(.top, LoveMeTheme.xxl)
+                .padding(.top, SolaceTheme.xxl)
 
             Text("Describe your workflow")
-                .font(.system(size: 20, weight: .semibold))
+                .font(.displayTitle)
                 .foregroundStyle(.textPrimary)
 
             Text("Tell me what you want to automate and I'll build the workflow for you.")
@@ -71,12 +71,12 @@ struct WorkflowBuilderView: View {
                 .foregroundStyle(.trust)
                 .multilineTextAlignment(.center)
 
-            VStack(alignment: .leading, spacing: LoveMeTheme.sm) {
+            VStack(alignment: .leading, spacing: SolaceTheme.sm) {
                 exampleChip("Every 5 minutes, generate a 3D asset in Blender")
                 exampleChip("Daily at 9am, read my notes and summarize them")
                 exampleChip("Every hour, check disk space and alert if low")
             }
-            .padding(.top, LoveMeTheme.sm)
+            .padding(.top, SolaceTheme.sm)
         }
     }
 
@@ -85,7 +85,7 @@ struct WorkflowBuilderView: View {
             promptText = text
             sendPrompt()
         } label: {
-            HStack(spacing: LoveMeTheme.sm) {
+            HStack(spacing: SolaceTheme.sm) {
                 Image(systemName: "arrow.right.circle")
                     .font(.system(size: 12))
                     .foregroundStyle(.electricBlue)
@@ -94,8 +94,8 @@ struct WorkflowBuilderView: View {
                     .foregroundStyle(.textPrimary)
                     .multilineTextAlignment(.leading)
             }
-            .padding(.horizontal, LoveMeTheme.md)
-            .padding(.vertical, LoveMeTheme.sm)
+            .padding(.horizontal, SolaceTheme.md)
+            .padding(.vertical, SolaceTheme.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.surfaceElevated)
             .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -106,7 +106,7 @@ struct WorkflowBuilderView: View {
     // MARK: - Building Indicator
 
     private var buildingIndicator: some View {
-        VStack(spacing: LoveMeTheme.md) {
+        VStack(spacing: SolaceTheme.md) {
             ProgressView()
                 .tint(.heart)
                 .scaleEffect(1.2)
@@ -115,20 +115,20 @@ struct WorkflowBuilderView: View {
                 .font(.chatMessage)
                 .foregroundStyle(.trust)
         }
-        .padding(.vertical, LoveMeTheme.xxl)
+        .padding(.vertical, SolaceTheme.xxl)
     }
 
     // MARK: - Error
 
     private func errorBanner(_ error: String) -> some View {
-        HStack(spacing: LoveMeTheme.sm) {
+        HStack(spacing: SolaceTheme.sm) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.softRed)
             Text(error)
                 .font(.toolDetail)
                 .foregroundStyle(.textPrimary)
         }
-        .padding(LoveMeTheme.md)
+        .padding(SolaceTheme.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.softRed.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -137,7 +137,7 @@ struct WorkflowBuilderView: View {
     // MARK: - Result
 
     private func resultSection(_ result: BuilderWorkflowResult) -> some View {
-        VStack(spacing: LoveMeTheme.lg) {
+        VStack(spacing: SolaceTheme.lg) {
             WorkflowPreviewCard(
                 name: result.name,
                 scheduleDescription: result.scheduleDescription,
@@ -160,7 +160,7 @@ struct WorkflowBuilderView: View {
             }
 
             // Action buttons
-            HStack(spacing: LoveMeTheme.md) {
+            HStack(spacing: SolaceTheme.md) {
                 Button {
                     workflowVM.builderResult = nil
                     workflowVM.builderError = nil
@@ -170,7 +170,7 @@ struct WorkflowBuilderView: View {
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(.trust)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, LoveMeTheme.md)
+                        .padding(.vertical, SolaceTheme.md)
                         .background(Color.surfaceElevated)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
@@ -183,7 +183,7 @@ struct WorkflowBuilderView: View {
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, LoveMeTheme.md)
+                        .padding(.vertical, SolaceTheme.md)
                         .background(Color.heart)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
@@ -194,16 +194,16 @@ struct WorkflowBuilderView: View {
     // MARK: - Input Bar
 
     private var inputBar: some View {
-        HStack(spacing: LoveMeTheme.sm) {
+        HStack(spacing: SolaceTheme.sm) {
             TextField("Describe your workflow...", text: $promptText, axis: .vertical)
                 .font(.chatMessage)
                 .foregroundStyle(.textPrimary)
                 .lineLimit(1...4)
                 .focused($isInputFocused)
-                .padding(.horizontal, LoveMeTheme.md)
-                .padding(.vertical, LoveMeTheme.sm)
+                .padding(.horizontal, SolaceTheme.md)
+                .padding(.vertical, SolaceTheme.sm)
                 .background(Color.inputBg)
-                .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.inputFieldRadius))
+                .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.inputFieldRadius))
                 .onSubmit {
                     sendPrompt()
                 }
@@ -212,13 +212,13 @@ struct WorkflowBuilderView: View {
                 sendPrompt()
             } label: {
                 Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: LoveMeTheme.sendButtonSize))
+                    .font(.system(size: SolaceTheme.sendButtonSize))
                     .foregroundStyle(canSend ? .heart : .trust.opacity(0.3))
             }
             .disabled(!canSend)
         }
-        .padding(.horizontal, LoveMeTheme.lg)
-        .padding(.vertical, LoveMeTheme.sm)
+        .padding(.horizontal, SolaceTheme.lg)
+        .padding(.vertical, SolaceTheme.sm)
         .background(.appBackground)
     }
 

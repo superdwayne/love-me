@@ -117,7 +117,7 @@ final class MCPServerProcess: Sendable {
                     "protocolVersion": .string("2024-11-05"),
                     "capabilities": .object([:]),
                     "clientInfo": .object([
-                        "name": .string("love.Me"),
+                        "name": .string("Solace"),
                         "version": .string(DaemonConfig.version)
                     ])
                 ])
@@ -211,7 +211,7 @@ final class MCPServerProcess: Sendable {
                     // Save base64 image to disk and return a serveable URL
                     if case .string(let b64Data) = contentObj["data"] {
                         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
-                        let generatedDir = "\(homeDir)/.love-me/generated"
+                        let generatedDir = "\(homeDir)/.solace/generated"
                         if let filename = ImageFileHelper.saveBase64Image(data: b64Data, mimeType: mimeType, directory: generatedDir) {
                             if !resultText.isEmpty { resultText += "\n" }
                             resultText += "http://localhost:9201/images/\(filename)"

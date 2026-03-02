@@ -14,6 +14,10 @@ struct ContentView: View {
         case agentMail
     }
 
+    private var pendingApprovalCount: Int {
+        emailVM.pendingApprovals.filter { $0.isPending }.count
+    }
+
     var body: some View {
         TabView(selection: $selectedTab) {
             // Chat Tab
@@ -52,6 +56,7 @@ struct ContentView: View {
                 Label("Agent Mail", systemImage: "envelope.fill")
             }
             .tag(AppTab.agentMail)
+            .badge(pendingApprovalCount > 0 ? pendingApprovalCount : 0)
         }
         .tint(.heart)
         .onChange(of: emailVM.navigateToConversationId) { _, conversationId in
@@ -69,6 +74,7 @@ struct ContentView: View {
 struct AgentMailTabView: View {
     @Environment(EmailViewModel.self) private var emailVM
     @Environment(WebSocketClient.self) private var webSocket
+    @State private var showSettings = false
 
     var body: some View {
         List {
@@ -91,13 +97,16 @@ struct AgentMailTabView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink {
-                    SettingsView()
+                Button {
+                    showSettings = true
                 } label: {
                     Image(systemName: "gearshape")
                         .foregroundStyle(.trust)
                 }
             }
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
         }
         .onAppear {
             emailVM.requestEmailStatus()
@@ -111,7 +120,7 @@ struct AgentMailTabView: View {
 
     private var connectionStatusSection: some View {
         Section {
-            HStack(spacing: LoveMeTheme.md) {
+            HStack(spacing: SolaceTheme.md) {
                 ZStack {
                     Circle()
                         .fill(emailVM.isEmailConnected ? Color.sageGreen.opacity(0.15) : Color.trust.opacity(0.1))
@@ -149,7 +158,7 @@ struct AgentMailTabView: View {
                         .frame(width: 8, height: 8)
                 }
             }
-            .padding(.vertical, LoveMeTheme.xs)
+            .padding(.vertical, SolaceTheme.xs)
             .listRowBackground(Color.surface)
         }
     }
@@ -158,7 +167,7 @@ struct AgentMailTabView: View {
 
     @ViewBuilder
     private var pendingApprovalsSection: some View {
-        let approvals = emailVM.pendingApprovals.filter { $0.isPending }
+        let approvals = emailVM.pendingApprovals.filter { $0.isPending || $0.isBuilding }
         if !approvals.isEmpty {
             Section {
                 ForEach(approvals) { approval in
@@ -166,6 +175,7 @@ struct AgentMailTabView: View {
                         approval: approval,
                         onChat: { emailVM.openEmailChat(approvalId: approval.id) },
                         onAutoWorkflow: { emailVM.autoCreateWorkflow(approvalId: approval.id) },
+                        onSaveAutoFlow: { emailVM.saveAutoFlow(approvalId: approval.id) },
                         onDismiss: { emailVM.dismissEmail(approvalId: approval.id) }
                     )
                     .listRowBackground(Color.surface)
@@ -195,7 +205,7 @@ struct AgentMailTabView: View {
     private var inboxMessagesSection: some View {
         Section {
             if emailVM.inboxMessages.isEmpty {
-                HStack(spacing: LoveMeTheme.sm) {
+                HStack(spacing: SolaceTheme.sm) {
                     Image(systemName: "tray")
                         .font(.system(size: 14))
                         .foregroundStyle(.trust.opacity(0.5))
@@ -203,11 +213,11 @@ struct AgentMailTabView: View {
                         .font(.toolDetail)
                         .foregroundStyle(.trust.opacity(0.7))
                 }
-                .frame(minHeight: LoveMeTheme.minTouchTarget)
+                .frame(minHeight: SolaceTheme.minTouchTarget)
                 .listRowBackground(Color.surface)
             } else {
                 ForEach(emailVM.inboxMessages) { message in
-                    HStack(spacing: LoveMeTheme.md) {
+                    HStack(spacing: SolaceTheme.md) {
                         Image(systemName: "envelope.fill")
                             .font(.system(size: 14))
                             .foregroundStyle(.trust)
@@ -245,7 +255,7 @@ struct AgentMailTabView: View {
                             }
                         }
                     }
-                    .frame(minHeight: LoveMeTheme.minTouchTarget)
+                    .frame(minHeight: SolaceTheme.minTouchTarget)
                     .listRowBackground(Color.surface)
                 }
             }
@@ -261,7 +271,7 @@ struct AgentMailTabView: View {
 
     private var actionsSection: some View {
         Section {
-            HStack(spacing: LoveMeTheme.md) {
+            HStack(spacing: SolaceTheme.md) {
                 Image(systemName: "tray.full.fill")
                     .font(.toolTitle)
                     .foregroundStyle(.trust)
@@ -275,10 +285,10 @@ struct AgentMailTabView: View {
                     .foregroundStyle(.trust)
                     .monospacedDigit()
             }
-            .frame(minHeight: LoveMeTheme.minTouchTarget)
+            .frame(minHeight: SolaceTheme.minTouchTarget)
             .listRowBackground(Color.surface)
 
-            HStack(spacing: LoveMeTheme.md) {
+            HStack(spacing: SolaceTheme.md) {
                 Image(systemName: "clock.fill")
                     .font(.toolTitle)
                     .foregroundStyle(.trust)
@@ -291,7 +301,7 @@ struct AgentMailTabView: View {
                     .font(.toolDetail)
                     .foregroundStyle(.trust)
             }
-            .frame(minHeight: LoveMeTheme.minTouchTarget)
+            .frame(minHeight: SolaceTheme.minTouchTarget)
             .listRowBackground(Color.surface)
         } header: {
             Text("ACTIVITY")
@@ -306,7 +316,7 @@ struct AgentMailTabView: View {
             NavigationLink {
                 EmailSettingsView()
             } label: {
-                HStack(spacing: LoveMeTheme.md) {
+                HStack(spacing: SolaceTheme.md) {
                     Image(systemName: "gearshape.fill")
                         .font(.toolTitle)
                         .foregroundStyle(.trust)
@@ -316,13 +326,13 @@ struct AgentMailTabView: View {
                         .foregroundStyle(.textPrimary)
                 }
             }
-            .frame(minHeight: LoveMeTheme.minTouchTarget)
+            .frame(minHeight: SolaceTheme.minTouchTarget)
             .listRowBackground(Color.surface)
 
             NavigationLink {
                 EmailTriggersView()
             } label: {
-                HStack(spacing: LoveMeTheme.md) {
+                HStack(spacing: SolaceTheme.md) {
                     Image(systemName: "envelope.badge.fill")
                         .font(.toolTitle)
                         .foregroundStyle(.trust)
@@ -332,7 +342,7 @@ struct AgentMailTabView: View {
                         .foregroundStyle(.textPrimary)
                 }
             }
-            .frame(minHeight: LoveMeTheme.minTouchTarget)
+            .frame(minHeight: SolaceTheme.minTouchTarget)
             .listRowBackground(Color.surface)
         } header: {
             Text("MANAGE")
@@ -345,17 +355,17 @@ struct AgentMailTabView: View {
     // MARK: - Connect (not connected)
 
     @State private var apiKeyInput = ""
-    @State private var inboxIdInput = "love.me"
+    @State private var inboxIdInput = "solace"
 
     private var connectSection: some View {
         Section {
-            VStack(spacing: LoveMeTheme.lg) {
+            VStack(spacing: SolaceTheme.lg) {
                 Image(systemName: "envelope.open")
                     .font(.system(size: 40, weight: .light))
                     .foregroundStyle(.trust.opacity(0.4))
-                    .padding(.top, LoveMeTheme.md)
+                    .padding(.top, SolaceTheme.md)
 
-                VStack(spacing: LoveMeTheme.sm) {
+                VStack(spacing: SolaceTheme.sm) {
                     Text("Connect Agent Mail")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(.textPrimary)
@@ -365,11 +375,11 @@ struct AgentMailTabView: View {
                         .multilineTextAlignment(.center)
                 }
 
-                VStack(spacing: LoveMeTheme.md) {
+                VStack(spacing: SolaceTheme.md) {
                     SecureField("API Key", text: $apiKeyInput)
                         .textContentType(.password)
                         .font(.chatMessage)
-                        .padding(LoveMeTheme.md)
+                        .padding(SolaceTheme.md)
                         .background(Color.appBackground)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
 
@@ -378,7 +388,7 @@ struct AgentMailTabView: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                         .font(.chatMessage)
-                        .padding(LoveMeTheme.md)
+                        .padding(SolaceTheme.md)
                         .background(Color.appBackground)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
 
@@ -390,7 +400,7 @@ struct AgentMailTabView: View {
                 Button {
                     emailVM.connectAgentMail(apiKey: apiKeyInput, inboxId: inboxIdInput)
                 } label: {
-                    HStack(spacing: LoveMeTheme.sm) {
+                    HStack(spacing: SolaceTheme.sm) {
                         if emailVM.isConnecting {
                             ProgressView()
                                 .scaleEffect(0.8)
@@ -404,12 +414,12 @@ struct AgentMailTabView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, LoveMeTheme.md)
+                    .padding(.vertical, SolaceTheme.md)
                     .background(apiKeyInput.isEmpty ? Color.trust.opacity(0.3) : Color.heart)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 .disabled(emailVM.isConnecting || apiKeyInput.isEmpty)
-                .padding(.bottom, LoveMeTheme.md)
+                .padding(.bottom, SolaceTheme.md)
             }
             .listRowBackground(Color.surface)
 

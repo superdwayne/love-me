@@ -130,6 +130,14 @@ enum WSMessageType {
     static let parseScheduleResult = "parse_schedule_result"
     static let buildWorkflowResult = "build_workflow_result"
 
+    // Client -> Server (MCP Server Management)
+    static let mcpServersList = "mcp_servers_list"
+    static let mcpServerToggle = "mcp_server_toggle"
+
+    // Server -> Client (MCP Server Management)
+    static let mcpServersListResult = "mcp_servers_list_result"
+    static let mcpServerToggleResult = "mcp_server_toggle_result"
+
     // Client -> Server (Email / Agent Mail)
     static let emailStatus = "email_status"
     static let emailConnect = "email_connect"

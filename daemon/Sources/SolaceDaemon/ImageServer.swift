@@ -1,7 +1,7 @@
 import Foundation
 import Network
 
-/// Lightweight HTTP server that serves generated images from ~/.love-me/generated/
+/// Lightweight HTTP server that serves generated images from ~/.solace/generated/
 /// Runs on port 9201 alongside the WebSocket server on 9200.
 actor ImageServer {
     private var listener: NWListener?

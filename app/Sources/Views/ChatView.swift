@@ -41,9 +41,9 @@ struct ChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                HStack(spacing: LoveMeTheme.sm) {
+                HStack(spacing: SolaceTheme.sm) {
                     connectionDot
-                    Text("love.Me")
+                    Text("Solace")
                         .font(.navTitle)
                         .foregroundStyle(.textPrimary)
                 }
@@ -70,8 +70,8 @@ struct ChatView: View {
     private var connectionDot: some View {
         Circle()
             .fill(connectionDotColor)
-            .frame(width: LoveMeTheme.connectionDotSize,
-                   height: LoveMeTheme.connectionDotSize)
+            .frame(width: SolaceTheme.connectionDotSize,
+                   height: SolaceTheme.connectionDotSize)
             .accessibilityLabel(connectionStatusLabel)
     }
 
@@ -103,25 +103,25 @@ struct ChatView: View {
                             if message.role == .user && !message.attachments.isEmpty {
                                 // User attachment images
                                 attachmentImages(for: message)
-                                    .padding(.horizontal, LoveMeTheme.chatHorizontalPadding)
+                                    .padding(.horizontal, SolaceTheme.chatHorizontalPadding)
                                     .padding(.top, spacing)
-                                    .padding(.bottom, LoveMeTheme.xs)
+                                    .padding(.bottom, SolaceTheme.xs)
                             }
 
                             if message.role == .assistant {
                                 // Thinking panel
                                 if message.thinkingContent != nil {
                                     ThinkingPanel(message: message)
-                                        .padding(.horizontal, LoveMeTheme.chatHorizontalPadding)
+                                        .padding(.horizontal, SolaceTheme.chatHorizontalPadding)
                                         .padding(.top, spacing)
-                                        .padding(.bottom, LoveMeTheme.xs)
+                                        .padding(.bottom, SolaceTheme.xs)
                                 }
 
                                 // Tool cards
                                 ForEach(message.toolCalls) { toolCall in
                                     ToolCard(toolCall: toolCall)
-                                        .padding(.horizontal, LoveMeTheme.chatHorizontalPadding)
-                                        .padding(.bottom, LoveMeTheme.xs)
+                                        .padding(.horizontal, SolaceTheme.chatHorizontalPadding)
+                                        .padding(.bottom, SolaceTheme.xs)
 
                                     // Inline image preview from image-generating tools (e.g. Leonardo)
                                     if let imageURL = toolCall.imageURL,
@@ -129,7 +129,7 @@ struct ChatView: View {
                                         AsyncImage(url: url) { phase in
                                             switch phase {
                                             case .empty:
-                                                RoundedRectangle(cornerRadius: LoveMeTheme.sm)
+                                                RoundedRectangle(cornerRadius: SolaceTheme.sm)
                                                     .fill(Color.surfaceElevated)
                                                     .frame(height: 200)
                                                     .overlay {
@@ -140,7 +140,7 @@ struct ChatView: View {
                                                 image
                                                     .resizable()
                                                     .aspectRatio(contentMode: .fit)
-                                                    .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.sm))
+                                                    .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.sm))
                                             case .failure:
                                                 EmptyView()
                                             @unknown default:
@@ -148,15 +148,15 @@ struct ChatView: View {
                                             }
                                         }
                                         .frame(maxWidth: .infinity)
-                                        .padding(.horizontal, LoveMeTheme.chatHorizontalPadding)
-                                        .padding(.bottom, LoveMeTheme.xs)
+                                        .padding(.horizontal, SolaceTheme.chatHorizontalPadding)
+                                        .padding(.bottom, SolaceTheme.xs)
                                     }
                                 }
                             }
 
                             MessageBubble(message: message)
-                                .padding(.horizontal, LoveMeTheme.chatHorizontalPadding)
-                                .padding(.top, message.thinkingContent == nil && message.toolCalls.isEmpty && message.attachments.isEmpty ? spacing : LoveMeTheme.xs)
+                                .padding(.horizontal, SolaceTheme.chatHorizontalPadding)
+                                .padding(.top, message.thinkingContent == nil && message.toolCalls.isEmpty && message.attachments.isEmpty ? spacing : SolaceTheme.xs)
                         }
                         .id(message.id)
                     }
@@ -166,7 +166,7 @@ struct ChatView: View {
                         .frame(height: 1)
                         .id("bottom")
                 }
-                .padding(.vertical, LoveMeTheme.lg)
+                .padding(.vertical, SolaceTheme.lg)
             }
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: chatVM.messages.count) { _, _ in
@@ -176,6 +176,18 @@ struct ChatView: View {
                     }
                 } else {
                     showNewMessagesPill = true
+                }
+            }
+            .onChange(of: chatVM.isStreaming) { _, streaming in
+                if streaming && isNearBottom {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                    }
+                }
+            }
+            .onChange(of: streamingContentLength) { _, _ in
+                if isNearBottom {
+                    proxy.scrollTo("bottom", anchor: .bottom)
                 }
             }
             .onAppear {
@@ -197,8 +209,8 @@ struct ChatView: View {
                 Text("New messages")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.textPrimary)
-                    .padding(.horizontal, LoveMeTheme.md)
-                    .padding(.vertical, LoveMeTheme.sm)
+                    .padding(.horizontal, SolaceTheme.md)
+                    .padding(.vertical, SolaceTheme.sm)
                     .background(.surfaceElevated)
                     .clipShape(Capsule())
                     .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
@@ -210,11 +222,17 @@ struct ChatView: View {
         .zIndex(Double(ZLayer.overlay.rawValue))
     }
 
+    /// Tracks streaming content length to drive auto-scroll during generation
+    private var streamingContentLength: Int {
+        guard let last = chatVM.messages.last, last.role == .assistant else { return 0 }
+        return last.content.count + last.toolCalls.count
+    }
+
     // MARK: - Attachment Images
 
     @ViewBuilder
     private func attachmentImages(for message: Message) -> some View {
-        HStack(alignment: .top, spacing: LoveMeTheme.sm) {
+        HStack(alignment: .top, spacing: SolaceTheme.sm) {
             Spacer()
             ForEach(message.attachments) { attachment in
                 if let thumbData = attachment.thumbnailData,
@@ -223,13 +241,13 @@ struct ChatView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(maxWidth: 150, maxHeight: 150)
-                        .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.sm))
+                        .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.sm))
                 } else if let urlStr = attachment.imageURL,
                           let url = chatVM.daemonImageURL(from: urlStr) {
                     AsyncImage(url: url) { phase in
                         switch phase {
                         case .empty:
-                            RoundedRectangle(cornerRadius: LoveMeTheme.sm)
+                            RoundedRectangle(cornerRadius: SolaceTheme.sm)
                                 .fill(Color.surfaceElevated)
                                 .frame(width: 150, height: 150)
                                 .overlay { ProgressView().tint(.trust) }
@@ -238,9 +256,9 @@ struct ChatView: View {
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
                                 .frame(maxWidth: 150, maxHeight: 150)
-                                .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.sm))
+                                .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.sm))
                         case .failure:
-                            RoundedRectangle(cornerRadius: LoveMeTheme.sm)
+                            RoundedRectangle(cornerRadius: SolaceTheme.sm)
                                 .fill(Color.surfaceElevated)
                                 .frame(width: 100, height: 100)
                                 .overlay {
@@ -261,7 +279,7 @@ struct ChatView: View {
     private func spacingBefore(message: Message, previous: Message?) -> CGFloat {
         guard let prev = previous else { return 0 }
         return prev.role == message.role
-            ? LoveMeTheme.sameAuthorSpacing
-            : LoveMeTheme.differentAuthorSpacing
+            ? SolaceTheme.sameAuthorSpacing
+            : SolaceTheme.differentAuthorSpacing
     }
 }

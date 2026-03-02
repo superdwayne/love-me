@@ -112,7 +112,7 @@ struct WorkflowEditorView: View {
             }
             .listRowBackground(Color.surface)
 
-            VStack(alignment: .leading, spacing: LoveMeTheme.xs) {
+            VStack(alignment: .leading, spacing: SolaceTheme.xs) {
                 Text("Description")
                     .foregroundStyle(.textPrimary)
 
@@ -188,7 +188,7 @@ struct WorkflowEditorView: View {
 
                     // Parse result feedback
                     if let parsed = workflowVM.parsedSchedule {
-                        HStack(spacing: LoveMeTheme.sm) {
+                        HStack(spacing: SolaceTheme.sm) {
                             if parsed.success, let desc = parsed.description, let cron = parsed.cron {
                                 Image(systemName: "checkmark.circle.fill")
                                     .font(.system(size: 12))
@@ -265,11 +265,11 @@ struct WorkflowEditorView: View {
             }
 
             Button {
-                withAnimation(.spring(duration: LoveMeTheme.springDuration)) {
+                withAnimation(.spring(duration: SolaceTheme.springDuration)) {
                     steps.append(EditableStep())
                 }
             } label: {
-                HStack(spacing: LoveMeTheme.sm) {
+                HStack(spacing: SolaceTheme.sm) {
                     Image(systemName: "plus.circle.fill")
                         .foregroundStyle(.heart)
                     Text("Add Step")
@@ -289,7 +289,7 @@ struct WorkflowEditorView: View {
                 Text("\(steps.count)")
                     .font(.toolDetail)
                     .foregroundStyle(.trust)
-                    .padding(.horizontal, LoveMeTheme.sm)
+                    .padding(.horizontal, SolaceTheme.sm)
                     .padding(.vertical, 2)
                     .background(Color.surfaceElevated)
                     .clipShape(Capsule())
@@ -298,7 +298,7 @@ struct WorkflowEditorView: View {
     }
 
     private func stepRow(step: Binding<EditableStep>, index: Int) -> some View {
-        VStack(alignment: .leading, spacing: LoveMeTheme.sm) {
+        VStack(alignment: .leading, spacing: SolaceTheme.sm) {
             // Step name
             HStack {
                 Image(systemName: "arrow.right.circle")
@@ -341,9 +341,9 @@ struct WorkflowEditorView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.trust)
                 }
-                .padding(LoveMeTheme.sm)
+                .padding(SolaceTheme.sm)
                 .background(Color.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.sm))
+                .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.sm))
             }
             .buttonStyle(.plain)
 
@@ -364,7 +364,7 @@ struct WorkflowEditorView: View {
                 .frame(width: 200)
             }
         }
-        .padding(.vertical, LoveMeTheme.xs)
+        .padding(.vertical, SolaceTheme.xs)
         .listRowBackground(Color.surface)
     }
 

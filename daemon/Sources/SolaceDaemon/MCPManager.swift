@@ -7,6 +7,7 @@ actor MCPManager {
     private var httpServers: [String: MCPHTTPServerProcess] = [:]
     private var allTools: [MCPToolInfo] = []
     private var toolToServer: [String: String] = [:]
+    private var enabledState: [String: Bool] = [:]
 
     init(config: DaemonConfig) {
         self.config = config
@@ -27,6 +28,9 @@ actor MCPManager {
             let mcpConfig = try JSONDecoder().decode(MCPConfigFile.self, from: data)
 
             for (name, serverConfig) in mcpConfig.mcpServers {
+                // Initialize enabled state from config (default true)
+                enabledState[name] = serverConfig.isEnabled
+
                 if serverConfig.isStdio {
                     await startStdioServer(name: name, config: serverConfig)
                 } else if serverConfig.url != nil {
@@ -91,25 +95,31 @@ actor MCPManager {
         }
     }
 
-    /// Get all discovered tools as Claude API ToolDefinitions
+    /// Get all discovered tools as Claude API ToolDefinitions (excludes tools from disabled servers)
     func getToolDefinitions() -> [ToolDefinition] {
-        allTools.map { tool in
-            ToolDefinition(
-                name: tool.name,
-                description: tool.description,
-                input_schema: tool.inputSchema
-            )
-        }
-    }
-
-    /// Get the list of all discovered tools
-    func getTools() -> [MCPToolInfo] {
         allTools
+            .filter { isServerEnabled($0.serverName) }
+            .map { tool in
+                ToolDefinition(
+                    name: tool.name,
+                    description: tool.description,
+                    input_schema: tool.inputSchema
+                )
+            }
     }
 
-    /// Call a tool by name, routing to the correct server
+    /// Get the list of all discovered tools (excludes tools from disabled servers)
+    func getTools() -> [MCPToolInfo] {
+        allTools.filter { isServerEnabled($0.serverName) }
+    }
+
+    /// Call a tool by name, routing to the correct server (rejects tools from disabled servers)
     func callTool(name: String, arguments: JSONValue) async throws -> MCPToolCallResult {
         guard let serverName = toolToServer[name] else {
+            throw MCPError.toolNotFound(name)
+        }
+
+        guard isServerEnabled(serverName) else {
             throw MCPError.toolNotFound(name)
         }
 
@@ -123,19 +133,45 @@ actor MCPManager {
         throw MCPError.toolNotFound(name)
     }
 
-    /// Get the server name that hosts a given tool
+    /// Get the server name that hosts a given tool (returns nil for disabled servers)
     func serverForTool(name: String) -> String? {
-        toolToServer[name]
+        guard let serverName = toolToServer[name], isServerEnabled(serverName) else {
+            return nil
+        }
+        return serverName
     }
 
-    /// The total number of available tools
+    /// The total number of available tools (from enabled servers only)
     var toolCount: Int {
-        allTools.count
+        allTools.filter { isServerEnabled($0.serverName) }.count
     }
 
     /// The names of all active (started) MCP servers
     var activeServerNames: Set<String> {
         Set(stdioServers.keys).union(httpServers.keys)
+    }
+
+    // MARK: - Server Enabled State
+
+    /// Check if a server is enabled (defaults to true for unknown servers)
+    func isServerEnabled(_ name: String) -> Bool {
+        enabledState[name] ?? true
+    }
+
+    /// Set the enabled state for a server
+    func setServerEnabled(_ name: String, _ enabled: Bool) {
+        enabledState[name] = enabled
+    }
+
+    /// Get info about all servers (name, type, enabled state, tool count)
+    func getServerInfoList() -> [(name: String, isStdio: Bool, enabled: Bool, toolCount: Int)] {
+        let allServerNames = Set(stdioServers.keys).union(httpServers.keys)
+        return allServerNames.sorted().map { name in
+            let isStdio = stdioServers[name] != nil
+            let enabled = isServerEnabled(name)
+            let count = allTools.filter { $0.serverName == name }.count
+            return (name: name, isStdio: isStdio, enabled: enabled, toolCount: count)
+        }
     }
 
     /// Stop all MCP servers
@@ -152,5 +188,6 @@ actor MCPManager {
         httpServers.removeAll()
         allTools.removeAll()
         toolToServer.removeAll()
+        enabledState.removeAll()
     }
 }

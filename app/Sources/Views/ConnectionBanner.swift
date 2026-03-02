@@ -7,7 +7,7 @@ struct ConnectionBanner: View {
 
     var body: some View {
         if !isDismissed {
-            HStack(spacing: LoveMeTheme.sm) {
+            HStack(spacing: SolaceTheme.sm) {
                 Image(systemName: "wifi.slash")
                     .font(.system(size: 14))
 
@@ -31,24 +31,27 @@ struct ConnectionBanner: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 12, weight: .semibold))
-                        .frame(width: LoveMeTheme.minTouchTarget,
-                               height: LoveMeTheme.minTouchTarget)
+                        .frame(width: SolaceTheme.minTouchTarget,
+                               height: SolaceTheme.minTouchTarget)
                         .contentShape(Rectangle())
                 }
                 .accessibilityLabel("Dismiss connection banner")
             }
             .foregroundStyle(.white)
-            .padding(.horizontal, LoveMeTheme.lg)
-            .padding(.vertical, LoveMeTheme.sm)
+            .padding(.horizontal, SolaceTheme.lg)
+            .padding(.vertical, SolaceTheme.sm)
             .background(bannerColor)
             .transition(.move(edge: .top).combined(with: .opacity))
-            .onChange(of: webSocket.connectionState) { _, newState in
+            .onChange(of: webSocket.connectionState) { oldState, newState in
                 if newState == .connected {
                     withAnimation(.easeOut(duration: 0.2)) {
                         isDismissed = true
                     }
-                } else if newState == .disconnected {
-                    isDismissed = false
+                } else if newState == .disconnected && oldState != .disconnected {
+                    // Always reappear when connection transitions to disconnected
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        isDismissed = false
+                    }
                 }
             }
             .accessibilityLabel(bannerTitle)

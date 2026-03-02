@@ -50,7 +50,7 @@ actor ConversationStore {
     init(directory: String, generatedImagesDirectory: String? = nil) {
         self.directory = directory
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
-        self.generatedImagesDirectory = generatedImagesDirectory ?? "\(homeDir)/.love-me/generated"
+        self.generatedImagesDirectory = generatedImagesDirectory ?? "\(homeDir)/.solace/generated"
 
         let enc = JSONEncoder()
         enc.dateEncodingStrategy = .iso8601

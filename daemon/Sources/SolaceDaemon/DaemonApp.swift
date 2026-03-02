@@ -50,7 +50,7 @@ actor DaemonApp {
 
         // Image server for generated/attached images
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
-        let basePath = "\(homeDir)/.love-me"
+        let basePath = "\(homeDir)/.solace"
         self.generatedImagesDirectory = "\(basePath)/generated"
         self.imageServer = ImageServer(port: 9201, imageDirectory: "\(basePath)/generated")
 
@@ -270,6 +270,13 @@ actor DaemonApp {
 
         case WSMessageType.buildWorkflow:
             await handleBuildWorkflow(message, client: client)
+
+        // MCP Server Management messages
+        case WSMessageType.mcpServersList:
+            await handleMCPServersList(client: client)
+
+        case WSMessageType.mcpServerToggle:
+            await handleMCPServerToggle(message, client: client)
 
         default:
             Logger.error("Unknown message type: \(message.type)")
@@ -1220,7 +1227,7 @@ actor DaemonApp {
         self.agentMailClient = client
 
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
-        let basePath = "\(homeDir)/.love-me"
+        let basePath = "\(homeDir)/.solace"
 
         let approvalStore = EmailApprovalStore(basePath: basePath)
         self.emailApprovalStore = approvalStore
@@ -1334,7 +1341,7 @@ actor DaemonApp {
 
                     let analysis = try await claudeClient.singleRequest(
                         messages: analysisMessages,
-                        systemPrompt: "You are a helpful AI assistant integrated into the love.Me app. The user has received an email that was forwarded to you for analysis. Provide a concise analysis and offer to help."
+                        systemPrompt: "You are a helpful AI assistant integrated into the Solace app. The user has received an email that was forwarded to you for analysis. Provide a concise analysis and offer to help."
                     )
 
                     let analysisMsg = StoredMessage(role: "assistant", content: analysis)
@@ -1412,7 +1419,7 @@ actor DaemonApp {
             return
         }
 
-        let rawInboxId = message.metadata?["inboxId"]?.stringValue ?? "loveme"
+        let rawInboxId = message.metadata?["inboxId"]?.stringValue ?? "solace"
         // Ensure inbox ID is the full email format the API expects
         let inboxId = rawInboxId.contains("@") ? rawInboxId : "\(rawInboxId)@agentmail.to"
         let emailAddress = inboxId
@@ -1665,6 +1672,10 @@ actor DaemonApp {
                 // Build workflow on-demand from email body, save, execute, reply
                 await buildAndExecuteWorkflowForApproval(approval)
 
+            case "save_auto_flow":
+                // Build workflow, save trigger rule for future matching, execute for current email
+                await buildAndSaveAutoFlow(approval)
+
             default:
                 // Legacy fallback: route based on classification
                 switch approval.classification {
@@ -1778,6 +1789,14 @@ actor DaemonApp {
 
     /// Builds a workflow on-demand from the email body text, saves it, executes it, and sends a reply.
     private func buildAndExecuteWorkflowForApproval(_ approval: PendingEmailApproval) async {
+        // Broadcast "building" status so the app shows a spinner
+        let buildingMsg = WSMessage(
+            type: WSMessageType.emailAutoReplyStatus,
+            id: approval.id,
+            metadata: ["status": .string("building")]
+        )
+        await server.broadcast(buildingMsg)
+
         let prompt = """
         Analyze this email brief and create a workflow to accomplish what it describes.
 
@@ -1791,6 +1810,15 @@ actor DaemonApp {
             guard let workflow = await buildWorkflowFromPrompt(prompt) else {
                 Logger.error("buildWorkflowFromPrompt returned nil for approval \(approval.id)")
                 try? await emailApprovalStore?.update(id: approval.id, status: .failed)
+                let failMsg = WSMessage(
+                    type: WSMessageType.emailAutoReplyStatus,
+                    id: approval.id,
+                    metadata: [
+                        "status": .string("failed"),
+                        "reason": .string("Failed to generate workflow from email")
+                    ]
+                )
+                await server.broadcast(failMsg)
                 return
             }
 
@@ -1847,6 +1875,125 @@ actor DaemonApp {
                 metadata: [
                     "status": .string("failed"),
                     "reason": .string("Failed to build workflow: \(error.localizedDescription)")
+                ]
+            )
+            await server.broadcast(failMsg)
+        }
+    }
+
+    /// Builds a workflow from the email, saves it permanently, creates a trigger rule for future
+    /// matching emails from the same sender, then executes the workflow and replies.
+    private func buildAndSaveAutoFlow(_ approval: PendingEmailApproval) async {
+        // Broadcast "building" status
+        let buildingMsg = WSMessage(
+            type: WSMessageType.emailAutoReplyStatus,
+            id: approval.id,
+            metadata: ["status": .string("building")]
+        )
+        await server.broadcast(buildingMsg)
+
+        let prompt = """
+        Analyze this email brief and create a reusable workflow to accomplish what it describes.
+        This workflow will be saved and automatically triggered for future matching emails.
+
+        From: \(approval.email.from)
+        Subject: \(approval.email.subject)
+        Body:
+        \(approval.email.bodyText)
+        """
+
+        do {
+            guard let workflow = await buildWorkflowFromPrompt(prompt) else {
+                Logger.error("buildWorkflowFromPrompt returned nil for auto flow approval \(approval.id)")
+                try? await emailApprovalStore?.update(id: approval.id, status: .failed)
+                let failMsg = WSMessage(
+                    type: WSMessageType.emailAutoReplyStatus,
+                    id: approval.id,
+                    metadata: [
+                        "status": .string("failed"),
+                        "reason": .string("Failed to generate workflow from email")
+                    ]
+                )
+                await server.broadcast(failMsg)
+                return
+            }
+
+            // Save the workflow
+            try await workflowStore.create(workflow)
+
+            let wfMsg = WSMessage(
+                type: WSMessageType.workflowCreated,
+                metadata: [
+                    "workflowId": .string(workflow.id),
+                    "name": .string(workflow.name),
+                    "stepCount": .int(workflow.steps.count)
+                ]
+            )
+            await server.broadcast(wfMsg)
+
+            // Create a trigger rule matching the sender
+            let triggerRule = EmailTriggerRule(
+                workflowId: workflow.id,
+                conditions: EmailTriggerConditions(fromContains: approval.email.from)
+            )
+
+            try await emailTriggerStore.create(triggerRule)
+
+            let triggerMsg = WSMessage(
+                type: WSMessageType.emailTriggerCreated,
+                id: triggerRule.id,
+                metadata: [
+                    "id": .string(triggerRule.id),
+                    "workflowId": .string(workflow.id),
+                    "workflowName": .string(workflow.name),
+                    "fromContains": .string(approval.email.from),
+                    "enabled": .bool(true),
+                    "success": .bool(true)
+                ]
+            )
+            await server.broadcast(triggerMsg)
+
+            Logger.info("Auto flow created: workflow '\(workflow.name)' + trigger rule for '\(approval.email.from)'")
+
+            // Execute the workflow for the current email
+            let executor = self.workflowExecutor
+            let approvalId = approval.id
+
+            Task {
+                let execution = await executor.execute(
+                    workflow: workflow,
+                    triggerInfo: "email_auto_flow: \(approval.email.subject)"
+                )
+
+                switch execution.status {
+                case .completed:
+                    Logger.info("Auto flow workflow '\(workflow.name)' completed")
+                    await self.composeAndSendReply(approval: approval, execution: execution)
+                case .failed:
+                    Logger.error("Auto flow workflow '\(workflow.name)' failed")
+                    try? await self.emailApprovalStore?.update(id: approvalId, status: .failed)
+                    let failMsg = WSMessage(
+                        type: WSMessageType.emailAutoReplyStatus,
+                        id: approvalId,
+                        metadata: [
+                            "status": .string("failed"),
+                            "reason": .string("Workflow execution failed")
+                        ]
+                    )
+                    await self.server.broadcast(failMsg)
+                default:
+                    break
+                }
+            }
+        } catch {
+            Logger.error("Failed to build auto flow for approval \(approval.id): \(error)")
+            try? await emailApprovalStore?.update(id: approval.id, status: .failed)
+            let failMsg = WSMessage(
+                type: WSMessageType.emailAutoReplyStatus,
+                id: approval.id,
+                metadata: [
+                    "status": .string("failed"),
+                    "reason": .string("Failed to create auto flow: \(error.localizedDescription)")
                 ]
             )
             await server.broadcast(failMsg)
@@ -2094,7 +2241,7 @@ actor DaemonApp {
         }.joined(separator: "\n")
 
         let systemPrompt = """
-        You are a workflow builder for the love.Me automation system. The user will describe a workflow in natural language. You must generate a valid workflow JSON object.
+        You are a workflow builder for the Solace automation system. The user will describe a workflow in natural language. You must generate a valid workflow JSON object.
 
         Available MCP tools:
         \(toolCatalog.isEmpty ? "No MCP tools currently connected." : toolCatalog)
@@ -2286,6 +2433,96 @@ actor DaemonApp {
         }
     }
 
+    // MARK: - MCP Server Management
+
+    private func handleMCPServersList(client: WebSocketClient) async {
+        let servers = await mcpManager.getServerInfoList()
+        let items = servers.map { server -> MetadataValue in
+            .object([
+                "name": .string(server.name),
+                "type": .string(server.isStdio ? "stdio" : "http"),
+                "enabled": .bool(server.enabled),
+                "toolCount": .int(server.toolCount)
+            ])
+        }
+        let msg = WSMessage(
+            type: WSMessageType.mcpServersListResult,
+            metadata: ["servers": .array(items)]
+        )
+        try? await client.send(msg)
+    }
+
+    private func handleMCPServerToggle(_ message: WSMessage, client: WebSocketClient) async {
+        guard let serverName = message.metadata?["serverName"]?.stringValue else {
+            await sendError(to: client, message: "Missing serverName", code: "MISSING_FIELD")
+            return
+        }
+        guard let enabled = message.metadata?["enabled"]?.boolValue else {
+            await sendError(to: client, message: "Missing enabled", code: "MISSING_FIELD")
+            return
+        }
+
+        // Update in-memory state
+        await mcpManager.setServerEnabled(serverName, enabled)
+
+        // Persist to mcp.json (using JSONSerialization to preserve all fields)
+        let configPath = config.mcpConfigPath
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
+            if var root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               var servers = root["mcpServers"] as? [String: Any],
+               var serverDict = servers[serverName] as? [String: Any] {
+                serverDict["enabled"] = enabled
+                servers[serverName] = serverDict
+                root["mcpServers"] = servers
+                let updatedData = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
+                try updatedData.write(to: URL(fileURLWithPath: configPath))
+                Logger.info("Persisted enabled=\(enabled) for MCP server '\(serverName)' to mcp.json")
+            }
+        } catch {
+            Logger.error("Failed to persist MCP server toggle to config: \(error)")
+        }
+
+        // Send confirmation to requesting client
+        let confirmMsg = WSMessage(
+            type: WSMessageType.mcpServerToggleResult,
+            metadata: [
+                "serverName": .string(serverName),
+                "enabled": .bool(enabled)
+            ]
+        )
+        try? await client.send(confirmMsg)
+
+        // Broadcast updated status to all clients (toolCount reflects new enabled state)
+        let toolCount = await mcpManager.toolCount
+        let workflowCount: Int
+        do {
+            workflowCount = try await workflowStore.listAll().count
+        } catch {
+            workflowCount = 0
+        }
+
+        let emailConfig = await emailConfigStore.load()
+
+        var statusMetadata: [String: MetadataValue] = [
+            "connected": .bool(true),
+            "hasApiKey": .bool(config.apiKey != nil),
+            "toolCount": .int(toolCount),
+            "workflowCount": .int(workflowCount),
+            "daemonVersion": .string(config.daemonVersion),
+            "emailConfigured": .bool(emailConfig != nil)
+        ]
+        if let emailConfig = emailConfig {
+            statusMetadata["emailAddress"] = .string(emailConfig.emailAddress)
+        }
+
+        let statusMsg = WSMessage(
+            type: WSMessageType.status,
+            metadata: statusMetadata
+        )
+        await server.broadcast(statusMsg)
+    }
+
     // MARK: - Shared Workflow Builder
 
     /// Build a workflow from a natural language prompt using Claude.
@@ -2326,7 +2563,7 @@ actor DaemonApp {
         }.joined(separator: "\n")
 
         let systemPrompt = """
-        You are a workflow builder for the love.Me automation system. The user will describe a workflow in natural language. You must generate a valid workflow JSON object.
+        You are a workflow builder for the Solace automation system. The user will describe a workflow in natural language. You must generate a valid workflow JSON object.
 
         Available MCP tools:
         \(toolCatalog.isEmpty ? "No MCP tools currently connected." : toolCatalog)

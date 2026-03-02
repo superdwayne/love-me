@@ -3,10 +3,10 @@
 <plist version="1.0">
 <dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>love.Me needs access to your local network to discover and connect to the daemon running on your Mac.</string>
+	<string>Solace needs access to your local network to discover and connect to the daemon running on your Mac.</string>
 	<key>NSBonjourServices</key>
 	<array>
-		<string>_loveme._tcp.</string>
+		<string>_solace._tcp.</string>
 	</array>
 </dict>
 </plist>

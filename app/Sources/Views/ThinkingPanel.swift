@@ -10,7 +10,7 @@ struct ThinkingPanel: View {
         VStack(spacing: 0) {
             // Header - always visible
             Button {
-                withAnimation(.spring(duration: LoveMeTheme.springDuration)) {
+                withAnimation(.spring(duration: SolaceTheme.springDuration)) {
                     isExpanded.toggle()
                 }
             } label: {
@@ -27,9 +27,9 @@ struct ThinkingPanel: View {
             }
         }
         .background(.surfaceElevated)
-        .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.sm))
+        .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.sm))
         .overlay(
-            RoundedRectangle(cornerRadius: LoveMeTheme.sm)
+            RoundedRectangle(cornerRadius: SolaceTheme.sm)
                 .stroke(
                     borderColor,
                     lineWidth: 1
@@ -38,7 +38,7 @@ struct ThinkingPanel: View {
     }
 
     private var header: some View {
-        HStack(spacing: LoveMeTheme.sm) {
+        HStack(spacing: SolaceTheme.sm) {
             Image(systemName: "bolt.fill")
                 .font(.system(size: 12))
                 .foregroundStyle(.amberGlow)
@@ -46,7 +46,7 @@ struct ThinkingPanel: View {
                 .onAppear {
                     guard message.isThinkingStreaming, !reduceMotion else { return }
                     withAnimation(
-                        .easeInOut(duration: LoveMeTheme.thinkingPulseDuration)
+                        .easeInOut(duration: SolaceTheme.thinkingPulseDuration)
                         .repeatForever(autoreverses: true)
                     ) {
                         pulseOpacity = 0.5
@@ -77,9 +77,9 @@ struct ThinkingPanel: View {
                 .foregroundStyle(.trust)
                 .rotationEffect(.degrees(isExpanded ? 90 : 0))
         }
-        .padding(.horizontal, LoveMeTheme.md)
-        .frame(height: LoveMeTheme.thinkingCollapsedHeight)
-        .frame(minHeight: LoveMeTheme.minTouchTarget)
+        .padding(.horizontal, SolaceTheme.md)
+        .frame(height: SolaceTheme.thinkingCollapsedHeight)
+        .frame(minHeight: SolaceTheme.minTouchTarget)
     }
 
     private var expandedContent: some View {
@@ -88,9 +88,9 @@ struct ThinkingPanel: View {
                 .font(.thinking)
                 .foregroundStyle(.trust)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(LoveMeTheme.md)
+                .padding(SolaceTheme.md)
         }
-        .frame(maxHeight: LoveMeTheme.thinkingMaxExpandedHeight)
+        .frame(maxHeight: SolaceTheme.thinkingMaxExpandedHeight)
     }
 
     private var borderColor: Color {

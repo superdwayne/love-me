@@ -1,18 +1,48 @@
 import SwiftUI
 
+// MARK: - Streaming Dots Animation
+
+private struct StreamingDotsView: View {
+    @State private var animating = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: SolaceTheme.xs) {
+            ForEach(0..<3, id: \.self) { index in
+                Circle()
+                    .fill(Color.trust)
+                    .frame(width: 6, height: 6)
+                    .opacity(animating ? 1.0 : 0.3)
+                    .animation(
+                        reduceMotion ? nil :
+                            .easeInOut(duration: 0.5)
+                            .repeatForever(autoreverses: true)
+                            .delay(Double(index) * 0.15),
+                        value: animating
+                    )
+            }
+        }
+        .onAppear {
+            animating = true
+        }
+    }
+}
+
 struct MessageBubble: View {
     let message: Message
     @Environment(ChatViewModel.self) private var chatVM
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
+    @State private var dragOffset: CGFloat = 0
+    @State private var didTriggerReply = false
 
     var body: some View {
         HStack {
             if message.role == .user {
-                Spacer(minLength: UIScreen.main.bounds.width * (1 - LoveMeTheme.bubbleMaxWidthRatio))
+                Spacer(minLength: UIScreen.main.bounds.width * (1 - SolaceTheme.bubbleMaxWidthRatio))
             }
 
-            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: LoveMeTheme.xs) {
+            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: SolaceTheme.xs) {
                 bubbleContent
                     .contextMenu {
                         Button {
@@ -53,7 +83,7 @@ struct MessageBubble: View {
             }
 
             if message.role == .assistant {
-                Spacer(minLength: UIScreen.main.bounds.width * (1 - LoveMeTheme.bubbleMaxWidthRatio))
+                Spacer(minLength: UIScreen.main.bounds.width * (1 - SolaceTheme.bubbleMaxWidthRatio))
             }
         }
         .opacity(message.sendFailed ? 0.6 : 1.0)
@@ -61,11 +91,33 @@ struct MessageBubble: View {
         .offset(y: appeared ? 0 : (message.role == .user ? 10 : 0))
         .scaleEffect(appeared ? 1.0 : (message.role == .user ? 0.8 : 1.0))
         .offset(x: appeared ? 0 : (message.role == .assistant ? -20 : 0))
+        .offset(x: dragOffset)
+        .gesture(
+            DragGesture(minimumDistance: 20)
+                .onChanged { value in
+                    // Only allow right-swipe
+                    guard value.translation.width > 0 else { return }
+                    dragOffset = min(value.translation.width * 0.4, 60)
+                    if dragOffset > 40 && !didTriggerReply {
+                        didTriggerReply = true
+                        HapticManager.longPress()
+                    }
+                }
+                .onEnded { _ in
+                    if didTriggerReply {
+                        chatVM.quoteReply(message)
+                    }
+                    withAnimation(.spring(duration: 0.25)) {
+                        dragOffset = 0
+                    }
+                    didTriggerReply = false
+                }
+        )
         .onAppear {
             if reduceMotion {
                 appeared = true
             } else {
-                withAnimation(.spring(duration: LoveMeTheme.springDuration)) {
+                withAnimation(.spring(duration: SolaceTheme.springDuration)) {
                     appeared = true
                 }
             }
@@ -82,29 +134,22 @@ struct MessageBubble: View {
                     .foregroundStyle(message.role == .user ? .white : .textPrimary)
             }
         }
-        .padding(LoveMeTheme.md)
-        .frame(maxWidth: UIScreen.main.bounds.width * LoveMeTheme.bubbleMaxWidthRatio,
+        .padding(SolaceTheme.md)
+        .frame(maxWidth: UIScreen.main.bounds.width * SolaceTheme.bubbleMaxWidthRatio,
                alignment: message.role == .user ? .trailing : .leading)
         .background(bubbleBackground)
         .clipShape(bubbleShape)
         .overlay {
             if message.role == .assistant {
-                RoundedRectangle(cornerRadius: LoveMeTheme.bubbleRadius)
+                RoundedRectangle(cornerRadius: SolaceTheme.bubbleRadius)
                     .stroke(Color.assistantBubbleBorder, lineWidth: 1)
             }
         }
     }
 
     private var streamingPlaceholder: some View {
-        HStack(spacing: LoveMeTheme.xs) {
-            ForEach(0..<3, id: \.self) { index in
-                Circle()
-                    .fill(Color.trust)
-                    .frame(width: 6, height: 6)
-                    .opacity(0.5)
-            }
-        }
-        .padding(.vertical, LoveMeTheme.sm)
+        StreamingDotsView()
+            .padding(.vertical, SolaceTheme.sm)
     }
 
     private var bubbleBackground: Color {
@@ -116,17 +161,17 @@ struct MessageBubble: View {
     private var bubbleShape: UnevenRoundedRectangle {
         if message.role == .user {
             return UnevenRoundedRectangle(
-                topLeadingRadius: LoveMeTheme.bubbleRadius,
-                bottomLeadingRadius: LoveMeTheme.bubbleRadius,
-                bottomTrailingRadius: LoveMeTheme.bubbleTailRadius,
-                topTrailingRadius: LoveMeTheme.bubbleRadius
+                topLeadingRadius: SolaceTheme.bubbleRadius,
+                bottomLeadingRadius: SolaceTheme.bubbleRadius,
+                bottomTrailingRadius: SolaceTheme.bubbleTailRadius,
+                topTrailingRadius: SolaceTheme.bubbleRadius
             )
         } else {
             return UnevenRoundedRectangle(
-                topLeadingRadius: LoveMeTheme.bubbleRadius,
-                bottomLeadingRadius: LoveMeTheme.bubbleTailRadius,
-                bottomTrailingRadius: LoveMeTheme.bubbleRadius,
-                topTrailingRadius: LoveMeTheme.bubbleRadius
+                topLeadingRadius: SolaceTheme.bubbleRadius,
+                bottomLeadingRadius: SolaceTheme.bubbleTailRadius,
+                bottomTrailingRadius: SolaceTheme.bubbleRadius,
+                topTrailingRadius: SolaceTheme.bubbleRadius
             )
         }
     }

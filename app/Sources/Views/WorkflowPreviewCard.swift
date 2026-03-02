@@ -15,15 +15,15 @@ struct WorkflowPreviewCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: LoveMeTheme.md) {
+        VStack(alignment: .leading, spacing: SolaceTheme.md) {
             // Header
             HStack {
-                VStack(alignment: .leading, spacing: LoveMeTheme.xs) {
+                VStack(alignment: .leading, spacing: SolaceTheme.xs) {
                     Text(name)
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(.textPrimary)
 
-                    HStack(spacing: LoveMeTheme.sm) {
+                    HStack(spacing: SolaceTheme.sm) {
                         Image(systemName: "clock")
                             .font(.system(size: 12))
                             .foregroundStyle(.electricBlue)
@@ -39,8 +39,8 @@ struct WorkflowPreviewCard: View {
                 Text("\(steps.count) step\(steps.count == 1 ? "" : "s")")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.trust)
-                    .padding(.horizontal, LoveMeTheme.sm)
-                    .padding(.vertical, LoveMeTheme.xs)
+                    .padding(.horizontal, SolaceTheme.sm)
+                    .padding(.vertical, SolaceTheme.xs)
                     .background(Color.surfaceElevated)
                     .clipShape(Capsule())
             }
@@ -67,7 +67,7 @@ struct WorkflowPreviewCard: View {
 
             // Warning if needs configuration
             if needsConfiguration {
-                HStack(spacing: LoveMeTheme.sm) {
+                HStack(spacing: SolaceTheme.sm) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 12))
                         .foregroundStyle(.amberGlow)
@@ -75,17 +75,17 @@ struct WorkflowPreviewCard: View {
                         .font(.timestamp)
                         .foregroundStyle(.amberGlow)
                 }
-                .padding(.top, LoveMeTheme.xs)
+                .padding(.top, SolaceTheme.xs)
             }
         }
-        .padding(LoveMeTheme.lg)
+        .padding(SolaceTheme.lg)
         .background(Color.surface)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .opacity(isEnabled ? 1.0 : 0.6)
     }
 
     private func stepPill(_ step: PreviewStep) -> some View {
-        HStack(spacing: LoveMeTheme.sm) {
+        HStack(spacing: SolaceTheme.sm) {
             // Step icon
             Circle()
                 .fill(step.needsConfig ? Color.amberGlow.opacity(0.2) : Color.electricBlue.opacity(0.2))
@@ -115,8 +115,8 @@ struct WorkflowPreviewCard: View {
                 .fill(step.needsConfig ? Color.amberGlow : Color.sageGreen)
                 .frame(width: 8, height: 8)
         }
-        .padding(.horizontal, LoveMeTheme.md)
-        .padding(.vertical, LoveMeTheme.sm)
+        .padding(.horizontal, SolaceTheme.md)
+        .padding(.vertical, SolaceTheme.sm)
         .background(Color.surfaceElevated)
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }

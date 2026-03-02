@@ -6,6 +6,7 @@ struct Conversation: Identifiable, Codable, Sendable {
     var lastMessageAt: Date
     var messageCount: Int
     var sourceType: String?
+    var lastMessagePreview: String?
 
     /// Returns a human-readable relative timestamp string
     var relativeTimestamp: String {

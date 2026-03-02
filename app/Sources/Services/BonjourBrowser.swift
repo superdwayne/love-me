@@ -35,7 +35,7 @@ final class BonjourBrowser {
         let del = BonjourDelegate(owner: self)
         let browser = NetServiceBrowser()
         browser.delegate = del
-        browser.searchForServices(ofType: "_loveme._tcp.", inDomain: "local.")
+        browser.searchForServices(ofType: "_solace._tcp.", inDomain: "local.")
         self.delegate = del
         self.netServiceBrowser = browser
     }

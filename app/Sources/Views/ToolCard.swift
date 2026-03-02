@@ -12,7 +12,7 @@ struct ToolCard: View {
         VStack(spacing: 0) {
             // Header
             Button {
-                withAnimation(.spring(duration: LoveMeTheme.springDuration)) {
+                withAnimation(.spring(duration: SolaceTheme.springDuration)) {
                     isExpanded.toggle()
                 }
             } label: {
@@ -29,15 +29,15 @@ struct ToolCard: View {
             }
         }
         .background(.surface)
-        .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.sm))
+        .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.sm))
         .overlay(
             HStack {
                 Rectangle()
                     .fill(borderColor)
-                    .frame(width: LoveMeTheme.toolCardLeftBorderWidth)
+                    .frame(width: SolaceTheme.toolCardLeftBorderWidth)
                 Spacer()
             }
-            .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.sm))
+            .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.sm))
         )
         .opacity(appeared ? 1.0 : 0.0)
         .offset(y: appeared ? 0 : 8)
@@ -45,7 +45,7 @@ struct ToolCard: View {
             if reduceMotion {
                 appeared = true
             } else {
-                withAnimation(.easeOut(duration: LoveMeTheme.appearDuration)) {
+                withAnimation(.easeOut(duration: SolaceTheme.appearDuration)) {
                     appeared = true
                 }
             }
@@ -53,7 +53,7 @@ struct ToolCard: View {
     }
 
     private var header: some View {
-        HStack(spacing: LoveMeTheme.sm) {
+        HStack(spacing: SolaceTheme.sm) {
             statusIcon
                 .frame(width: 20, height: 20)
 
@@ -75,8 +75,8 @@ struct ToolCard: View {
 
             statusBadge
         }
-        .padding(.horizontal, LoveMeTheme.md)
-        .frame(minHeight: LoveMeTheme.toolCardCollapsedHeight)
+        .padding(.horizontal, SolaceTheme.md)
+        .frame(minHeight: SolaceTheme.toolCardCollapsedHeight)
     }
 
     @ViewBuilder
@@ -133,12 +133,12 @@ struct ToolCard: View {
     }
 
     private var expandedContent: some View {
-        VStack(alignment: .leading, spacing: LoveMeTheme.sm) {
+        VStack(alignment: .leading, spacing: SolaceTheme.sm) {
             Divider()
                 .background(.divider)
 
             if let input = toolCall.input, !input.isEmpty {
-                VStack(alignment: .leading, spacing: LoveMeTheme.xs) {
+                VStack(alignment: .leading, spacing: SolaceTheme.xs) {
                     Text("INPUT")
                         .font(.sectionHeader)
                         .foregroundStyle(.trust)
@@ -148,15 +148,15 @@ struct ToolCard: View {
                         .font(.toolDetail)
                         .foregroundStyle(.textPrimary)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(LoveMeTheme.sm)
+                        .padding(SolaceTheme.sm)
                         .background(.codeBg)
-                        .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.xs))
+                        .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.xs))
                 }
             }
 
             // Inline generated image
             if let imageURL = toolCall.imageURL, let url = chatVM.daemonImageURL(from: imageURL) {
-                VStack(alignment: .leading, spacing: LoveMeTheme.xs) {
+                VStack(alignment: .leading, spacing: SolaceTheme.xs) {
                     Text("GENERATED IMAGE")
                         .font(.sectionHeader)
                         .foregroundStyle(.trust)
@@ -165,7 +165,7 @@ struct ToolCard: View {
                     AsyncImage(url: url) { phase in
                         switch phase {
                         case .empty:
-                            RoundedRectangle(cornerRadius: LoveMeTheme.sm)
+                            RoundedRectangle(cornerRadius: SolaceTheme.sm)
                                 .fill(Color.surfaceElevated)
                                 .frame(height: 200)
                                 .overlay {
@@ -176,13 +176,13 @@ struct ToolCard: View {
                             image
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
-                                .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.sm))
+                                .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.sm))
                         case .failure:
-                            RoundedRectangle(cornerRadius: LoveMeTheme.sm)
+                            RoundedRectangle(cornerRadius: SolaceTheme.sm)
                                 .fill(Color.surfaceElevated)
                                 .frame(height: 100)
                                 .overlay {
-                                    VStack(spacing: LoveMeTheme.xs) {
+                                    VStack(spacing: SolaceTheme.xs) {
                                         Image(systemName: "photo.badge.exclamationmark")
                                             .font(.system(size: 20))
                                             .foregroundStyle(.trust)
@@ -200,7 +200,7 @@ struct ToolCard: View {
             }
 
             if let result = toolCall.result, !result.isEmpty {
-                VStack(alignment: .leading, spacing: LoveMeTheme.xs) {
+                VStack(alignment: .leading, spacing: SolaceTheme.xs) {
                     Text("RESULT")
                         .font(.sectionHeader)
                         .foregroundStyle(.trust)
@@ -210,15 +210,15 @@ struct ToolCard: View {
                         .font(.toolDetail)
                         .foregroundStyle(.textPrimary)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(LoveMeTheme.sm)
+                        .padding(SolaceTheme.sm)
                         .background(.codeBg)
-                        .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.xs))
+                        .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.xs))
                         .lineLimit(10)
                 }
             }
 
             if let error = toolCall.error, !error.isEmpty {
-                VStack(alignment: .leading, spacing: LoveMeTheme.xs) {
+                VStack(alignment: .leading, spacing: SolaceTheme.xs) {
                     Text("ERROR")
                         .font(.sectionHeader)
                         .foregroundStyle(.softRed)
@@ -228,14 +228,14 @@ struct ToolCard: View {
                         .font(.toolDetail)
                         .foregroundStyle(.softRed)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(LoveMeTheme.sm)
+                        .padding(SolaceTheme.sm)
                         .background(.codeBg)
-                        .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.xs))
+                        .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.xs))
                 }
             }
         }
-        .padding(.horizontal, LoveMeTheme.md)
-        .padding(.bottom, LoveMeTheme.md)
+        .padding(.horizontal, SolaceTheme.md)
+        .padding(.bottom, SolaceTheme.md)
     }
 
     private var borderColor: Color {

@@ -16,31 +16,31 @@ struct WorkflowExecutionView: View {
             if let execution {
                 VStack(spacing: 0) {
                     executionHeader(execution)
-                        .padding(.horizontal, LoveMeTheme.chatHorizontalPadding)
-                        .padding(.top, LoveMeTheme.lg)
-                        .padding(.bottom, LoveMeTheme.xl)
+                        .padding(.horizontal, SolaceTheme.chatHorizontalPadding)
+                        .padding(.top, SolaceTheme.lg)
+                        .padding(.bottom, SolaceTheme.xl)
 
                     // Steps list
-                    LazyVStack(spacing: LoveMeTheme.sm) {
+                    LazyVStack(spacing: SolaceTheme.sm) {
                         ForEach(Array(execution.steps.enumerated()), id: \.element.id) { index, step in
                             stepCard(step, index: index)
-                                .padding(.horizontal, LoveMeTheme.chatHorizontalPadding)
+                                .padding(.horizontal, SolaceTheme.chatHorizontalPadding)
                         }
                     }
-                    .padding(.bottom, LoveMeTheme.xxl)
+                    .padding(.bottom, SolaceTheme.xxl)
 
                     // Cancel button (while running)
                     if execution.status == "running" {
                         cancelButton(execution)
-                            .padding(.horizontal, LoveMeTheme.chatHorizontalPadding)
-                            .padding(.bottom, LoveMeTheme.md)
+                            .padding(.horizontal, SolaceTheme.chatHorizontalPadding)
+                            .padding(.bottom, SolaceTheme.md)
                     }
 
                     // Run again button
                     if execution.status == "completed" || execution.status == "failed" || execution.status == "cancelled" {
                         runAgainButton(execution)
-                            .padding(.horizontal, LoveMeTheme.chatHorizontalPadding)
-                            .padding(.bottom, LoveMeTheme.xxl)
+                            .padding(.horizontal, SolaceTheme.chatHorizontalPadding)
+                            .padding(.bottom, SolaceTheme.xxl)
                     }
                 }
             } else if workflowVM.isLoading {
@@ -55,7 +55,7 @@ struct WorkflowExecutionView: View {
         .opacity(appeared ? 1.0 : 0.0)
         .onAppear {
             workflowVM.loadExecution(id: executionId)
-            withAnimation(.easeOut(duration: LoveMeTheme.appearDuration)) {
+            withAnimation(.easeOut(duration: SolaceTheme.appearDuration)) {
                 appeared = true
             }
         }
@@ -64,10 +64,10 @@ struct WorkflowExecutionView: View {
     // MARK: - Header
 
     private func executionHeader(_ execution: ExecutionItem) -> some View {
-        VStack(spacing: LoveMeTheme.md) {
+        VStack(spacing: SolaceTheme.md) {
             // Workflow name and status
             HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: LoveMeTheme.xs) {
+                VStack(alignment: .leading, spacing: SolaceTheme.xs) {
                     Text(execution.workflowName)
                         .font(.system(size: 20, weight: .semibold))
                         .foregroundStyle(.textPrimary)
@@ -85,7 +85,7 @@ struct WorkflowExecutionView: View {
             }
 
             // Timing row
-            HStack(spacing: LoveMeTheme.lg) {
+            HStack(spacing: SolaceTheme.lg) {
                 timingLabel(
                     icon: "play.circle",
                     label: "Started",
@@ -110,19 +110,19 @@ struct WorkflowExecutionView: View {
 
                 Spacer()
             }
-            .padding(.top, LoveMeTheme.xs)
+            .padding(.top, SolaceTheme.xs)
 
             // Progress bar
             progressBar(execution)
         }
-        .padding(LoveMeTheme.lg)
+        .padding(SolaceTheme.lg)
         .background(.surface)
-        .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.sm))
+        .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.sm))
     }
 
     private func timingLabel(icon: String, label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: LoveMeTheme.xs) {
+            HStack(spacing: SolaceTheme.xs) {
                 Image(systemName: icon)
                     .font(.system(size: 10))
                     .foregroundStyle(.trust)
@@ -139,7 +139,7 @@ struct WorkflowExecutionView: View {
     }
 
     private func statusBadge(_ status: String) -> some View {
-        HStack(spacing: LoveMeTheme.xs) {
+        HStack(spacing: SolaceTheme.xs) {
             Circle()
                 .fill(statusColor(status))
                 .frame(width: 8, height: 8)
@@ -148,8 +148,8 @@ struct WorkflowExecutionView: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(statusColor(status))
         }
-        .padding(.horizontal, LoveMeTheme.md)
-        .padding(.vertical, LoveMeTheme.sm)
+        .padding(.horizontal, SolaceTheme.md)
+        .padding(.vertical, SolaceTheme.sm)
         .background(statusColor(status).opacity(0.12))
         .clipShape(Capsule())
     }
@@ -168,7 +168,7 @@ struct WorkflowExecutionView: View {
                 RoundedRectangle(cornerRadius: 3)
                     .fill(execution.status == "failed" ? Color.softRed : Color.sageGreen)
                     .frame(width: geo.size.width * fraction, height: 6)
-                    .animation(.spring(duration: LoveMeTheme.springDuration), value: fraction)
+                    .animation(.spring(duration: SolaceTheme.springDuration), value: fraction)
             }
         }
         .frame(height: 6)
@@ -183,7 +183,7 @@ struct WorkflowExecutionView: View {
         return VStack(spacing: 0) {
             // Header (tap to expand)
             Button {
-                withAnimation(.spring(duration: LoveMeTheme.springDuration)) {
+                withAnimation(.spring(duration: SolaceTheme.springDuration)) {
                     expandedStepId = isExpanded ? nil : step.id
                 }
             } label: {
@@ -200,20 +200,20 @@ struct WorkflowExecutionView: View {
             }
         }
         .background(.surface)
-        .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.sm))
+        .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.sm))
         .overlay(
             HStack {
                 Rectangle()
                     .fill(stepBorderColor(step.status))
-                    .frame(width: LoveMeTheme.toolCardLeftBorderWidth)
+                    .frame(width: SolaceTheme.toolCardLeftBorderWidth)
                 Spacer()
             }
-            .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.sm))
+            .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.sm))
         )
     }
 
     private func stepHeader(_ step: ExecutionStepItem, index: Int) -> some View {
-        HStack(spacing: LoveMeTheme.sm) {
+        HStack(spacing: SolaceTheme.sm) {
             // Step number
             Text("\(index + 1)")
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
@@ -248,10 +248,10 @@ struct WorkflowExecutionView: View {
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.trust)
                 .rotationEffect(.degrees(isExpanded(step) ? 90 : 0))
-                .animation(.spring(duration: LoveMeTheme.springDuration), value: isExpanded(step))
+                .animation(.spring(duration: SolaceTheme.springDuration), value: isExpanded(step))
         }
-        .padding(.horizontal, LoveMeTheme.md)
-        .frame(minHeight: LoveMeTheme.toolCardCollapsedHeight)
+        .padding(.horizontal, SolaceTheme.md)
+        .frame(minHeight: SolaceTheme.toolCardCollapsedHeight)
     }
 
     @ViewBuilder
@@ -285,13 +285,13 @@ struct WorkflowExecutionView: View {
     }
 
     private func stepExpandedContent(_ step: ExecutionStepItem) -> some View {
-        VStack(alignment: .leading, spacing: LoveMeTheme.sm) {
+        VStack(alignment: .leading, spacing: SolaceTheme.sm) {
             Divider()
                 .background(.divider)
 
             // Timing details
             if let startedAt = step.startedAt {
-                HStack(spacing: LoveMeTheme.sm) {
+                HStack(spacing: SolaceTheme.sm) {
                     Text("Started")
                         .font(.timestamp)
                         .foregroundStyle(.trust)
@@ -302,7 +302,7 @@ struct WorkflowExecutionView: View {
             }
 
             if let completedAt = step.completedAt {
-                HStack(spacing: LoveMeTheme.sm) {
+                HStack(spacing: SolaceTheme.sm) {
                     Text("Completed")
                         .font(.timestamp)
                         .foregroundStyle(.trust)
@@ -314,7 +314,7 @@ struct WorkflowExecutionView: View {
 
             // Output
             if let output = step.output, !output.isEmpty {
-                VStack(alignment: .leading, spacing: LoveMeTheme.xs) {
+                VStack(alignment: .leading, spacing: SolaceTheme.xs) {
                     Text("OUTPUT")
                         .font(.sectionHeader)
                         .foregroundStyle(.trust)
@@ -324,16 +324,16 @@ struct WorkflowExecutionView: View {
                         .font(.toolDetail)
                         .foregroundStyle(.textPrimary)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(LoveMeTheme.sm)
+                        .padding(SolaceTheme.sm)
                         .background(.codeBg)
-                        .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.xs))
+                        .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.xs))
                         .lineLimit(10)
                 }
             }
 
             // Error
             if let error = step.error, !error.isEmpty {
-                VStack(alignment: .leading, spacing: LoveMeTheme.xs) {
+                VStack(alignment: .leading, spacing: SolaceTheme.xs) {
                     Text("ERROR")
                         .font(.sectionHeader)
                         .foregroundStyle(.softRed)
@@ -343,14 +343,14 @@ struct WorkflowExecutionView: View {
                         .font(.toolDetail)
                         .foregroundStyle(.softRed)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(LoveMeTheme.sm)
+                        .padding(SolaceTheme.sm)
                         .background(.codeBg)
-                        .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.xs))
+                        .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.xs))
                 }
             }
         }
-        .padding(.horizontal, LoveMeTheme.md)
-        .padding(.bottom, LoveMeTheme.md)
+        .padding(.horizontal, SolaceTheme.md)
+        .padding(.bottom, SolaceTheme.md)
     }
 
     // MARK: - Cancel
@@ -361,7 +361,7 @@ struct WorkflowExecutionView: View {
         Button {
             showCancelConfirmation = true
         } label: {
-            HStack(spacing: LoveMeTheme.sm) {
+            HStack(spacing: SolaceTheme.sm) {
                 Image(systemName: "stop.fill")
                     .font(.system(size: 14))
                 Text("Stop Execution")
@@ -369,9 +369,9 @@ struct WorkflowExecutionView: View {
             }
             .foregroundStyle(.softRed)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, LoveMeTheme.md)
+            .padding(.vertical, SolaceTheme.md)
             .background(.softRed.opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.sm))
+            .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.sm))
         }
         .accessibilityLabel("Stop this workflow execution")
         .alert("Stop Execution?", isPresented: $showCancelConfirmation) {
@@ -390,7 +390,7 @@ struct WorkflowExecutionView: View {
         Button {
             workflowVM.runWorkflow(id: execution.workflowId)
         } label: {
-            HStack(spacing: LoveMeTheme.sm) {
+            HStack(spacing: SolaceTheme.sm) {
                 Image(systemName: "play.fill")
                     .font(.system(size: 14))
                 Text("Run Again")
@@ -398,9 +398,9 @@ struct WorkflowExecutionView: View {
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, LoveMeTheme.md)
+            .padding(.vertical, SolaceTheme.md)
             .background(.heart)
-            .clipShape(RoundedRectangle(cornerRadius: LoveMeTheme.sm))
+            .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.sm))
         }
         .accessibilityLabel("Run this workflow again")
     }
@@ -408,7 +408,7 @@ struct WorkflowExecutionView: View {
     // MARK: - Loading
 
     private var loadingState: some View {
-        VStack(spacing: LoveMeTheme.lg) {
+        VStack(spacing: SolaceTheme.lg) {
             Spacer()
             ProgressView()
                 .scaleEffect(1.2)

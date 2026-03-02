@@ -2,7 +2,7 @@ import Foundation
 
 /// Persistence layer for pending email approvals.
 ///
-/// Approvals are stored as a JSON dictionary at `~/.love-me/email-approvals.json`.
+/// Approvals are stored as a JSON dictionary at `~/.solace/email-approvals.json`.
 /// Stale pending approvals older than 24 hours are pruned on init.
 actor EmailApprovalStore {
 

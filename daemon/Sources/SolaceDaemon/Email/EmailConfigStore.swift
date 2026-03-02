@@ -1,6 +1,6 @@
 import Foundation
 
-/// Reads/writes email configuration to ~/.love-me/email.json with secure file permissions.
+/// Reads/writes email configuration to ~/.solace/email.json with secure file permissions.
 actor EmailConfigStore {
     private let filePath: String
     private let encoder: JSONEncoder

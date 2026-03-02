@@ -29,7 +29,7 @@ struct EmailSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.appBackground, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
-        .animation(.easeInOut(duration: LoveMeTheme.springDuration), value: emailVM.isEmailConnected)
+        .animation(.easeInOut(duration: SolaceTheme.springDuration), value: emailVM.isEmailConnected)
         .onAppear {
             emailVM.requestEmailStatus()
         }
@@ -45,11 +45,11 @@ struct EmailSettingsView: View {
                     .foregroundStyle(.textPrimary)
                 Spacer()
                 if emailVM.isEmailConnected {
-                    HStack(spacing: LoveMeTheme.sm) {
+                    HStack(spacing: SolaceTheme.sm) {
                         Circle()
                             .fill(Color.sageGreen)
-                            .frame(width: LoveMeTheme.connectionDotSize,
-                                   height: LoveMeTheme.connectionDotSize)
+                            .frame(width: SolaceTheme.connectionDotSize,
+                                   height: SolaceTheme.connectionDotSize)
                         Text("Connected")
                             .font(.toolTitle)
                             .foregroundStyle(.sageGreen)
@@ -61,7 +61,7 @@ struct EmailSettingsView: View {
                         .foregroundStyle(.trust)
                 }
             }
-            .frame(minHeight: LoveMeTheme.minTouchTarget)
+            .frame(minHeight: SolaceTheme.minTouchTarget)
             .listRowBackground(Color.surface)
             .accessibilityLabel("Email status: \(emailVM.isEmailConnected ? "Connected" : "Not connected")")
 
@@ -77,7 +77,7 @@ struct EmailSettingsView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-                .frame(minHeight: LoveMeTheme.minTouchTarget)
+                .frame(minHeight: SolaceTheme.minTouchTarget)
                 .listRowBackground(Color.surface)
                 .accessibilityLabel("Connected account: \(emailVM.connectedEmail)")
             }
@@ -103,7 +103,7 @@ struct EmailSettingsView: View {
                         Spacer()
                     }
                 }
-                .frame(minHeight: LoveMeTheme.minTouchTarget)
+                .frame(minHeight: SolaceTheme.minTouchTarget)
                 .listRowBackground(Color.surface)
                 .accessibilityLabel("Disconnect Agent Mail account")
                 .alert("Disconnect Agent Mail", isPresented: $showDisconnectAlert) {
@@ -125,7 +125,7 @@ struct EmailSettingsView: View {
 
     private var statsSection: some View {
         Section {
-            HStack(spacing: LoveMeTheme.md) {
+            HStack(spacing: SolaceTheme.md) {
                 Image(systemName: "tray.full.fill")
                     .font(.toolTitle)
                     .foregroundStyle(.trust)
@@ -139,11 +139,11 @@ struct EmailSettingsView: View {
                     .foregroundStyle(.trust)
                     .monospacedDigit()
             }
-            .frame(minHeight: LoveMeTheme.minTouchTarget)
+            .frame(minHeight: SolaceTheme.minTouchTarget)
             .listRowBackground(Color.surface)
             .accessibilityLabel("Emails processed: \(emailVM.emailsProcessed)")
 
-            HStack(spacing: LoveMeTheme.md) {
+            HStack(spacing: SolaceTheme.md) {
                 Image(systemName: "clock.fill")
                     .font(.toolTitle)
                     .foregroundStyle(.trust)
@@ -156,7 +156,7 @@ struct EmailSettingsView: View {
                     .font(.toolDetail)
                     .foregroundStyle(.trust)
             }
-            .frame(minHeight: LoveMeTheme.minTouchTarget)
+            .frame(minHeight: SolaceTheme.minTouchTarget)
             .listRowBackground(Color.surface)
             .accessibilityLabel("Last poll: \(emailVM.lastPollTime ?? "Never")")
         } header: {
@@ -175,7 +175,7 @@ struct EmailSettingsView: View {
                     Text(option.label).tag(option.seconds)
                 }
             } label: {
-                HStack(spacing: LoveMeTheme.md) {
+                HStack(spacing: SolaceTheme.md) {
                     Image(systemName: "arrow.clockwise")
                         .font(.toolTitle)
                         .foregroundStyle(.trust)
@@ -186,7 +186,7 @@ struct EmailSettingsView: View {
                 }
             }
             .tint(.trust)
-            .frame(minHeight: LoveMeTheme.minTouchTarget)
+            .frame(minHeight: SolaceTheme.minTouchTarget)
             .listRowBackground(Color.surface)
             .accessibilityLabel("Polling interval")
             .onChange(of: emailVM.pollingInterval) { _, newValue in
@@ -198,10 +198,10 @@ struct EmailSettingsView: View {
                 .foregroundStyle(.trust)
                 .tracking(1.2)
         } footer: {
-            Text("How often love.Me checks for new emails.")
+            Text("How often Solace checks for new emails.")
                 .font(.toolDetail)
                 .foregroundStyle(.trust)
-                .padding(.top, LoveMeTheme.xs)
+                .padding(.top, SolaceTheme.xs)
         }
     }
 }
