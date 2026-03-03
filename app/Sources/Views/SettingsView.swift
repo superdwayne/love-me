@@ -232,12 +232,13 @@ struct SettingsView: View {
                         .foregroundStyle(.textPrimary)
                     Spacer()
                     Picker("", selection: Binding(
-                        get: { settingsVM.activeProvider },
+                        get: { settingsVM.selectedProvider },
                         set: { newValue in
+                            settingsVM.selectedProvider = newValue
                             if newValue == "claude" {
                                 settingsVM.setProvider("claude")
                             }
-                            // Ollama requires endpoint/model — handled by save button below
+                            // Ollama requires endpoint/model — switching handled by the connect button below
                         }
                     )) {
                         Text("Claude").tag("claude")
@@ -249,7 +250,7 @@ struct SettingsView: View {
                 .listRowBackground(Color.surface)
 
                 // Ollama configuration fields (shown when Ollama is selected or configured)
-                if settingsVM.activeProvider == "ollama" || settingsVM.providers.contains(where: { $0.id == "ollama" && $0.configured }) {
+                if settingsVM.selectedProvider == "ollama" {
                     HStack {
                         Text("Endpoint")
                             .foregroundStyle(.textPrimary)
@@ -298,7 +299,7 @@ struct SettingsView: View {
                                 Text("Connecting...")
                                     .foregroundStyle(.trust)
                             } else {
-                                Text(settingsVM.activeProvider == "ollama" ? "Update Ollama" : "Switch to Ollama")
+                                Text(settingsVM.activeProvider == "ollama" ? "Update Ollama" : "Connect to Ollama")
                                     .foregroundStyle(.heart)
                             }
                             Spacer()

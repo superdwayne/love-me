@@ -122,6 +122,11 @@ actor ImageServer {
         case "gif": return "image/gif"
         case "webp": return "image/webp"
         case "svg": return "image/svg+xml"
+        case "m4a": return "audio/m4a"
+        case "mp3": return "audio/mp3"
+        case "wav": return "audio/wav"
+        case "ogg": return "audio/ogg"
+        case "webm": return "audio/webm"
         default: return "application/octet-stream"
         }
     }
@@ -167,5 +172,59 @@ enum ImageFileHelper {
         case "image/svg+xml": return "svg"
         default: return "png"
         }
+    }
+}
+
+// MARK: - Generic Attachment Saving Helper (images + audio)
+
+enum AttachmentFileHelper {
+    /// Save base64-encoded file data to the attachments directory.
+    /// Supports images and audio files.
+    /// Returns the filename on success (e.g., "abc123.m4a").
+    static func saveBase64File(data base64String: String, mimeType: String, directory: String) -> String? {
+        guard let fileData = Data(base64Encoded: base64String) else {
+            Logger.error("AttachmentFileHelper: failed to decode base64 data")
+            return nil
+        }
+
+        let ext = fileExtension(for: mimeType)
+        let filename = UUID().uuidString + "." + ext
+        let filePath = "\(directory)/\(filename)"
+
+        // Ensure directory exists
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: directory) {
+            try? fm.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        }
+
+        do {
+            try fileData.write(to: URL(fileURLWithPath: filePath), options: .atomic)
+            Logger.info("AttachmentFileHelper: saved \(filename) (\(fileData.count) bytes, \(mimeType))")
+            return filename
+        } catch {
+            Logger.error("AttachmentFileHelper: failed to write file: \(error)")
+            return nil
+        }
+    }
+
+    static func fileExtension(for mimeType: String) -> String {
+        switch mimeType.lowercased() {
+        case "image/png": return "png"
+        case "image/jpeg", "image/jpg": return "jpg"
+        case "image/gif": return "gif"
+        case "image/webp": return "webp"
+        case "image/svg+xml": return "svg"
+        case "audio/m4a", "audio/mp4", "audio/x-m4a": return "m4a"
+        case "audio/mp3", "audio/mpeg": return "mp3"
+        case "audio/wav", "audio/x-wav": return "wav"
+        case "audio/ogg": return "ogg"
+        case "audio/webm": return "webm"
+        default: return "bin"
+        }
+    }
+
+    static func isAudioFile(_ filename: String) -> Bool {
+        let ext = (filename as NSString).pathExtension.lowercased()
+        return ["m4a", "mp3", "wav", "ogg", "webm", "mp4"].contains(ext)
     }
 }

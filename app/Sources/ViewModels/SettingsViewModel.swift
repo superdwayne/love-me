@@ -20,6 +20,7 @@ final class SettingsViewModel {
     // Provider state
     var providers: [ProviderInfo] = []
     var activeProvider: String = "claude"
+    var selectedProvider: String = "claude"  // Tracks picker selection (may differ from active before user confirms)
     var activeModel: String = ""
     var isLoadingProviders = false
     var providerError: String?
@@ -125,6 +126,7 @@ final class SettingsViewModel {
         guard let meta = msg.metadata else { return }
 
         activeProvider = meta["active"]?.stringValue ?? "claude"
+        selectedProvider = activeProvider
         activeModel = meta["activeModel"]?.stringValue ?? ""
 
         guard case .array(let items) = meta["providers"] else { return }
@@ -169,6 +171,7 @@ final class SettingsViewModel {
 
         if success {
             activeProvider = provider
+            selectedProvider = provider
             activeModel = meta["model"]?.stringValue ?? activeModel
             providerError = nil
             ollamaTestResult = .success
@@ -182,6 +185,7 @@ final class SettingsViewModel {
         } else {
             let error = meta["error"]?.stringValue ?? "Unknown error"
             providerError = error
+            selectedProvider = activeProvider  // Revert picker to actual active provider
             ollamaTestResult = .failed(error)
             HapticManager.toolError()
         }

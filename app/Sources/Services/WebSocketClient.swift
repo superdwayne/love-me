@@ -188,12 +188,12 @@ final class WebSocketClient {
             return
         }
 
-        Task.detached { [weak self] in
-            guard let data = jsonString.data(using: .utf8) else { return }
-            let wsMessage = try? JSONDecoder().decode(WSMessage.self, from: data)
-            guard let wsMessage else { return }
-
-            await MainActor.run {
+        // Decode on a background thread, then dispatch to MainActor
+        let jsonData = jsonString.data(using: .utf8)
+        Task.detached {
+            guard let data = jsonData else { return }
+            guard let wsMessage = try? JSONDecoder().decode(WSMessage.self, from: data) else { return }
+            await MainActor.run { [weak self] in
                 guard let self else { return }
 
                 // Handle status message for connection confirmation

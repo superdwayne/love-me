@@ -459,6 +459,8 @@ actor OllamaAPIClient: LLMProvider {
                     toolResults.append((id: tr.tool_use_id, content: tr.content))
                 case .image:
                     textParts.append("[image attached]")
+                case .audio:
+                    textParts.append("[voice note attached]")
                 }
             }
 

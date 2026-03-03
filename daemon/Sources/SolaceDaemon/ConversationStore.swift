@@ -264,24 +264,40 @@ actor ConversationStore {
             switch msg.role {
             case "user":
                 apiRole = "user"
-                // Check for image attachments saved as files
+                // Check for attachments (images and audio) saved as files
                 if let attachmentFiles = msg.metadata?["attachmentFiles"], !attachmentFiles.isEmpty {
-                    // Build multi-content block: images first, then text
+                    // Build multi-content block: media first, then text
                     var blocks: [ContentBlock] = []
                     let filenames = attachmentFiles.split(separator: ",").map(String.init)
                     for filename in filenames {
                         let filePath = "\(generatedImagesDirectory)/\(filename)"
-                        if let imageData = try? Data(contentsOf: URL(fileURLWithPath: filePath)) {
-                            let base64 = imageData.base64EncodedString()
+                        if let fileData = try? Data(contentsOf: URL(fileURLWithPath: filePath)) {
+                            let base64 = fileData.base64EncodedString()
                             let ext = (filename as NSString).pathExtension.lowercased()
-                            let mediaType: String
-                            switch ext {
-                            case "jpg", "jpeg": mediaType = "image/jpeg"
-                            case "gif": mediaType = "image/gif"
-                            case "webp": mediaType = "image/webp"
-                            default: mediaType = "image/png"
+
+                            if AttachmentFileHelper.isAudioFile(filename) {
+                                // Audio attachment
+                                let mediaType: String
+                                switch ext {
+                                case "m4a": mediaType = "audio/m4a"
+                                case "mp3": mediaType = "audio/mp3"
+                                case "wav": mediaType = "audio/wav"
+                                case "ogg": mediaType = "audio/ogg"
+                                case "webm": mediaType = "audio/webm"
+                                default: mediaType = "audio/m4a"
+                                }
+                                blocks.append(.audio(AudioContent(source: AudioSource(mediaType: mediaType, data: base64))))
+                            } else {
+                                // Image attachment
+                                let mediaType: String
+                                switch ext {
+                                case "jpg", "jpeg": mediaType = "image/jpeg"
+                                case "gif": mediaType = "image/gif"
+                                case "webp": mediaType = "image/webp"
+                                default: mediaType = "image/png"
+                                }
+                                blocks.append(.image(ImageContent(source: ImageSource(mediaType: mediaType, data: base64))))
                             }
-                            blocks.append(.image(ImageContent(source: ImageSource(mediaType: mediaType, data: base64))))
                         }
                     }
                     if !msg.content.isEmpty {

@@ -9,14 +9,20 @@ struct PendingAttachment: Identifiable {
     var fileName: String
     var thumbnail: UIImage?
     var isLoading: Bool
+    var audioDuration: TimeInterval?
 
-    init(id: String = UUID().uuidString, data: Data, mimeType: String, fileName: String, thumbnail: UIImage? = nil, isLoading: Bool = false) {
+    var isAudio: Bool {
+        mimeType.hasPrefix("audio/")
+    }
+
+    init(id: String = UUID().uuidString, data: Data, mimeType: String, fileName: String, thumbnail: UIImage? = nil, isLoading: Bool = false, audioDuration: TimeInterval? = nil) {
         self.id = id
         self.data = data
         self.mimeType = mimeType
         self.fileName = fileName
         self.thumbnail = thumbnail
         self.isLoading = isLoading
+        self.audioDuration = audioDuration
     }
 }
 
@@ -56,6 +62,17 @@ final class ChatViewModel {
             mimeType: mimeType,
             fileName: fileName,
             thumbnail: thumbnail
+        )
+        pendingAttachments.append(pending)
+    }
+
+    func addVoiceNote(data: Data, duration: TimeInterval) {
+        let fileName = "voice_\(UUID().uuidString.prefix(8)).m4a"
+        let pending = PendingAttachment(
+            data: data,
+            mimeType: "audio/m4a",
+            fileName: fileName,
+            audioDuration: duration
         )
         pendingAttachments.append(pending)
     }
@@ -119,7 +136,8 @@ final class ChatViewModel {
             MessageAttachment(
                 fileName: pending.fileName,
                 mimeType: pending.mimeType,
-                thumbnailData: pending.data
+                thumbnailData: pending.data,
+                audioDuration: pending.audioDuration
             )
         }
 
@@ -145,11 +163,15 @@ final class ChatViewModel {
         var metadata: [String: MetadataValue]? = nil
         if !attachments.isEmpty {
             let attachmentValues: [MetadataValue] = attachments.map { pending in
-                .object([
+                var obj: [String: MetadataValue] = [
                     "data": .string(pending.data.base64EncodedString()),
                     "mimeType": .string(pending.mimeType),
                     "fileName": .string(pending.fileName)
-                ])
+                ]
+                if let duration = pending.audioDuration {
+                    obj["audioDuration"] = .double(duration)
+                }
+                return .object(obj)
             }
             metadata = ["attachments": .array(attachmentValues)]
         }
@@ -400,21 +422,32 @@ final class ChatViewModel {
             if case .object(let meta) = dict["metadata"],
                let filesStr = meta["attachmentFiles"]?.stringValue, !filesStr.isEmpty {
                 let filenames = filesStr.split(separator: ",").map(String.init)
-                attachments = filenames.map { filename in
+                attachments = filenames.compactMap { filename in
                     let url = "http://\(host):9201/images/\(filename)"
                     let ext = (filename as NSString).pathExtension.lowercased()
-                    let mimeType: String
-                    switch ext {
-                    case "jpg", "jpeg": mimeType = "image/jpeg"
-                    case "gif": mimeType = "image/gif"
-                    case "webp": mimeType = "image/webp"
-                    default: mimeType = "image/png"
+                    let audioExts = ["m4a", "mp3", "wav", "ogg", "webm"]
+                    if audioExts.contains(ext) {
+                        let mimeType = "audio/\(ext)"
+                        // For audio, we need to load data from the server for playback
+                        return MessageAttachment(
+                            fileName: filename,
+                            mimeType: mimeType,
+                            imageURL: url
+                        )
+                    } else {
+                        let mimeType: String
+                        switch ext {
+                        case "jpg", "jpeg": mimeType = "image/jpeg"
+                        case "gif": mimeType = "image/gif"
+                        case "webp": mimeType = "image/webp"
+                        default: mimeType = "image/png"
+                        }
+                        return MessageAttachment(
+                            fileName: filename,
+                            mimeType: mimeType,
+                            imageURL: url
+                        )
                     }
-                    return MessageAttachment(
-                        fileName: filename,
-                        mimeType: mimeType,
-                        imageURL: url
-                    )
                 }
             }
 

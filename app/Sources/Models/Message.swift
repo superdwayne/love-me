@@ -7,19 +7,26 @@ struct MessageAttachment: Identifiable, Sendable {
     let mimeType: String
     let thumbnailData: Data?
     let imageURL: String?
+    let audioDuration: TimeInterval?
+
+    var isAudio: Bool {
+        mimeType.hasPrefix("audio/")
+    }
 
     init(
         id: String = UUID().uuidString,
         fileName: String,
         mimeType: String,
         thumbnailData: Data? = nil,
-        imageURL: String? = nil
+        imageURL: String? = nil,
+        audioDuration: TimeInterval? = nil
     ) {
         self.id = id
         self.fileName = fileName
         self.mimeType = mimeType
         self.thumbnailData = thumbnailData
         self.imageURL = imageURL
+        self.audioDuration = audioDuration
     }
 }
 

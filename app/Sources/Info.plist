@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Solace needs access to your microphone to record voice notes for chat messages.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Solace needs access to your local network to discover and connect to the daemon running on your Mac.</string>
 	<key>NSBonjourServices</key>

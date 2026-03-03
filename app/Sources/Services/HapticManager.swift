@@ -35,4 +35,14 @@ enum HapticManager: Sendable {
     static func cascadeComplete() {
         UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
     }
+
+    @MainActor
+    static func recordingStarted() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    @MainActor
+    static func recordingStopped() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
 }

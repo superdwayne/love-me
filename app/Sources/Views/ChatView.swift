@@ -117,8 +117,8 @@ struct ChatView: View {
                         let spacing = spacingBefore(message: message, previous: prevMessage)
 
                         VStack(spacing: 0) {
-                            if message.role == .user && !message.attachments.isEmpty {
-                                // User attachment images
+                            if message.role == .user && message.attachments.contains(where: { !$0.isAudio }) {
+                                // User attachment images (audio shown inside bubble)
                                 attachmentImages(for: message)
                                     .padding(.horizontal, SolaceTheme.chatHorizontalPadding)
                                     .padding(.top, spacing)
@@ -254,7 +254,7 @@ struct ChatView: View {
     private func attachmentImages(for message: Message) -> some View {
         HStack(alignment: .top, spacing: SolaceTheme.sm) {
             Spacer()
-            ForEach(message.attachments) { attachment in
+            ForEach(message.attachments.filter { !$0.isAudio }) { attachment in
                 if let thumbData = attachment.thumbnailData,
                    let uiImage = UIImage(data: thumbData) {
                     Image(uiImage: uiImage)

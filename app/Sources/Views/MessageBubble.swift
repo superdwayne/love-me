@@ -126,27 +126,54 @@ struct MessageBubble: View {
         }
     }
 
+    private var audioAttachments: [MessageAttachment] {
+        message.attachments.filter { $0.isAudio }
+    }
+
     private var bubbleContent: some View {
         Group {
-            if message.content.isEmpty && message.isStreaming {
+            if message.content.isEmpty && message.isStreaming && audioAttachments.isEmpty {
                 streamingPlaceholder
             } else {
-                Text(renderedContent)
-                    .font(.chatMessage)
-                    .foregroundStyle(message.role == .user ? .white : .textPrimary)
-                    .onChange(of: message.content) { _, newContent in
-                        throttleRender(newContent)
-                    }
-                    .onChange(of: message.isStreaming) { _, streaming in
-                        if !streaming {
-                            renderedContent = MarkdownRenderer.render(message.content)
-                            lastRenderTime = Date()
+                VStack(alignment: .leading, spacing: SolaceTheme.sm) {
+                    // Voice note players for audio attachments
+                    ForEach(audioAttachments) { attachment in
+                        if let audioData = attachment.thumbnailData, !audioData.isEmpty {
+                            VoiceNotePlayerView(
+                                audioData: audioData,
+                                duration: attachment.audioDuration ?? 0,
+                                isUserMessage: message.role == .user
+                            )
+                        } else if let urlStr = attachment.imageURL,
+                                  let url = chatVM.daemonImageURL(from: urlStr) {
+                            RemoteVoiceNoteView(
+                                url: url,
+                                duration: attachment.audioDuration ?? 0,
+                                isUserMessage: message.role == .user
+                            )
                         }
                     }
-                    .onAppear {
-                        renderedContent = MarkdownRenderer.render(message.content)
-                        lastRenderTime = Date()
+
+                    // Text content (may be empty for voice-only messages)
+                    if !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(renderedContent)
+                            .font(.chatMessage)
+                            .foregroundStyle(message.role == .user ? .white : .textPrimary)
+                            .onChange(of: message.content) { _, newContent in
+                                throttleRender(newContent)
+                            }
+                            .onChange(of: message.isStreaming) { _, streaming in
+                                if !streaming {
+                                    renderedContent = MarkdownRenderer.render(message.content)
+                                    lastRenderTime = Date()
+                                }
+                            }
+                            .onAppear {
+                                renderedContent = MarkdownRenderer.render(message.content)
+                                lastRenderTime = Date()
+                            }
                     }
+                }
             }
         }
         .padding(SolaceTheme.md)

@@ -377,7 +377,7 @@ actor DaemonApp {
             }
         }
 
-        // Process image attachments if present
+        // Process attachments (images and audio) if present
         var msgMetadata: [String: String]? = nil
         if case .array(let attachments) = message.metadata?["attachments"] {
             var savedFilenames: [String] = []
@@ -385,7 +385,7 @@ actor DaemonApp {
                 guard case .object(let att) = attachment,
                       let b64Data = att["data"]?.stringValue,
                       let mimeType = att["mimeType"]?.stringValue else { continue }
-                if let filename = ImageFileHelper.saveBase64Image(
+                if let filename = AttachmentFileHelper.saveBase64File(
                     data: b64Data, mimeType: mimeType, directory: generatedImagesDirectory
                 ) {
                     savedFilenames.append(filename)
