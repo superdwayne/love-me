@@ -1,20 +1,5 @@
 import Foundation
 
-/// Events emitted during a Claude API streaming response
-enum ClaudeStreamEvent: Sendable {
-    case thinkingStart
-    case thinkingDelta(String)
-    case thinkingDone
-    case textStart
-    case textDelta(String)
-    case textDone
-    case toolUseStart(id: String, name: String)
-    case toolUseInputDelta(String)
-    case toolUseDone(id: String, name: String, input: String)
-    case messageComplete
-    case error(String)
-}
-
 /// Accumulated tool call data during streaming
 private struct PendingToolCall: Sendable {
     let id: String
@@ -28,11 +13,18 @@ enum ClaudeAPIError: Error, Sendable {
     case apiError(statusCode: Int, message: String)
 }
 
-/// Claude API client with SSE streaming support
-actor ClaudeAPIClient {
+/// Claude API client with SSE streaming support, conforming to LLMProvider
+actor ClaudeAPIClient: LLMProvider {
     private let config: DaemonConfig
     private let session: URLSession
     private let apiURL = URL(string: "https://api.anthropic.com/v1/messages")!
+
+    // MARK: - LLMProvider Properties
+
+    nonisolated let providerName = "Claude"
+    nonisolated var modelName: String { config.claudeModel }
+    nonisolated let supportsThinking = true
+    nonisolated let supportsTools = true
 
     init(config: DaemonConfig) {
         self.config = config
@@ -42,15 +34,13 @@ actor ClaudeAPIClient {
         self.session = URLSession(configuration: sessionConfig)
     }
 
-    /// Send a message to Claude API with streaming, returning events via an AsyncStream.
-    /// The returned stream yields ClaudeStreamEvent values.
-    /// `messages` is the full conversation history.
-    /// `tools` are MCP tool definitions to pass.
+    // MARK: - LLMProvider Methods
+
     func streamRequest(
         messages: [MessageParam],
         tools: [ToolDefinition],
         systemPrompt: String? = nil
-    ) -> AsyncThrowingStream<ClaudeStreamEvent, Error> {
+    ) async -> AsyncThrowingStream<LLMStreamEvent, Error> {
         guard let apiKey = config.apiKey else {
             return AsyncThrowingStream { continuation in
                 continuation.yield(.error("No ANTHROPIC_API_KEY configured"))
@@ -59,7 +49,7 @@ actor ClaudeAPIClient {
         }
 
         let request = ClaudeRequest(
-            model: config.model,
+            model: config.claudeModel,
             max_tokens: 16384,
             messages: messages,
             system: systemPrompt ?? config.systemPrompt,
@@ -76,6 +66,9 @@ actor ClaudeAPIClient {
                         apiKey: apiKey,
                         continuation: continuation
                     )
+                } catch let urlError as URLError where urlError.code == .timedOut {
+                    continuation.yield(.error("Response timed out — tap to retry"))
+                    continuation.finish()
                 } catch {
                     continuation.yield(.error("Stream error: \(error.localizedDescription)"))
                     continuation.finish(throwing: error)
@@ -84,7 +77,6 @@ actor ClaudeAPIClient {
         }
     }
 
-    /// Send a single (non-streaming) request to Claude API and return the text response.
     func singleRequest(
         messages: [MessageParam],
         systemPrompt: String
@@ -94,7 +86,7 @@ actor ClaudeAPIClient {
         }
 
         let request = ClaudeRequest(
-            model: config.model,
+            model: config.claudeModel,
             max_tokens: 8192,
             messages: messages,
             system: systemPrompt,
@@ -124,7 +116,6 @@ actor ClaudeAPIClient {
             throw ClaudeAPIError.apiError(statusCode: httpResponse.statusCode, message: body)
         }
 
-        // Parse the response to extract text content
         struct ClaudeResponse: Codable {
             let content: [ResponseBlock]
         }
@@ -143,7 +134,7 @@ actor ClaudeAPIClient {
     private func executeStream(
         request: ClaudeRequest,
         apiKey: String,
-        continuation: AsyncThrowingStream<ClaudeStreamEvent, Error>.Continuation
+        continuation: AsyncThrowingStream<LLMStreamEvent, Error>.Continuation
     ) async throws {
         let encoder = JSONEncoder()
         let bodyData = try encoder.encode(request)
@@ -154,6 +145,7 @@ actor ClaudeAPIClient {
         urlRequest.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         urlRequest.setValue("application/json", forHTTPHeaderField: "content-type")
         urlRequest.httpBody = bodyData
+        urlRequest.timeoutInterval = 60  // 60s per-chunk timeout for streaming
 
         Logger.info("API request: \(bodyData.count) bytes to \(apiURL)")
 
@@ -180,10 +172,6 @@ actor ClaudeAPIClient {
             return
         }
 
-        // Parse SSE stream
-        // Note: asyncBytes.lines may skip empty lines, so we trigger
-        // event processing when a new "event:" line arrives (flushing
-        // any previously buffered event+data pair).
         var currentEventType: String?
         var dataBuffer = ""
         var pendingToolCalls: [Int: PendingToolCall] = [:]
@@ -191,7 +179,6 @@ actor ClaudeAPIClient {
 
         for try await line in asyncBytes.lines {
             if line.hasPrefix("event: ") {
-                // Flush any pending event before starting a new one
                 if !dataBuffer.isEmpty, let eventType = currentEventType {
                     processSSEEvent(
                         type: eventType,
@@ -211,7 +198,6 @@ actor ClaudeAPIClient {
                 continue
             }
 
-            // Empty line or other - flush pending event
             if line.isEmpty, !dataBuffer.isEmpty, let eventType = currentEventType {
                 processSSEEvent(
                     type: eventType,
@@ -225,7 +211,6 @@ actor ClaudeAPIClient {
             }
         }
 
-        // Flush final event if stream ends without trailing empty line
         if !dataBuffer.isEmpty, let eventType = currentEventType {
             processSSEEvent(
                 type: eventType,
@@ -243,7 +228,7 @@ actor ClaudeAPIClient {
     private func processSSEEvent(
         type: String,
         data: String,
-        continuation: AsyncThrowingStream<ClaudeStreamEvent, Error>.Continuation,
+        continuation: AsyncThrowingStream<LLMStreamEvent, Error>.Continuation,
         pendingToolCalls: inout [Int: PendingToolCall],
         currentBlockTypes: inout [Int: String]
     ) {
@@ -252,7 +237,6 @@ actor ClaudeAPIClient {
 
         switch type {
         case "message_start":
-            // Message metadata - no action needed for streaming
             break
 
         case "content_block_start":
@@ -319,15 +303,12 @@ actor ClaudeAPIClient {
             currentBlockTypes.removeValue(forKey: event.index)
 
         case "message_delta":
-            // Contains stop_reason - the message is ending
             break
 
         case "message_stop":
-            // Final event
             break
 
         case "ping":
-            // Keep-alive from API
             break
 
         case "error":

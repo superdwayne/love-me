@@ -125,20 +125,38 @@ actor WebSocketServer {
     }
 
     func broadcast(_ message: WSMessage) async {
-        var failedIds: [String] = []
-        for (id, client) in clients {
-            do {
-                try await withTimeout(seconds: 5) {
-                    try await client.send(message)
+        // Capture client references before entering TaskGroup
+        let clientSnapshot = Array(clients)
+
+        let failedIds = await withTaskGroup(of: String?.self, returning: [String].self) { group in
+            for (id, client) in clientSnapshot {
+                group.addTask {
+                    do {
+                        try await withTimeout(seconds: 5) {
+                            try await client.send(message)
+                        }
+                        return nil
+                    } catch {
+                        Logger.error("Broadcast failed for client \(id): \(error)")
+                        return id
+                    }
                 }
-            } catch {
-                Logger.error("Broadcast failed for client \(id): \(error)")
-                failedIds.append(id)
             }
+
+            var failed: [String] = []
+            for await result in group {
+                if let id = result {
+                    failed.append(id)
+                }
+            }
+            return failed
         }
-        // Remove clients that failed to receive
+
+        // Cancel and remove clients that failed to receive
         for id in failedIds {
-            clients.removeValue(forKey: id)
+            if let client = clients.removeValue(forKey: id) {
+                await client.cancel()
+            }
         }
     }
 

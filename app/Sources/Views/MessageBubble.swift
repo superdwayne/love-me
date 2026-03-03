@@ -35,6 +35,8 @@ struct MessageBubble: View {
     @State private var appeared = false
     @State private var dragOffset: CGFloat = 0
     @State private var didTriggerReply = false
+    @State private var renderedContent: AttributedString = AttributedString()
+    @State private var lastRenderTime: Date = .distantPast
 
     var body: some View {
         HStack {
@@ -129,9 +131,22 @@ struct MessageBubble: View {
             if message.content.isEmpty && message.isStreaming {
                 streamingPlaceholder
             } else {
-                Text(MarkdownRenderer.render(message.content))
+                Text(renderedContent)
                     .font(.chatMessage)
                     .foregroundStyle(message.role == .user ? .white : .textPrimary)
+                    .onChange(of: message.content) { _, newContent in
+                        throttleRender(newContent)
+                    }
+                    .onChange(of: message.isStreaming) { _, streaming in
+                        if !streaming {
+                            renderedContent = MarkdownRenderer.render(message.content)
+                            lastRenderTime = Date()
+                        }
+                    }
+                    .onAppear {
+                        renderedContent = MarkdownRenderer.render(message.content)
+                        lastRenderTime = Date()
+                    }
             }
         }
         .padding(SolaceTheme.md)
@@ -176,9 +191,26 @@ struct MessageBubble: View {
         }
     }
 
-    private var formattedTimestamp: String {
+    private func throttleRender(_ content: String) {
+        guard message.isStreaming else {
+            // Not streaming — always render immediately
+            renderedContent = MarkdownRenderer.render(content)
+            lastRenderTime = Date()
+            return
+        }
+        let now = Date()
+        guard now.timeIntervalSince(lastRenderTime) >= 0.1 else { return }
+        renderedContent = MarkdownRenderer.render(content)
+        lastRenderTime = now
+    }
+
+    private static let timestampFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
-        return formatter.string(from: message.timestamp)
+        return formatter
+    }()
+
+    private var formattedTimestamp: String {
+        Self.timestampFormatter.string(from: message.timestamp)
     }
 }

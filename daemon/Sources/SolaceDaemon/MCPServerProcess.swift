@@ -169,17 +169,29 @@ final class MCPServerProcess: Sendable {
 
     /// Call a tool on this MCP server
     func callTool(name toolName: String, arguments: JSONValue) async throws -> MCPToolCallResult {
-        let response = try await withTimeout(seconds: 60) { [self] in
-            try await self.sendRequest(
-                method: "tools/call",
-                params: .object([
-                    "name": .string(toolName),
-                    "arguments": arguments
-                ])
-            )
+        let startTime = Date()
+        Logger.info("MCP[\(self.name)] calling tool '\(toolName)'")
+
+        let response: JSONRPCResponse
+        do {
+            response = try await withTimeout(seconds: 60) { [self] in
+                try await self.sendRequest(
+                    method: "tools/call",
+                    params: .object([
+                        "name": .string(toolName),
+                        "arguments": arguments
+                    ])
+                )
+            }
+        } catch {
+            let duration = Date().timeIntervalSince(startTime)
+            Logger.error("MCP[\(self.name)] tool '\(toolName)' failed after \(String(format: "%.2f", duration))s: \(error)")
+            throw error
         }
 
         if let error = response.error {
+            let duration = Date().timeIntervalSince(startTime)
+            Logger.error("MCP[\(self.name)] tool '\(toolName)' returned error in \(String(format: "%.2f", duration))s: \(error.message)")
             return MCPToolCallResult(content: "Error: \(error.message)", isError: true)
         }
 
@@ -244,6 +256,8 @@ final class MCPServerProcess: Sendable {
             resultText = json.count > 10_000 ? String(json.prefix(10_000)) + "\n[...truncated]" : json
         }
 
+        let duration = Date().timeIntervalSince(startTime)
+        Logger.info("MCP[\(self.name)] tool '\(toolName)' completed in \(String(format: "%.2f", duration))s (isError: \(isError))")
         return MCPToolCallResult(content: resultText, isError: isError)
     }
 

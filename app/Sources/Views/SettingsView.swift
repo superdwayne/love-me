@@ -22,6 +22,7 @@ struct SettingsView: View {
             List {
                 discoveredDaemonsSection
                 connectionSection
+                aiProviderSection
                 mcpServersSection
                 aboutSection
                 dataSection
@@ -190,6 +191,144 @@ struct SettingsView: View {
                     .font(.toolDetail)
                     .foregroundStyle(.trust)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var aiProviderSection: some View {
+        Section {
+            if settingsVM.isLoadingProviders {
+                HStack {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .tint(.trust)
+                    Text("Loading providers...")
+                        .foregroundStyle(.trust)
+                        .padding(.leading, SolaceTheme.sm)
+                    Spacer()
+                }
+                .listRowBackground(Color.surface)
+            } else {
+                // Active provider indicator
+                HStack {
+                    Text("Active")
+                        .foregroundStyle(.textPrimary)
+                    Spacer()
+                    HStack(spacing: SolaceTheme.xs) {
+                        Circle()
+                            .fill(Color.sageGreen)
+                            .frame(width: 8, height: 8)
+                        Text(settingsVM.activeProvider == "ollama"
+                             ? "Ollama: \(settingsVM.activeModel)"
+                             : "Claude")
+                            .foregroundStyle(.trust)
+                    }
+                }
+                .listRowBackground(Color.surface)
+
+                // Provider picker
+                HStack {
+                    Text("Provider")
+                        .foregroundStyle(.textPrimary)
+                    Spacer()
+                    Picker("", selection: Binding(
+                        get: { settingsVM.activeProvider },
+                        set: { newValue in
+                            if newValue == "claude" {
+                                settingsVM.setProvider("claude")
+                            }
+                            // Ollama requires endpoint/model — handled by save button below
+                        }
+                    )) {
+                        Text("Claude").tag("claude")
+                        Text("Ollama").tag("ollama")
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 200)
+                }
+                .listRowBackground(Color.surface)
+
+                // Ollama configuration fields (shown when Ollama is selected or configured)
+                if settingsVM.activeProvider == "ollama" || settingsVM.providers.contains(where: { $0.id == "ollama" && $0.configured }) {
+                    HStack {
+                        Text("Endpoint")
+                            .foregroundStyle(.textPrimary)
+                        Spacer()
+                        TextField("http://localhost:11434/v1/chat/completions",
+                                  text: Binding(
+                                    get: { settingsVM.ollamaEndpoint },
+                                    set: { settingsVM.ollamaEndpoint = $0 }
+                                  ))
+                            .multilineTextAlignment(.trailing)
+                            .foregroundStyle(.textPrimary)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .font(.system(size: 13))
+                    }
+                    .listRowBackground(Color.surface)
+
+                    HStack {
+                        Text("Model")
+                            .foregroundStyle(.textPrimary)
+                        Spacer()
+                        TextField("llama3",
+                                  text: Binding(
+                                    get: { settingsVM.ollamaModel },
+                                    set: { settingsVM.ollamaModel = $0 }
+                                  ))
+                            .multilineTextAlignment(.trailing)
+                            .foregroundStyle(.textPrimary)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                    }
+                    .listRowBackground(Color.surface)
+
+                    // Connect / Test button
+                    Button {
+                        settingsVM.setProvider("ollama",
+                                               endpoint: settingsVM.ollamaEndpoint,
+                                               model: settingsVM.ollamaModel)
+                    } label: {
+                        HStack {
+                            Spacer()
+                            if settingsVM.isSwitchingProvider {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                                    .tint(.trust)
+                                Text("Connecting...")
+                                    .foregroundStyle(.trust)
+                            } else {
+                                Text(settingsVM.activeProvider == "ollama" ? "Update Ollama" : "Switch to Ollama")
+                                    .foregroundStyle(.heart)
+                            }
+                            Spacer()
+                        }
+                    }
+                    .disabled(settingsVM.isSwitchingProvider)
+                    .listRowBackground(Color.surface)
+
+                    // Error message
+                    if let error = settingsVM.providerError {
+                        HStack(spacing: SolaceTheme.xs) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.softRed)
+                                .font(.system(size: 12))
+                            Text(error)
+                                .font(.toolDetail)
+                                .foregroundStyle(.softRed)
+                        }
+                        .listRowBackground(Color.surface)
+                    }
+                }
+            }
+        } header: {
+            Text("AI PROVIDER")
+                .font(.sectionHeader)
+                .foregroundStyle(.trust)
+                .tracking(1.2)
+        }
+        .onAppear {
+            settingsVM.requestProvidersList()
         }
     }
 

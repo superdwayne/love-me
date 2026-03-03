@@ -24,6 +24,20 @@ struct ConnectionBanner: View {
 
                 Spacer()
 
+                if webSocket.retryCount > 3 {
+                    Button {
+                        webSocket.connect()
+                    } label: {
+                        Text("Reconnect")
+                            .font(.system(size: 13, weight: .semibold))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(.white.opacity(0.2))
+                            .clipShape(Capsule())
+                    }
+                    .accessibilityLabel("Reconnect to daemon")
+                }
+
                 Button {
                     withAnimation(.easeOut(duration: 0.2)) {
                         isDismissed = true

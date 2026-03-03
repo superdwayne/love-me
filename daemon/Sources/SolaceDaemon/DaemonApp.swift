@@ -5,6 +5,7 @@ actor DaemonApp {
     private let config: DaemonConfig
     private let server: WebSocketServer
     private let claudeClient: ClaudeAPIClient
+    private var llmProvider: any LLMProvider
     private let mcpManager: MCPManager
     private let conversationStore: ConversationStore
     private let skillStore: SkillStore
@@ -29,13 +30,20 @@ actor DaemonApp {
     private var emailConversationBridge: EmailConversationBridge?
     private var emailApprovalStore: EmailApprovalStore?
 
+    // Ollama health check
+    private var ollamaHealthTask: Task<Void, Never>?
+
     // Active generation task tracking for cancellation
     private var activeGenerationTasks: [String: Task<Void, Never>] = [:]
+
+    // Startup time for health endpoint uptime calculation
+    private let startedAt = Date()
 
     init(config: DaemonConfig) {
         self.config = config
         self.server = WebSocketServer(port: config.port)
         self.claudeClient = ClaudeAPIClient(config: config)
+        self.llmProvider = ClaudeAPIClient(config: config)  // Default; overridden in start() if Ollama configured
         self.mcpManager = MCPManager(config: config)
         self.conversationStore = ConversationStore(directory: config.conversationsDirectory)
         self.skillStore = SkillStore(skillsDirectory: config.skillsDirectory)
@@ -85,6 +93,9 @@ actor DaemonApp {
     func start() async throws {
         // Ensure directories exist
         try config.ensureDirectories()
+
+        // Initialize the LLM provider based on config
+        await initializeProvider()
 
         // Start image server for serving generated/attached images
         try await imageServer.start()
@@ -158,13 +169,32 @@ actor DaemonApp {
         Logger.info("Daemon started - port: \(config.port), tools: \(toolCount), skills: \(skillCount)")
     }
 
-    /// Stop all services
+    /// Stop all services with graceful cleanup
     func stop() async {
+        Logger.info("Shutting down... cancelling active generation tasks")
+        for (convId, task) in activeGenerationTasks {
+            task.cancel()
+            Logger.info("  Cancelled generation for conversation \(convId)")
+        }
+        activeGenerationTasks.removeAll()
+
+        Logger.info("Shutting down... stopping Ollama health check")
+        ollamaHealthTask?.cancel()
+        ollamaHealthTask = nil
+
+        Logger.info("Shutting down... stopping email polling")
         await emailPollingService?.stop()
+
+        Logger.info("Shutting down... removing scheduled workflows")
         await workflowScheduler.removeAll()
+
+        Logger.info("Shutting down... closing WebSocket clients")
         await server.stop()
+
+        Logger.info("Shutting down... stopping MCP servers")
         await mcpManager.stopAll()
-        Logger.info("Daemon stopped")
+
+        Logger.info("Daemon stopped cleanly")
     }
 
     // MARK: - Message Handling
@@ -278,6 +308,17 @@ actor DaemonApp {
         case WSMessageType.mcpServerToggle:
             await handleMCPServerToggle(message, client: client)
 
+        // Provider Management messages
+        case WSMessageType.getProviders:
+            await handleGetProviders(client: client)
+
+        case WSMessageType.setProvider:
+            await handleSetProvider(message, client: client)
+
+        // Health
+        case WSMessageType.getHealth:
+            await handleGetHealth(client: client)
+
         default:
             Logger.error("Unknown message type: \(message.type)")
             await sendError(to: client, message: "Unknown message type: \(message.type)", code: "UNKNOWN_TYPE")
@@ -298,6 +339,20 @@ actor DaemonApp {
             await sendError(to: client, message: "Missing conversationId", code: "MISSING_FIELD")
             return
         }
+
+        // US-014: Reject duplicate messages while generation is active for this conversation
+        if activeGenerationTasks[conversationId] != nil {
+            Logger.info("Ignoring duplicate userMessage for conversation \(conversationId) — generation already active")
+            let msg = WSMessage(
+                type: WSMessageType.error,
+                conversationId: conversationId,
+                content: "Waiting for response...",
+                metadata: ["code": .string("GENERATION_ACTIVE")]
+            )
+            try? await client.send(msg)
+            return
+        }
+
         let content = message.content ?? ""
         let hasAttachments: Bool
         if case .array(let arr) = message.metadata?["attachments"], !arr.isEmpty {
@@ -310,14 +365,16 @@ actor DaemonApp {
             return
         }
 
-        // Check for API key
-        guard config.apiKey != nil else {
-            await sendError(
-                to: client,
-                message: "No ANTHROPIC_API_KEY configured. Set the environment variable and restart the daemon.",
-                code: "NO_API_KEY"
-            )
-            return
+        // Check for API key (only required for Claude provider)
+        if llmProvider.providerName == "Claude" {
+            guard config.apiKey != nil else {
+                await sendError(
+                    to: client,
+                    message: "No ANTHROPIC_API_KEY configured. Set the environment variable and restart the daemon.",
+                    code: "NO_API_KEY"
+                )
+                return
+            }
         }
 
         // Process image attachments if present
@@ -348,14 +405,13 @@ actor DaemonApp {
             return
         }
 
-        // Start the Claude API streaming loop in a trackable task for cancellation
+        // Start the LLM streaming loop in a trackable task for cancellation
         let task = Task { [weak self] in
             guard let self else { return }
-            await self.streamClaudeResponse(conversationId: conversationId, client: client)
+            await self.streamLLMResponse(conversationId: conversationId, client: client)
             await self.removeGenerationTask(conversationId: conversationId)
         }
         activeGenerationTasks[conversationId] = task
-        await task.value
     }
 
     private func removeGenerationTask(conversationId: String) {
@@ -402,42 +458,47 @@ actor DaemonApp {
         return prompt
     }
 
-    private func streamClaudeResponse(conversationId: String, client: WebSocketClient) async {
+    private func streamLLMResponse(conversationId: String, client: WebSocketClient) async {
         do {
             // Build messages from conversation history
             let apiMessages = try await conversationStore.buildAPIMessages(conversationId: conversationId)
             var tools = await mcpManager.getToolDefinitions()
 
             // Built-in create_workflow tool — allows Claude to build workflows from chat
-            tools.append(ToolDefinition(
-                name: "create_workflow",
-                description: "Create and save an automated workflow from a natural language description. Use when the user asks to build, create, or save a workflow.",
-                input_schema: .object([
-                    "type": .string("object"),
-                    "properties": .object([
-                        "description": .object([
-                            "type": .string("string"),
-                            "description": .string("Natural language description of the workflow to create")
-                        ])
-                    ]),
-                    "required": .array([.string("description")])
-                ])
-            ))
+            if !tools.contains(where: { $0.name == "create_workflow" }) {
+                tools.append(ToolDefinition(
+                    name: "create_workflow",
+                    description: "Create and save an automated workflow from a natural language description. Use when the user asks to build, create, or save a workflow.",
+                    input_schema: .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "description": .object([
+                                "type": .string("string"),
+                                "description": .string("Natural language description of the workflow to create")
+                            ])
+                        ]),
+                        "required": .array([.string("description")])
+                    ])
+                ))
+            }
 
             let systemPrompt = await buildSystemPrompt()
 
-            Logger.info("Calling Claude API: \(apiMessages.count) messages, \(tools.count) tools")
+            // Only pass tools if provider supports them
+            let effectiveTools = llmProvider.supportsTools ? tools : []
 
-            let stream = await claudeClient.streamRequest(
+            Logger.info("Calling \(llmProvider.providerName) API: \(apiMessages.count) messages, \(effectiveTools.count) tools")
+
+            let stream = await llmProvider.streamRequest(
                 messages: apiMessages,
-                tools: tools,
+                tools: effectiveTools,
                 systemPrompt: systemPrompt
             )
 
             Logger.info("Stream created, starting iteration")
 
-            var fullText = ""
-            var fullThinking = ""
+            var fullTextChunks: [String] = []
+            var fullThinkingChunks: [String] = []
             var thinkingStartTime: Date?
             var pendingToolCalls: [(id: String, name: String, input: String)] = []
             var hasToolCalls = false
@@ -445,10 +506,10 @@ actor DaemonApp {
             for try await event in stream {
                 // Check for cancellation between stream events
                 if Task.isCancelled {
-                    Logger.info("streamClaudeResponse: cancelled for conversation \(conversationId)")
+                    Logger.info("streamLLMResponse: cancelled for conversation \(conversationId)")
                     // Save partial response if any text was generated
-                    if !fullText.isEmpty {
-                        let partialMsg = StoredMessage(role: "assistant", content: fullText + "\n\n[Generation cancelled]")
+                    if !fullTextChunks.isEmpty {
+                        let partialMsg = StoredMessage(role: "assistant", content: fullTextChunks.joined() + "\n\n[Generation cancelled]")
                         _ = try? await conversationStore.addMessage(to: conversationId, message: partialMsg)
                     }
                     return
@@ -459,7 +520,7 @@ actor DaemonApp {
                     thinkingStartTime = Date()
 
                 case .thinkingDelta(let chunk):
-                    fullThinking += chunk
+                    fullThinkingChunks.append(chunk)
                     let msg = WSMessage(
                         type: WSMessageType.thinkingChunk,
                         conversationId: conversationId,
@@ -480,7 +541,7 @@ actor DaemonApp {
                     break
 
                 case .textDelta(let chunk):
-                    fullText += chunk
+                    fullTextChunks.append(chunk)
                     let msg = WSMessage(
                         type: WSMessageType.assistantChunk,
                         conversationId: conversationId,
@@ -517,9 +578,19 @@ actor DaemonApp {
 
                 case .error(let errorMsg):
                     await sendError(to: client, message: errorMsg, code: "API_ERROR")
+                    // Send assistantDone so client resets streaming state
+                    let doneMsg = WSMessage(
+                        type: WSMessageType.assistantDone,
+                        conversationId: conversationId,
+                        metadata: ["error": .bool(true)]
+                    )
+                    try? await client.send(doneMsg)
                     return
                 }
             }
+
+            // Join accumulated chunks (O(n) instead of O(n²) concatenation)
+            let fullText = fullTextChunks.joined()
 
             // Save assistant text response if any
             if !fullText.isEmpty {
@@ -546,7 +617,7 @@ actor DaemonApp {
                 for toolCall in pendingToolCalls {
                     // Check for cancellation before each tool execution
                     if Task.isCancelled {
-                        Logger.info("streamClaudeResponse: cancelled during tool execution for conversation \(conversationId)")
+                        Logger.info("streamLLMResponse: cancelled during tool execution for conversation \(conversationId)")
                         return
                     }
 
@@ -738,7 +809,7 @@ actor DaemonApp {
                 }
 
                 // Continue the Claude conversation with tool results (multi-turn loop)
-                await streamClaudeResponse(conversationId: conversationId, client: client)
+                await streamLLMResponse(conversationId: conversationId, client: client)
                 return
             }
 
@@ -2204,9 +2275,11 @@ actor DaemonApp {
             return
         }
 
-        guard config.apiKey != nil else {
-            await sendError(to: client, message: "No ANTHROPIC_API_KEY configured", code: "NO_API_KEY")
-            return
+        if llmProvider.providerName == "Claude" {
+            guard config.apiKey != nil else {
+                await sendError(to: client, message: "No ANTHROPIC_API_KEY configured", code: "NO_API_KEY")
+                return
+            }
         }
 
         // Gather available MCP tools for context, including input schemas
@@ -2288,12 +2361,12 @@ actor DaemonApp {
         let userMessage = MessageParam(role: "user", text: prompt)
 
         do {
-            let responseText = try await claudeClient.singleRequest(
+            let responseText = try await llmProvider.singleRequest(
                 messages: [userMessage],
                 systemPrompt: systemPrompt
             )
 
-            // Strip markdown fences if Claude wrapped the JSON
+            // Strip markdown fences if LLM wrapped the JSON
             var cleanedText = responseText.trimmingCharacters(in: .whitespacesAndNewlines)
             if cleanedText.hasPrefix("```") {
                 // Remove opening fence (```json or ```)
@@ -2528,7 +2601,8 @@ actor DaemonApp {
     /// Build a workflow from a natural language prompt using Claude.
     /// Shared between handleBuildWorkflow (WebSocket) and EmailConversationBridge (email briefs).
     func buildWorkflowFromPrompt(_ prompt: String) async -> WorkflowDefinition? {
-        guard config.apiKey != nil else {
+        // Workflow generation requires LLM — check appropriate key
+        if llmProvider.providerName == "Claude" && config.apiKey == nil {
             Logger.error("buildWorkflowFromPrompt: No ANTHROPIC_API_KEY configured")
             return nil
         }
@@ -2610,7 +2684,7 @@ actor DaemonApp {
         let userMessage = MessageParam(role: "user", text: prompt)
 
         do {
-            let responseText = try await claudeClient.singleRequest(
+            let responseText = try await llmProvider.singleRequest(
                 messages: [userMessage],
                 systemPrompt: systemPrompt
             )
@@ -2759,7 +2833,9 @@ actor DaemonApp {
             "toolCount": .int(toolCount),
             "workflowCount": .int(workflowCount),
             "daemonVersion": .string(config.daemonVersion),
-            "emailConfigured": .bool(emailConfig != nil)
+            "emailConfigured": .bool(emailConfig != nil),
+            "activeProvider": .string(llmProvider.providerName.lowercased()),
+            "activeModel": .string(llmProvider.modelName)
         ]
 
         if let emailConfig = emailConfig {
@@ -2769,6 +2845,49 @@ actor DaemonApp {
         let msg = WSMessage(
             type: WSMessageType.status,
             metadata: metadata
+        )
+        try? await client.send(msg)
+    }
+
+    // MARK: - Health Endpoint
+
+    private func handleGetHealth(client: WebSocketClient) async {
+        let toolCount = await mcpManager.toolCount
+        let clientCount = await server.clientCount
+        let mcpStatuses = await mcpManager.serverStatuses()
+        let uptime = Date().timeIntervalSince(startedAt)
+
+        // Get RSS memory usage (in bytes)
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        let rssBytes = result == KERN_SUCCESS ? Int(info.resident_size) : 0
+
+        let mcpStatusArray = mcpStatuses.map { status -> MetadataValue in
+            .object([
+                "name": .string(status.name),
+                "running": .bool(status.running),
+                "toolCount": .int(status.toolCount)
+            ])
+        }
+
+        let msg = WSMessage(
+            type: WSMessageType.healthResult,
+            metadata: [
+                "uptime": .double(uptime),
+                "activeConnections": .int(clientCount),
+                "activeProvider": .string(llmProvider.providerName.lowercased()),
+                "activeModel": .string(llmProvider.modelName),
+                "toolCount": .int(toolCount),
+                "activeGenerations": .int(activeGenerationTasks.count),
+                "memoryRSSBytes": .int(rssBytes),
+                "version": .string(DaemonConfig.version),
+                "mcpServers": .array(mcpStatusArray)
+            ]
         )
         try? await client.send(msg)
     }
@@ -2997,5 +3116,218 @@ actor DaemonApp {
         dict["steps"] = .array(steps)
 
         return dict
+    }
+
+    // MARK: - Provider Management
+
+    /// Initialize the LLM provider based on config, with Ollama health check
+    private func initializeProvider() async {
+        if config.defaultProvider == "ollama", let ollamaConfig = config.ollamaConfig {
+            let ollamaClient = OllamaAPIClient(
+                endpoint: ollamaConfig.endpoint,
+                model: ollamaConfig.model,
+                apiKey: config.ollamaApiKey
+            )
+
+            // Check Ollama reachability
+            let reachable = await ollamaClient.healthCheck()
+            if reachable {
+                llmProvider = ollamaClient
+                Logger.info("Ollama provider active: \(ollamaConfig.model) at \(ollamaConfig.endpoint)")
+            } else {
+                Logger.error("Ollama unreachable at \(ollamaConfig.endpoint) — falling back to Claude")
+                llmProvider = claudeClient
+
+                // Broadcast fallback status to connected clients
+                let statusMsg = WSMessage(
+                    type: WSMessageType.status,
+                    content: "Ollama unavailable, using Claude",
+                    metadata: ["providerFallback": .bool(true)]
+                )
+                await server.broadcast(statusMsg)
+
+                // Start periodic health check to reconnect
+                startOllamaHealthCheck(config: ollamaConfig)
+            }
+        } else {
+            llmProvider = claudeClient
+            Logger.info("Claude provider active: \(config.claudeModel)")
+        }
+    }
+
+    /// Periodic health check for Ollama when it was configured but unreachable
+    private func startOllamaHealthCheck(config ollamaConfig: OllamaProviderConfig) {
+        ollamaHealthTask?.cancel()
+        ollamaHealthTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                guard !Task.isCancelled, let self = self else { return }
+
+                let ollamaClient = OllamaAPIClient(
+                    endpoint: ollamaConfig.endpoint,
+                    model: ollamaConfig.model,
+                    apiKey: self.config.ollamaApiKey
+                )
+
+                let reachable = await ollamaClient.healthCheck()
+                if reachable {
+                    await self.switchProvider(to: ollamaClient)
+                    Logger.info("Ollama recovered — switched back to Ollama provider")
+
+                    let statusMsg = WSMessage(
+                        type: WSMessageType.providerUpdated,
+                        metadata: [
+                            "provider": .string("ollama"),
+                            "model": .string(ollamaConfig.model),
+                            "recovered": .bool(true)
+                        ]
+                    )
+                    await self.server.broadcast(statusMsg)
+                    return  // Stop health check loop
+                }
+            }
+        }
+    }
+
+    /// Switch the active LLM provider at runtime
+    private func switchProvider(to provider: any LLMProvider) {
+        llmProvider = provider
+        ollamaHealthTask?.cancel()
+        ollamaHealthTask = nil
+    }
+
+    private func handleGetProviders(client: WebSocketClient) async {
+        let ollamaConfig = config.ollamaConfig
+
+        var providers: [[String: MetadataValue]] = []
+
+        // Claude
+        providers.append([
+            "name": .string("claude"),
+            "displayName": .string("Claude"),
+            "model": .string(config.claudeModel),
+            "active": .bool(llmProvider.providerName == "Claude"),
+            "available": .bool(config.apiKey != nil)
+        ])
+
+        // Ollama
+        if let ollamaConfig = ollamaConfig {
+            let ollamaClient = OllamaAPIClient(
+                endpoint: ollamaConfig.endpoint,
+                model: ollamaConfig.model,
+                apiKey: config.ollamaApiKey
+            )
+            let reachable = await ollamaClient.healthCheck()
+
+            providers.append([
+                "name": .string("ollama"),
+                "displayName": .string("Ollama"),
+                "model": .string(ollamaConfig.model),
+                "endpoint": .string(ollamaConfig.endpoint),
+                "active": .bool(llmProvider.providerName == "Ollama"),
+                "available": .bool(reachable)
+            ])
+        } else {
+            providers.append([
+                "name": .string("ollama"),
+                "displayName": .string("Ollama"),
+                "model": .string(""),
+                "endpoint": .string(OllamaProviderConfig.default.endpoint),
+                "active": .bool(false),
+                "available": .bool(false),
+                "configured": .bool(false)
+            ])
+        }
+
+        let msg = WSMessage(
+            type: WSMessageType.providersStatus,
+            metadata: [
+                "default": .string(config.defaultProvider),
+                "active": .string(llmProvider.providerName.lowercased()),
+                "activeModel": .string(llmProvider.modelName),
+                "providers": .array(providers.map { .object($0) })
+            ]
+        )
+        try? await client.send(msg)
+    }
+
+    private func handleSetProvider(_ message: WSMessage, client: WebSocketClient) async {
+        guard let providerName = message.metadata?["provider"]?.stringValue else {
+            await sendError(to: client, message: "Missing provider name", code: "MISSING_FIELD")
+            return
+        }
+
+        let endpoint = message.metadata?["endpoint"]?.stringValue
+        let model = message.metadata?["model"]?.stringValue
+
+        switch providerName {
+        case "claude":
+            switchProvider(to: claudeClient)
+
+            // Update config
+            let newConfig = ProviderConfig(
+                defaultProvider: "claude",
+                ollama: config.providerConfig.ollama,
+                claude: ClaudeProviderConfig(model: config.claudeModel)
+            )
+            try? DaemonConfig.saveProviderConfig(newConfig, path: config.providersConfigPath)
+
+            let msg = WSMessage(
+                type: WSMessageType.providerUpdated,
+                metadata: [
+                    "provider": .string("claude"),
+                    "model": .string(config.claudeModel),
+                    "success": .bool(true)
+                ]
+            )
+            await server.broadcast(msg)
+
+        case "ollama":
+            let ollamaEndpoint = endpoint ?? config.ollamaConfig?.endpoint ?? OllamaProviderConfig.default.endpoint
+            let ollamaModel = model ?? config.ollamaConfig?.model ?? OllamaProviderConfig.default.model
+
+            let ollamaClient = OllamaAPIClient(
+                endpoint: ollamaEndpoint,
+                model: ollamaModel,
+                apiKey: config.ollamaApiKey
+            )
+
+            let reachable = await ollamaClient.healthCheck()
+            if reachable {
+                switchProvider(to: ollamaClient)
+
+                // Update config
+                let newConfig = ProviderConfig(
+                    defaultProvider: "ollama",
+                    ollama: OllamaProviderConfig(endpoint: ollamaEndpoint, model: ollamaModel),
+                    claude: config.providerConfig.claude
+                )
+                try? DaemonConfig.saveProviderConfig(newConfig, path: config.providersConfigPath)
+
+                let msg = WSMessage(
+                    type: WSMessageType.providerUpdated,
+                    metadata: [
+                        "provider": .string("ollama"),
+                        "model": .string(ollamaModel),
+                        "endpoint": .string(ollamaEndpoint),
+                        "success": .bool(true)
+                    ]
+                )
+                await server.broadcast(msg)
+            } else {
+                let msg = WSMessage(
+                    type: WSMessageType.providerUpdated,
+                    metadata: [
+                        "provider": .string("ollama"),
+                        "success": .bool(false),
+                        "error": .string("Ollama unreachable at \(ollamaEndpoint)")
+                    ]
+                )
+                try? await client.send(msg)
+            }
+
+        default:
+            await sendError(to: client, message: "Unknown provider: \(providerName)", code: "UNKNOWN_PROVIDER")
+        }
     }
 }

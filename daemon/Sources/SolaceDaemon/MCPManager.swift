@@ -95,42 +95,57 @@ actor MCPManager {
         }
     }
 
-    /// Get all discovered tools as Claude API ToolDefinitions (excludes tools from disabled servers)
+    /// Get all discovered tools as Claude API ToolDefinitions (excludes tools from disabled servers, deduplicates by name)
     func getToolDefinitions() -> [ToolDefinition] {
-        allTools
-            .filter { isServerEnabled($0.serverName) }
-            .map { tool in
-                ToolDefinition(
+        var seen = Set<String>()
+        var defs: [ToolDefinition] = []
+        for tool in allTools where isServerEnabled(tool.serverName) {
+            if seen.insert(tool.name).inserted {
+                defs.append(ToolDefinition(
                     name: tool.name,
                     description: tool.description,
                     input_schema: tool.inputSchema
-                )
+                ))
+            } else {
+                Logger.info("MCP: skipping duplicate tool '\(tool.name)' from server '\(tool.serverName)'")
             }
+        }
+        return defs
     }
 
-    /// Get the list of all discovered tools (excludes tools from disabled servers)
+    /// Get the list of all discovered tools (excludes tools from disabled servers, deduplicates by name)
     func getTools() -> [MCPToolInfo] {
-        allTools.filter { isServerEnabled($0.serverName) }
+        var seen = Set<String>()
+        return allTools.filter { isServerEnabled($0.serverName) && seen.insert($0.name).inserted }
     }
 
     /// Call a tool by name, routing to the correct server (rejects tools from disabled servers)
     func callTool(name: String, arguments: JSONValue) async throws -> MCPToolCallResult {
         guard let serverName = toolToServer[name] else {
+            Logger.error("MCP Manager: tool '\(name)' not found in any server")
             throw MCPError.toolNotFound(name)
         }
 
         guard isServerEnabled(serverName) else {
+            Logger.error("MCP Manager: tool '\(name)' rejected — server '\(serverName)' is disabled")
             throw MCPError.toolNotFound(name)
         }
 
+        let startTime = Date()
+        Logger.info("MCP Manager: routing tool '\(name)' to server '\(serverName)'")
+
+        let result: MCPToolCallResult
         if let stdioServer = stdioServers[serverName] {
-            return try await stdioServer.callTool(name: name, arguments: arguments)
-        }
-        if let httpServer = httpServers[serverName] {
-            return try await httpServer.callTool(name: name, arguments: arguments)
+            result = try await stdioServer.callTool(name: name, arguments: arguments)
+        } else if let httpServer = httpServers[serverName] {
+            result = try await httpServer.callTool(name: name, arguments: arguments)
+        } else {
+            throw MCPError.toolNotFound(name)
         }
 
-        throw MCPError.toolNotFound(name)
+        let duration = Date().timeIntervalSince(startTime)
+        Logger.info("MCP Manager: tool '\(name)' on '\(serverName)' finished in \(String(format: "%.2f", duration))s (isError: \(result.isError))")
+        return result
     }
 
     /// Get the server name that hosts a given tool (returns nil for disabled servers)
@@ -171,6 +186,16 @@ actor MCPManager {
             let enabled = isServerEnabled(name)
             let count = allTools.filter { $0.serverName == name }.count
             return (name: name, isStdio: isStdio, enabled: enabled, toolCount: count)
+        }
+    }
+
+    /// Get server statuses for health endpoint
+    func serverStatuses() -> [(name: String, running: Bool, toolCount: Int)] {
+        let allServerNames = Set(stdioServers.keys).union(httpServers.keys)
+        return allServerNames.sorted().map { name in
+            let enabled = isServerEnabled(name)
+            let count = allTools.filter { $0.serverName == name }.count
+            return (name: name, running: enabled, toolCount: count)
         }
     }
 

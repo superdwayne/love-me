@@ -42,6 +42,9 @@ struct ConversationSummary: Sendable {
 
 /// Persistence layer for conversations
 actor ConversationStore {
+    private let maxMessagesInMemory = 200
+    private let llmContextBudget = 50
+
     private let directory: String
     private let generatedImagesDirectory: String
     private let encoder: JSONEncoder
@@ -113,7 +116,16 @@ actor ConversationStore {
         }
 
         conversation.messages.append(message)
+        // Always save the full conversation to disk first
         try save(conversation)
+
+        // Trim in-memory messages if over the limit
+        if conversation.messages.count > maxMessagesInMemory {
+            let oldCount = conversation.messages.count
+            conversation.messages = Array(conversation.messages.suffix(maxMessagesInMemory))
+            Logger.info("Trimmed conversation \(conversationId) from \(oldCount) to \(conversation.messages.count) messages")
+        }
+
         return conversation
     }
 
@@ -161,10 +173,39 @@ actor ConversationStore {
     func buildAPIMessages(conversationId: String) throws -> [MessageParam] {
         let conversation = try load(id: conversationId)
 
+        // Apply LLM context budget: take last N messages, but ensure tool pairs stay intact
+        let budgetMessages: [StoredMessage]
+        if conversation.messages.count > llmContextBudget {
+            var sliced = Array(conversation.messages.suffix(llmContextBudget))
+
+            // If the first message in our slice is a tool_result, we need its matching tool_use.
+            // Walk backward from the cut point to include any orphaned tool_use messages.
+            while let first = sliced.first,
+                  first.role == "tool_result",
+                  let toolId = first.metadata?["toolId"] {
+                // Find the matching tool_use in the full history before our slice starts
+                let cutIndex = conversation.messages.count - sliced.count
+                if cutIndex > 0,
+                   let matchIndex = conversation.messages[0..<cutIndex].lastIndex(where: {
+                       $0.role == "tool_use" && $0.metadata?["toolId"] == toolId
+                   }) {
+                    // Prepend everything from the matched tool_use to the cut point
+                    let prefix = Array(conversation.messages[matchIndex..<cutIndex])
+                    sliced = prefix + sliced
+                } else {
+                    break
+                }
+            }
+
+            budgetMessages = sliced
+        } else {
+            budgetMessages = conversation.messages
+        }
+
         // First pass: collect tool_use IDs and tool_result IDs to detect orphans
         var toolUseIds: Set<String> = []
         var toolResultIds: Set<String> = []
-        for msg in conversation.messages {
+        for msg in budgetMessages {
             if msg.role == "tool_use", let toolId = msg.metadata?["toolId"] {
                 toolUseIds.insert(toolId)
             } else if msg.role == "tool_result", let toolId = msg.metadata?["toolId"] {
@@ -177,7 +218,7 @@ actor ConversationStore {
         var sanitized: [StoredMessage] = []
         var pendingOrphanIds: [String] = []
 
-        for msg in conversation.messages {
+        for msg in budgetMessages {
             if msg.role == "tool_use", let toolId = msg.metadata?["toolId"],
                orphanedToolIds.contains(toolId) {
                 // Still include the tool_use, but track it needs a synthetic result

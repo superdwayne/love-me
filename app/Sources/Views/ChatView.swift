@@ -7,6 +7,7 @@ struct ChatView: View {
     @State private var isNearBottom = true
     @State private var showNewMessagesPill = false
     @State private var scrollProxy: ScrollViewProxy?
+    @State private var lastScrollTime: Date = .distantPast
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -46,6 +47,15 @@ struct ChatView: View {
                     Text("Solace")
                         .font(.navTitle)
                         .foregroundStyle(.textPrimary)
+                    if webSocket.connectionState == .connected {
+                        Text(providerLabel)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.trust.opacity(0.7))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.surfaceElevated.opacity(0.5))
+                            .clipShape(Capsule())
+                    }
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -75,6 +85,13 @@ struct ChatView: View {
             .accessibilityLabel(connectionStatusLabel)
     }
 
+    private var providerLabel: String {
+        if webSocket.activeProvider == "ollama" {
+            return webSocket.activeModel.isEmpty ? "Ollama" : "Ollama: \(webSocket.activeModel)"
+        }
+        return "Claude"
+    }
+
     private var connectionDotColor: Color {
         switch webSocket.connectionState {
         case .connected: return .sageGreen
@@ -95,8 +112,8 @@ struct ChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(Array(chatVM.messages.enumerated()), id: \.element.id) { index, message in
-                        let prevMessage: Message? = index > 0 ? chatVM.messages[index - 1] : nil
+                    ForEach(chatVM.messages) { message in
+                        let prevMessage = previousMessage(before: message)
                         let spacing = spacingBefore(message: message, previous: prevMessage)
 
                         VStack(spacing: 0) {
@@ -187,6 +204,9 @@ struct ChatView: View {
             }
             .onChange(of: streamingContentLength) { _, _ in
                 if isNearBottom {
+                    let now = Date()
+                    guard now.timeIntervalSince(lastScrollTime) >= 0.1 else { return }
+                    lastScrollTime = now
                     proxy.scrollTo("bottom", anchor: .bottom)
                 }
             }
@@ -275,6 +295,12 @@ struct ChatView: View {
     }
 
     // MARK: - Helpers
+
+    private func previousMessage(before message: Message) -> Message? {
+        guard let idx = chatVM.messages.firstIndex(where: { $0.id == message.id }),
+              idx > 0 else { return nil }
+        return chatVM.messages[idx - 1]
+    }
 
     private func spacingBefore(message: Message, previous: Message?) -> CGFloat {
         guard let prev = previous else { return 0 }

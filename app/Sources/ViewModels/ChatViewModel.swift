@@ -3,11 +3,21 @@ import Observation
 import SwiftUI
 
 struct PendingAttachment: Identifiable {
-    let id = UUID().uuidString
-    let data: Data
-    let mimeType: String
-    let fileName: String
-    let thumbnail: UIImage?
+    let id: String
+    var data: Data
+    var mimeType: String
+    var fileName: String
+    var thumbnail: UIImage?
+    var isLoading: Bool
+
+    init(id: String = UUID().uuidString, data: Data, mimeType: String, fileName: String, thumbnail: UIImage? = nil, isLoading: Bool = false) {
+        self.id = id
+        self.data = data
+        self.mimeType = mimeType
+        self.fileName = fileName
+        self.thumbnail = thumbnail
+        self.isLoading = isLoading
+    }
 }
 
 @Observable
@@ -52,6 +62,33 @@ final class ChatViewModel {
 
     func removeAttachment(_ attachment: PendingAttachment) {
         pendingAttachments.removeAll { $0.id == attachment.id }
+    }
+
+    /// Add a placeholder attachment that shows a loading indicator while compression runs.
+    func addLoadingPlaceholder(id: String, fileName: String) {
+        let placeholder = PendingAttachment(
+            id: id,
+            data: Data(),
+            mimeType: "image/jpeg",
+            fileName: fileName,
+            isLoading: true
+        )
+        pendingAttachments.append(placeholder)
+    }
+
+    /// Replace a loading placeholder with compressed data. Removes the placeholder if not found.
+    func finalizeAttachment(id: String, data: Data, mimeType: String, fileName: String) {
+        guard let index = pendingAttachments.firstIndex(where: { $0.id == id }) else { return }
+        pendingAttachments[index].data = data
+        pendingAttachments[index].mimeType = mimeType
+        pendingAttachments[index].fileName = fileName
+        pendingAttachments[index].thumbnail = UIImage(data: data)
+        pendingAttachments[index].isLoading = false
+    }
+
+    /// Whether any attachment is still being compressed.
+    var hasLoadingAttachments: Bool {
+        pendingAttachments.contains { $0.isLoading }
     }
 
     func quoteReply(_ message: Message) {

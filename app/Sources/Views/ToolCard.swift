@@ -1,5 +1,78 @@
 import SwiftUI
 
+// MARK: - Image Cache
+
+/// Session-lifetime memory cache for MCP-generated images.
+/// Uses NSCache with a 50 MB cost limit so images evict automatically under memory pressure.
+private final class ImageCache: @unchecked Sendable {
+    static let shared = ImageCache()
+
+    private let cache: NSCache<NSURL, UIImage> = {
+        let c = NSCache<NSURL, UIImage>()
+        c.totalCostLimit = 50 * 1024 * 1024 // 50 MB
+        return c
+    }()
+
+    func image(for url: URL) -> UIImage? {
+        cache.object(forKey: url as NSURL)
+    }
+
+    func store(_ image: UIImage, for url: URL) {
+        let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
+        cache.setObject(image, forKey: url as NSURL, cost: cost)
+    }
+}
+
+// MARK: - CachedAsyncImage
+
+/// Drop-in replacement for `AsyncImage` that checks `ImageCache` first.
+/// Cached hits display instantly with no loading spinner.
+private struct CachedAsyncImage<Content: View>: View {
+    let url: URL
+    @ViewBuilder let content: (CachedImagePhase) -> Content
+
+    @State private var phase: CachedImagePhase = .empty
+
+    var body: some View {
+        content(phase)
+            .onAppear { load() }
+    }
+
+    private func load() {
+        // 1. Check cache
+        if let cached = ImageCache.shared.image(for: url) {
+            phase = .success(Image(uiImage: cached))
+            return
+        }
+
+        // 2. Download
+        phase = .loading
+        Task {
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                guard let uiImage = UIImage(data: data) else {
+                    await MainActor.run { phase = .failure }
+                    return
+                }
+                ImageCache.shared.store(uiImage, for: url)
+                await MainActor.run { phase = .success(Image(uiImage: uiImage)) }
+            } catch {
+                await MainActor.run { phase = .failure }
+            }
+        }
+    }
+}
+
+/// Simplified phase enum for `CachedAsyncImage`.
+private enum CachedImagePhase {
+    case empty
+    case loading
+    case success(Image)
+    case failure
+}
+
+// MARK: - ToolCard
+
 struct ToolCard: View {
     let toolCall: ToolCall
     @State private var isExpanded = false
@@ -162,9 +235,9 @@ struct ToolCard: View {
                         .foregroundStyle(.trust)
                         .tracking(1.2)
 
-                    AsyncImage(url: url) { phase in
+                    CachedAsyncImage(url: url) { phase in
                         switch phase {
-                        case .empty:
+                        case .empty, .loading:
                             RoundedRectangle(cornerRadius: SolaceTheme.sm)
                                 .fill(Color.surfaceElevated)
                                 .frame(height: 200)
@@ -191,8 +264,6 @@ struct ToolCard: View {
                                             .foregroundStyle(.trust)
                                     }
                                 }
-                        @unknown default:
-                            EmptyView()
                         }
                     }
                     .frame(maxWidth: .infinity)

@@ -173,4 +173,18 @@ enum WSMessageType {
     static let emailApprovalUpdated = "email_approval_updated"
     static let emailApprovalsListResult = "email_approvals_list_result"
     static let emailAutoReplyStatus = "email_auto_reply_status"
+
+    // Client -> Server (Provider Management)
+    static let getProviders = "get_providers"
+    static let setProvider = "set_provider"
+
+    // Server -> Client (Provider Management)
+    static let providersStatus = "providers_status"
+    static let providerUpdated = "provider_updated"
+
+    // Client -> Server (Health)
+    static let getHealth = "get_health"
+
+    // Server -> Client (Health)
+    static let healthResult = "health_result"
 }

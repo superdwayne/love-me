@@ -7,8 +7,10 @@ struct InputBar: View {
     @State private var selectedPhotos: [PhotosPickerItem] = []
 
     private var canSend: Bool {
-        !chatVM.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        || !chatVM.pendingAttachments.isEmpty
+        let hasText = !chatVM.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasAttachments = !chatVM.pendingAttachments.isEmpty
+        let stillCompressing = chatVM.hasLoadingAttachments
+        return (hasText || hasAttachments) && !stillCompressing
     }
 
     var body: some View {
@@ -143,7 +145,15 @@ struct InputBar: View {
             HStack(spacing: SolaceTheme.sm) {
                 ForEach(chatVM.pendingAttachments) { attachment in
                     ZStack(alignment: .topTrailing) {
-                        if let thumbnail = attachment.thumbnail {
+                        if attachment.isLoading {
+                            RoundedRectangle(cornerRadius: SolaceTheme.sm)
+                                .fill(Color.surfaceElevated)
+                                .frame(width: 60, height: 60)
+                                .overlay {
+                                    ProgressView()
+                                        .tint(.textSecondary)
+                                }
+                        } else if let thumbnail = attachment.thumbnail {
                             Image(uiImage: thumbnail)
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
@@ -183,13 +193,20 @@ struct InputBar: View {
         for item in items {
             guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
 
-            // Resize/compress to keep payloads reasonable
-            let compressed = compressImage(data: data, maxDimension: 1024, quality: 0.8)
+            let placeholderId = UUID().uuidString
+            let fileName = "photo_\(placeholderId.prefix(8)).jpg"
             let mimeType = "image/jpeg"
-            let fileName = "photo_\(UUID().uuidString.prefix(8)).jpg"
+
+            // Add loading placeholder immediately so the user sees it
+            await MainActor.run {
+                chatVM.addLoadingPlaceholder(id: placeholderId, fileName: fileName)
+            }
+
+            // Compress in background with concurrency limit
+            let compressed = await compressImage(data: data, maxDimension: 1024, quality: 0.8)
 
             await MainActor.run {
-                chatVM.addAttachment(data: compressed, mimeType: mimeType, fileName: fileName)
+                chatVM.finalizeAttachment(id: placeholderId, data: compressed, mimeType: mimeType, fileName: fileName)
             }
         }
     }
@@ -219,6 +236,16 @@ struct InputBar: View {
     private func fetchImageFromURL(_ urlString: String) async {
         guard let url = URL(string: urlString) else { return }
 
+        let placeholderId = UUID().uuidString
+        let ext = (urlString as NSString).pathExtension.lowercased()
+        let fileName = "url_\(placeholderId.prefix(8)).\(ext.isEmpty ? "jpg" : ext)"
+        let mimeType = ext == "png" ? "image/png" : "image/jpeg"
+
+        // Add loading placeholder immediately
+        await MainActor.run {
+            chatVM.addLoadingPlaceholder(id: placeholderId, fileName: fileName)
+        }
+
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
 
@@ -226,39 +253,81 @@ struct InputBar: View {
             if let httpResponse = response as? HTTPURLResponse,
                let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type"),
                !contentType.hasPrefix("image/") {
+                // Not an image — remove the placeholder
+                await MainActor.run {
+                    chatVM.pendingAttachments.removeAll { $0.id == placeholderId }
+                }
                 return
             }
 
-            let compressed = compressImage(data: data, maxDimension: 1024, quality: 0.8)
-            let ext = (urlString as NSString).pathExtension.lowercased()
-            let mimeType = ext == "png" ? "image/png" : "image/jpeg"
-            let fileName = "url_\(UUID().uuidString.prefix(8)).\(ext.isEmpty ? "jpg" : ext)"
+            let compressed = await compressImage(data: data, maxDimension: 1024, quality: 0.8)
 
             await MainActor.run {
-                chatVM.addAttachment(data: compressed, mimeType: mimeType, fileName: fileName)
+                chatVM.finalizeAttachment(id: placeholderId, data: compressed, mimeType: mimeType, fileName: fileName)
             }
         } catch {
-            // Silently fail — user can still type/paste normally
+            // Remove the placeholder on failure
+            await MainActor.run {
+                chatVM.pendingAttachments.removeAll { $0.id == placeholderId }
+            }
         }
     }
 
-    private func compressImage(data: Data, maxDimension: CGFloat, quality: CGFloat) -> Data {
-        guard let image = UIImage(data: data) else { return data }
+    private func compressImage(data: Data, maxDimension: CGFloat, quality: CGFloat) async -> Data {
+        await Self.compressionLimiter.waitForSlot()
+        defer { Task { await Self.compressionLimiter.releaseSlot() } }
 
-        let size = image.size
-        let scale: CGFloat
-        if size.width > maxDimension || size.height > maxDimension {
-            scale = maxDimension / max(size.width, size.height)
+        // Run the CPU-intensive rendering work off the main thread
+        let result = await Task.detached(priority: .userInitiated) {
+            guard let image = UIImage(data: data) else { return data }
+
+            let size = image.size
+            let scale: CGFloat
+            if size.width > maxDimension || size.height > maxDimension {
+                scale = maxDimension / max(size.width, size.height)
+            } else {
+                scale = 1.0
+            }
+
+            let newSize = CGSize(width: size.width * scale, height: size.height * scale)
+            let renderer = UIGraphicsImageRenderer(size: newSize)
+            let resized = renderer.image { _ in
+                image.draw(in: CGRect(origin: .zero, size: newSize))
+            }
+
+            return resized.jpegData(compressionQuality: quality) ?? data
+        }.value
+
+        return result
+    }
+
+    // MARK: - Concurrency Limiter
+
+    private static let compressionLimiter = CompressionLimiter()
+}
+
+/// Actor that limits concurrent compression operations to avoid memory spikes.
+private actor CompressionLimiter {
+    private let limit = 3
+    private var active = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func waitForSlot() async {
+        if active < limit {
+            active += 1
+            return
+        }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func releaseSlot() {
+        if !waiters.isEmpty {
+            let next = waiters.removeFirst()
+            next.resume()
         } else {
-            scale = 1.0
+            active -= 1
         }
-
-        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
-        let renderer = UIGraphicsImageRenderer(size: newSize)
-        let resized = renderer.image { _ in
-            image.draw(in: CGRect(origin: .zero, size: newSize))
-        }
-
-        return resized.jpegData(compressionQuality: quality) ?? data
     }
 }

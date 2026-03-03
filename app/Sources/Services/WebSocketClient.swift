@@ -1,5 +1,9 @@
 import Foundation
+import Network
 import Observation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Thread-safe one-shot guard for continuation resumption.
 private final class OnceGuard: @unchecked Sendable {
@@ -29,6 +33,8 @@ final class WebSocketClient {
     var daemonVersion: String?
     var toolCount: Int = 0
     var hasApiKey: Bool = false
+    var activeProvider: String = "claude"
+    var activeModel: String = ""
     var retryCount: Int = 0
 
     private var webSocketTask: URLSessionWebSocketTask?
@@ -37,6 +43,10 @@ final class WebSocketClient {
     private var receiveTask: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
     private var isIntentionalDisconnect = false
+    private var pathMonitor: NWPathMonitor?
+    private var wasUnsatisfied = false
+    private var foregroundObserver: NSObjectProtocol?
+    private var isMonitoringStarted = false
 
     private var host: String { UserDefaults.standard.string(forKey: "ws_host") ?? "localhost" }
     private var port: Int { UserDefaults.standard.integer(forKey: "ws_port").nonZero ?? 9200 }
@@ -65,6 +75,12 @@ final class WebSocketClient {
 
         startReceiving()
         startPingTimer()
+
+        if !isMonitoringStarted {
+            startNetworkMonitoring()
+            startForegroundObserving()
+            isMonitoringStarted = true
+        }
 
         // We consider connected once we get the status message
         // but set connected here as a fallback
@@ -172,31 +188,43 @@ final class WebSocketClient {
             return
         }
 
-        guard let data = jsonString.data(using: .utf8) else { return }
-        let decoder = JSONDecoder()
-        guard let wsMessage = try? decoder.decode(WSMessage.self, from: data) else { return }
+        Task.detached { [weak self] in
+            guard let data = jsonString.data(using: .utf8) else { return }
+            let wsMessage = try? JSONDecoder().decode(WSMessage.self, from: data)
+            guard let wsMessage else { return }
 
-        // Handle status message for connection confirmation
-        if wsMessage.type == WSMessageType.status {
-            connectionState = .connected
-            retryCount = 0
-            if let version = wsMessage.metadata?["daemonVersion"]?.stringValue {
-                daemonVersion = version
+            await MainActor.run {
+                guard let self else { return }
+
+                // Handle status message for connection confirmation
+                if wsMessage.type == WSMessageType.status {
+                    self.connectionState = .connected
+                    self.retryCount = 0
+                    if let version = wsMessage.metadata?["daemonVersion"]?.stringValue {
+                        self.daemonVersion = version
+                    }
+                    if let tools = wsMessage.metadata?["toolCount"]?.intValue {
+                        self.toolCount = tools
+                    }
+                    if let apiKey = wsMessage.metadata?["hasApiKey"]?.boolValue {
+                        self.hasApiKey = apiKey
+                    }
+                    if let provider = wsMessage.metadata?["activeProvider"]?.stringValue {
+                        self.activeProvider = provider
+                    }
+                    if let model = wsMessage.metadata?["activeModel"]?.stringValue {
+                        self.activeModel = model
+                    }
+                    HapticManager.connectionEstablished()
+                }
+
+                if wsMessage.type == WSMessageType.pong {
+                    return
+                }
+
+                self.onMessage?(wsMessage)
             }
-            if let tools = wsMessage.metadata?["toolCount"]?.intValue {
-                toolCount = tools
-            }
-            if let apiKey = wsMessage.metadata?["hasApiKey"]?.boolValue {
-                hasApiKey = apiKey
-            }
-            HapticManager.connectionEstablished()
         }
-
-        if wsMessage.type == WSMessageType.pong {
-            return
-        }
-
-        onMessage?(wsMessage)
     }
 
     private func handleDisconnection() {
@@ -239,6 +267,39 @@ final class WebSocketClient {
     private func sendPing() {
         let ping = WSMessage(type: WSMessageType.ping)
         send(ping)
+    }
+
+    private func startNetworkMonitoring() {
+        pathMonitor?.cancel()
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if path.status == .satisfied && self.wasUnsatisfied && self.connectionState == .disconnected {
+                    print("[WS] Network restored, reconnecting...")
+                    self.connect()
+                }
+                self.wasUnsatisfied = (path.status == .unsatisfied)
+            }
+        }
+        monitor.start(queue: DispatchQueue(label: "com.solace.networkMonitor"))
+        pathMonitor = monitor
+    }
+
+    private func startForegroundObserving() {
+        #if canImport(UIKit)
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.connectionState == .disconnected else { return }
+                print("[WS] App foregrounded, reconnecting...")
+                self.connect()
+            }
+        }
+        #endif
     }
 
     private func cleanup() {
