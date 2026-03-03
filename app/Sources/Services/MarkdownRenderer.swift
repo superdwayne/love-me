@@ -102,6 +102,35 @@ enum MarkdownRenderer {
         return result
     }
 
+    /// Renders markdown with search term highlighting
+    static func render(_ text: String, highlighting searchQuery: String, isActiveMatch: Bool = false) -> AttributedString {
+        var result = render(text)
+
+        guard !searchQuery.isEmpty else { return result }
+
+        let plainText = String(result.characters).lowercased()
+        let query = searchQuery.lowercased()
+
+        var searchStart = plainText.startIndex
+        while let range = plainText.range(of: query, range: searchStart..<plainText.endIndex) {
+            // Convert String range to AttributedString range
+            let startOffset = plainText.distance(from: plainText.startIndex, to: range.lowerBound)
+            let length = plainText.distance(from: range.lowerBound, to: range.upperBound)
+
+            let attrStart = result.index(result.startIndex, offsetByCharacters: startOffset)
+            let attrEnd = result.index(attrStart, offsetByCharacters: length)
+            let attrRange = attrStart..<attrEnd
+
+            result[attrRange].backgroundColor = isActiveMatch
+                ? Color.amberGlow.opacity(0.6)
+                : Color.amberGlow.opacity(0.3)
+
+            searchStart = range.upperBound
+        }
+
+        return result
+    }
+
     /// Renders inline markdown (bold, italic, inline code, links)
     private static func renderInlineFormatting(_ text: String) -> AttributedString {
         var result = AttributedString()

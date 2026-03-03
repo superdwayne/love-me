@@ -1,5 +1,14 @@
 import SwiftUI
 
+// MARK: - Scroll Position Tracking
+
+private struct ScrollOffsetPreferenceKey: PreferenceKey {
+    nonisolated(unsafe) static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 struct ChatView: View {
     @Environment(ChatViewModel.self) private var chatVM
     @Environment(WebSocketClient.self) private var webSocket
@@ -8,6 +17,9 @@ struct ChatView: View {
     @State private var showNewMessagesPill = false
     @State private var scrollProxy: ScrollViewProxy?
     @State private var lastScrollTime: Date = .distantPast
+
+    /// Threshold (in points) for considering the user "near bottom"
+    private let nearBottomThreshold: CGFloat = 150
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -19,6 +31,12 @@ struct ChatView: View {
                 if webSocket.connectionState == .disconnected {
                     ConnectionBanner()
                         .zIndex(Double(ZLayer.banner.rawValue))
+                }
+
+                // Search bar
+                if chatVM.isSearchActive {
+                    ChatSearchBar()
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
                 // Messages or empty state
@@ -57,6 +75,15 @@ struct ChatView: View {
                             .clipShape(Capsule())
                     }
                 }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    chatVM.toggleSearch()
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.textSecondary)
+                }
+                .accessibilityLabel("Search messages")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -178,21 +205,57 @@ struct ChatView: View {
                         .id(message.id)
                     }
 
-                    // Bottom anchor
-                    Color.clear
-                        .frame(height: 1)
-                        .id("bottom")
+                    // Bottom anchor with scroll position detection
+                    GeometryReader { geo in
+                        Color.clear
+                            .preference(
+                                key: ScrollOffsetPreferenceKey.self,
+                                value: geo.frame(in: .named("chatScroll")).minY
+                            )
+                    }
+                    .frame(height: 1)
+                    .id("bottom")
                 }
                 .padding(.vertical, SolaceTheme.lg)
             }
+            .coordinateSpace(name: "chatScroll")
             .scrollDismissesKeyboard(.interactively)
+            .onPreferenceChange(ScrollOffsetPreferenceKey.self) { bottomY in
+                // bottomY is the Y position of the bottom anchor within the scroll view's
+                // visible coordinate space. When it's close to or below the visible height,
+                // the user is near the bottom.
+                // The scroll view's visible area starts at 0 and extends to its height.
+                // If bottomY <= scrollViewHeight + threshold, user is near bottom.
+                // Since we're in the scroll view's coordinate space, a small bottomY means
+                // the bottom anchor is visible (near bottom). We use a heuristic:
+                // the coordinate space origin is at the top of the visible scroll area,
+                // so when scrolled to bottom, bottomY ≈ visible height of scroll view.
+                // We don't have the exact scroll view height, but we can detect changes:
+                // when user scrolls up, bottomY increases (anchor moves further below viewport).
+                // A practical approach: track whether the anchor is within viewport bounds.
+
+                // Use UIScreen as a reasonable proxy for max visible height
+                let screenHeight = UIScreen.main.bounds.height
+                let newIsNearBottom = bottomY < screenHeight + nearBottomThreshold
+
+                if newIsNearBottom != isNearBottom {
+                    isNearBottom = newIsNearBottom
+                    if newIsNearBottom {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            showNewMessagesPill = false
+                        }
+                    }
+                }
+            }
             .onChange(of: chatVM.messages.count) { _, _ in
                 if isNearBottom {
                     withAnimation(.easeOut(duration: 0.2)) {
                         proxy.scrollTo("bottom", anchor: .bottom)
                     }
                 } else {
-                    showNewMessagesPill = true
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        showNewMessagesPill = true
+                    }
                 }
             }
             .onChange(of: chatVM.isStreaming) { _, streaming in
@@ -208,6 +271,13 @@ struct ChatView: View {
                     guard now.timeIntervalSince(lastScrollTime) >= 0.1 else { return }
                     lastScrollTime = now
                     proxy.scrollTo("bottom", anchor: .bottom)
+                }
+            }
+            .onChange(of: chatVM.currentMatchMessageId) { _, messageId in
+                if let messageId {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        proxy.scrollTo(messageId, anchor: .center)
+                    }
                 }
             }
             .onAppear {

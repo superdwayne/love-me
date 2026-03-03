@@ -1,12 +1,14 @@
 import SwiftUI
 import PhotosUI
 import AVFoundation
+import Speech
 
 struct InputBar: View {
     @Environment(ChatViewModel.self) private var chatVM
     @FocusState private var isFocused: Bool
     @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var audioRecorder = AudioRecorderManager()
+    @State private var speechManager = SpeechRecognitionManager()
 
     private var canSend: Bool {
         let hasText = !chatVM.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -61,10 +63,54 @@ struct InputBar: View {
                 attachmentPreview
             }
 
-            if audioRecorder.isRecording {
-                // Recording indicator bar
+            if speechManager.isListening {
+                // Speech-to-text listening indicator
                 HStack(spacing: SolaceTheme.sm) {
-                    // Cancel recording
+                    // Cancel listening
+                    Button {
+                        speechManager.stopListening()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 24))
+                            .foregroundStyle(.trust)
+                    }
+                    .accessibilityLabel("Cancel dictation")
+
+                    // Listening indicator
+                    HStack(spacing: SolaceTheme.sm) {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 14))
+                            .foregroundStyle(.heart)
+                            .symbolEffect(.variableColor.iterative, isActive: true)
+
+                        Text(speechManager.transcribedText.isEmpty ? "Listening..." : speechManager.transcribedText)
+                            .font(.system(size: 14))
+                            .foregroundStyle(speechManager.transcribedText.isEmpty ? .trust : .textPrimary)
+                            .lineLimit(2)
+
+                        Spacer()
+                    }
+                    .padding(.horizontal, SolaceTheme.md)
+                    .padding(.vertical, SolaceTheme.sm)
+                    .background(.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.inputFieldRadius))
+
+                    // Done — accept transcription
+                    Button {
+                        acceptTranscription()
+                    } label: {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 32))
+                            .foregroundStyle(.sageGreen)
+                    }
+                    .accessibilityLabel("Accept transcription")
+                }
+                .padding(.horizontal, SolaceTheme.md)
+                .padding(.vertical, SolaceTheme.xs)
+                .transition(.opacity)
+            } else if audioRecorder.isRecording {
+                // Voice note recording indicator bar
+                HStack(spacing: SolaceTheme.sm) {
                     Button {
                         audioRecorder.cancelRecording()
                     } label: {
@@ -74,7 +120,6 @@ struct InputBar: View {
                     }
                     .accessibilityLabel("Cancel recording")
 
-                    // Recording indicator
                     HStack(spacing: SolaceTheme.sm) {
                         Circle()
                             .fill(Color.softRed)
@@ -95,7 +140,6 @@ struct InputBar: View {
                     .background(.surface)
                     .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.inputFieldRadius))
 
-                    // Stop and send
                     Button {
                         stopRecordingAndAttach()
                     } label: {
@@ -105,8 +149,8 @@ struct InputBar: View {
                     }
                     .accessibilityLabel("Stop recording")
                 }
-                .padding(.horizontal, SolaceTheme.lg)
-                .padding(.vertical, SolaceTheme.sm)
+                .padding(.horizontal, SolaceTheme.md)
+                .padding(.vertical, SolaceTheme.xs)
                 .transition(.opacity)
             } else {
                 HStack(alignment: .bottom, spacing: SolaceTheme.sm) {
@@ -137,9 +181,8 @@ struct InputBar: View {
                             }
                         }
                     )
-                    .frame(minHeight: 36, maxHeight: 120)
-                    .padding(.horizontal, SolaceTheme.md)
-                    .padding(.vertical, SolaceTheme.sm)
+                    .frame(minHeight: 32, maxHeight: 100)
+                    .fixedSize(horizontal: false, vertical: true)
                     .background(.surface)
                     .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.inputFieldRadius))
                     .onChange(of: chatVM.inputText) { _, newValue in
@@ -177,29 +220,34 @@ struct InputBar: View {
                         .accessibilityLabel("Send message")
                         .transition(.scale.combined(with: .opacity))
                     } else {
-                        // Mic button (shown when text is empty and no pending attachments)
-                        Button {
-                            requestMicAndRecord()
-                        } label: {
-                            Image(systemName: "mic.fill")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .frame(width: SolaceTheme.sendButtonSize,
-                                       height: SolaceTheme.sendButtonSize)
-                                .background(.trust)
-                                .clipShape(Circle())
-                        }
-                        .accessibilityLabel("Record voice note")
-                        .transition(.scale.combined(with: .opacity))
+                        // Mic button — tap for speech-to-text, long-press for voice recording
+                        Image(systemName: "mic.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: SolaceTheme.sendButtonSize,
+                                   height: SolaceTheme.sendButtonSize)
+                            .background(.trust)
+                            .clipShape(Circle())
+                            .onTapGesture {
+                                startSpeechToText()
+                            }
+                            .onLongPressGesture(minimumDuration: 0.5) {
+                                requestMicAndRecord()
+                            }
+                            .accessibilityLabel("Tap to dictate, hold to record voice note")
+                            .transition(.scale.combined(with: .opacity))
                     }
                 }
-                .padding(.horizontal, SolaceTheme.lg)
-                .padding(.vertical, SolaceTheme.sm)
+                .padding(.horizontal, SolaceTheme.md)
+                .padding(.top, SolaceTheme.sm)
+                .padding(.bottom, SolaceTheme.md)
             }
         }
         .background(.inputBg)
-        .animation(.easeInOut(duration: 0.15), value: canSend)
-        .animation(.easeInOut(duration: 0.2), value: audioRecorder.isRecording)
+        .animation(.snappy(duration: 0.15), value: canSend)
+        .animation(.snappy(duration: 0.2), value: audioRecorder.isRecording)
+        .animation(.snappy(duration: 0.2), value: speechManager.isListening)
+        .animation(.snappy(duration: 0.15), value: chatVM.inputText.isEmpty)
     }
 
     // MARK: - Attachment Preview
@@ -266,17 +314,45 @@ struct InputBar: View {
         }
     }
 
+    // MARK: - Speech-to-Text
+
+    private func startSpeechToText() {
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted:
+            speechManager.startListening()
+        case .denied:
+            break
+        case .undetermined:
+            AVAudioApplication.requestRecordPermission { granted in
+                if granted {
+                    Task { @MainActor in
+                        speechManager.startListening()
+                    }
+                }
+            }
+        @unknown default:
+            break
+        }
+    }
+
+    private func acceptTranscription() {
+        let text = speechManager.transcribedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        speechManager.stopListening()
+        if !text.isEmpty {
+            chatVM.inputText = text
+        }
+    }
+
     // MARK: - Voice Recording
 
     private func requestMicAndRecord() {
-        switch AVAudioSession.sharedInstance().recordPermission {
+        switch AVAudioApplication.shared.recordPermission {
         case .granted:
             audioRecorder.startRecording()
         case .denied:
-            // Could show an alert directing user to Settings
             break
         case .undetermined:
-            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+            AVAudioApplication.requestRecordPermission { granted in
                 if granted {
                     Task { @MainActor in
                         audioRecorder.startRecording()
@@ -430,6 +506,11 @@ class PastableTextView: UITextView {
     /// Called back after a successful paste so the coordinator can sync state.
     var onPaste: (() -> Void)?
 
+    override var intrinsicContentSize: CGSize {
+        let size = sizeThatFits(CGSize(width: bounds.width, height: .greatestFiniteMagnitude))
+        return CGSize(width: UIView.noIntrinsicMetric, height: size.height)
+    }
+
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         if action == #selector(paste(_:)) {
             return true
@@ -485,13 +566,14 @@ struct ChatTextInput: UIViewRepresentable {
         tv.font = UIFont.systemFont(ofSize: 16)
         tv.textColor = UIColor.label
         tv.backgroundColor = .clear
-        tv.isScrollEnabled = true
-        tv.textContainerInset = .zero
+        tv.isScrollEnabled = false
+        tv.textContainerInset = UIEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
         tv.textContainer.lineFragmentPadding = 0
         tv.returnKeyType = .send
         tv.allowsEditingTextAttributes = false
         tv.autocorrectionType = .default
         tv.spellCheckingType = .default
+        tv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         // Placeholder
         let placeholder = UILabel()
@@ -502,8 +584,8 @@ struct ChatTextInput: UIViewRepresentable {
         placeholder.translatesAutoresizingMaskIntoConstraints = false
         tv.addSubview(placeholder)
         NSLayoutConstraint.activate([
-            placeholder.leadingAnchor.constraint(equalTo: tv.leadingAnchor),
-            placeholder.topAnchor.constraint(equalTo: tv.topAnchor),
+            placeholder.leadingAnchor.constraint(equalTo: tv.leadingAnchor, constant: 10),
+            placeholder.topAnchor.constraint(equalTo: tv.topAnchor, constant: 6),
         ])
 
         return tv
@@ -515,6 +597,9 @@ struct ChatTextInput: UIViewRepresentable {
         // have genuinely diverged AND the user is not mid-edit.
         if tv.text != text && !context.coordinator.isEditing {
             tv.text = text
+            tv.invalidateIntrinsicContentSize()
+            let fittingSize = tv.sizeThatFits(CGSize(width: tv.bounds.width, height: .greatestFiniteMagnitude))
+            tv.isScrollEnabled = fittingSize.height > 100
         }
         // Show/hide placeholder
         if let placeholder = tv.viewWithTag(999) as? UILabel {
@@ -542,6 +627,7 @@ struct ChatTextInput: UIViewRepresentable {
             if let placeholder = textView.viewWithTag(999) as? UILabel {
                 placeholder.isHidden = !newText.isEmpty
             }
+            textView.invalidateIntrinsicContentSize()
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) {
@@ -556,9 +642,14 @@ struct ChatTextInput: UIViewRepresentable {
 
         func textViewDidChange(_ textView: UITextView) {
             syncText(from: textView)
+            // Trigger smooth height recalculation
+            textView.invalidateIntrinsicContentSize()
+            // Enable scrolling only when the text outgrows the max height
+            let fittingSize = textView.sizeThatFits(CGSize(width: textView.bounds.width, height: .greatestFiniteMagnitude))
+            textView.isScrollEnabled = fittingSize.height > 100
         }
 
-        func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementString text: String) -> Bool {
+        func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
             // Only intercept the Return key (single "\n" character typed via keyboard).
             // Multi-character strings (including pasted text that may contain newlines)
             // must always be allowed through.

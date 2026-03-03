@@ -42,6 +42,7 @@ final class Message: Identifiable, @unchecked Sendable {
     var toolCalls: [ToolCall]
     var attachments: [MessageAttachment]
     var sendFailed: Bool
+    var isEdited: Bool
     let timestamp: Date
 
     init(
@@ -55,6 +56,7 @@ final class Message: Identifiable, @unchecked Sendable {
         toolCalls: [ToolCall] = [],
         attachments: [MessageAttachment] = [],
         sendFailed: Bool = false,
+        isEdited: Bool = false,
         timestamp: Date = Date()
     ) {
         self.id = id
@@ -67,6 +69,7 @@ final class Message: Identifiable, @unchecked Sendable {
         self.toolCalls = toolCalls
         self.attachments = attachments
         self.sendFailed = sendFailed
+        self.isEdited = isEdited
         self.timestamp = timestamp
     }
 

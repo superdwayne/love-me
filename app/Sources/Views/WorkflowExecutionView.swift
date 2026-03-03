@@ -6,58 +6,134 @@ struct WorkflowExecutionView: View {
 
     @State private var expandedStepId: String?
     @State private var appeared = false
+    @State private var liveTimer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
+    @State private var timerTick: Int = 0
 
     private var execution: ExecutionItem? {
         workflowVM.currentExecution
     }
 
     var body: some View {
-        ScrollView {
-            if let execution {
-                VStack(spacing: 0) {
-                    executionHeader(execution)
-                        .padding(.horizontal, SolaceTheme.chatHorizontalPadding)
-                        .padding(.top, SolaceTheme.lg)
-                        .padding(.bottom, SolaceTheme.xl)
+        ScrollViewReader { scrollProxy in
+            ScrollView {
+                if let execution {
+                    VStack(spacing: 0) {
+                        executionHeader(execution)
+                            .padding(.horizontal, SolaceTheme.chatHorizontalPadding)
+                            .padding(.top, SolaceTheme.lg)
+                            .padding(.bottom, SolaceTheme.xl)
 
-                    // Steps list
-                    LazyVStack(spacing: SolaceTheme.sm) {
-                        ForEach(Array(execution.steps.enumerated()), id: \.element.id) { index, step in
-                            stepCard(step, index: index)
+                        // Steps list with animated connectors
+                        LazyVStack(spacing: 0) {
+                            ForEach(Array(execution.steps.enumerated()), id: \.element.id) { index, step in
+                                WorkflowStepCard(
+                                    mode: .execution,
+                                    index: index,
+                                    name: step.stepName,
+                                    toolName: step.stepName,
+                                    serverName: "",
+                                    status: step.status,
+                                    output: step.output,
+                                    error: step.error,
+                                    startedAt: step.startedAt,
+                                    completedAt: step.completedAt,
+                                    isExpanded: expandedStepId == step.id,
+                                    onToggleExpand: {
+                                        withAnimation(.spring(duration: SolaceTheme.springDuration)) {
+                                            expandedStepId = expandedStepId == step.id ? nil : step.id
+                                        }
+                                    }
+                                )
+                                .id(step.id)
                                 .padding(.horizontal, SolaceTheme.chatHorizontalPadding)
+                                .padding(.bottom, SolaceTheme.xs)
+
+                                // Animated connector
+                                if index < execution.steps.count - 1 {
+                                    HStack {
+                                        Rectangle()
+                                            .fill(connectorColor(for: step.status))
+                                            .frame(width: 2, height: 16)
+                                            .padding(.leading, 28)
+                                            .animation(.easeInOut(duration: 0.3), value: step.status)
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, SolaceTheme.chatHorizontalPadding)
+                                }
+                            }
+                        }
+                        .padding(.bottom, SolaceTheme.xxl)
+
+                        // Cancel button (while running)
+                        if execution.status == "running" {
+                            cancelButton(execution)
+                                .padding(.horizontal, SolaceTheme.chatHorizontalPadding)
+                                .padding(.bottom, SolaceTheme.md)
+                        }
+
+                        // Run again button
+                        if execution.status == "completed" || execution.status == "failed" || execution.status == "cancelled" {
+                            runAgainButton(execution)
+                                .padding(.horizontal, SolaceTheme.chatHorizontalPadding)
+                                .padding(.bottom, SolaceTheme.xxl)
                         }
                     }
-                    .padding(.bottom, SolaceTheme.xxl)
-
-                    // Cancel button (while running)
-                    if execution.status == "running" {
-                        cancelButton(execution)
-                            .padding(.horizontal, SolaceTheme.chatHorizontalPadding)
-                            .padding(.bottom, SolaceTheme.md)
-                    }
-
-                    // Run again button
-                    if execution.status == "completed" || execution.status == "failed" || execution.status == "cancelled" {
-                        runAgainButton(execution)
-                            .padding(.horizontal, SolaceTheme.chatHorizontalPadding)
-                            .padding(.bottom, SolaceTheme.xxl)
-                    }
+                } else if workflowVM.isLoading {
+                    loadingState
                 }
-            } else if workflowVM.isLoading {
-                loadingState
+            }
+            .background(.appBackground)
+            .navigationTitle("Execution")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.appBackground, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .opacity(appeared ? 1.0 : 0.0)
+            .onAppear {
+                workflowVM.loadExecution(id: executionId)
+                withAnimation(.easeOut(duration: SolaceTheme.appearDuration)) {
+                    appeared = true
+                }
+            }
+            .onChange(of: runningStepId) { _, newId in
+                if let newId {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        scrollProxy.scrollTo(newId, anchor: .center)
+                    }
+                    HapticManager.stepStarted()
+                }
+            }
+            .onChange(of: completedStepCount) { oldCount, newCount in
+                if newCount > oldCount {
+                    HapticManager.stepCompleted()
+                }
+            }
+            .onChange(of: execution?.status) { _, newStatus in
+                if newStatus == "completed" || newStatus == "failed" {
+                    HapticManager.workflowCompleted()
+                }
+            }
+            .onReceive(liveTimer) { _ in
+                if execution?.status == "running" {
+                    timerTick += 1
+                }
             }
         }
-        .background(.appBackground)
-        .navigationTitle("Execution")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.appBackground, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .opacity(appeared ? 1.0 : 0.0)
-        .onAppear {
-            workflowVM.loadExecution(id: executionId)
-            withAnimation(.easeOut(duration: SolaceTheme.appearDuration)) {
-                appeared = true
-            }
+    }
+
+    private var runningStepId: String? {
+        execution?.steps.first(where: { $0.status == "running" })?.id
+    }
+
+    private var completedStepCount: Int {
+        execution?.steps.filter { $0.status == "success" || $0.status == "error" }.count ?? 0
+    }
+
+    private func connectorColor(for status: String) -> Color {
+        switch status {
+        case "success": return .sageGreen
+        case "running": return .electricBlue
+        case "error": return .softRed
+        default: return .trust.opacity(0.2)
         }
     }
 
@@ -175,184 +251,6 @@ struct WorkflowExecutionView: View {
         .accessibilityLabel("Progress: \(completed) of \(total) steps")
     }
 
-    // MARK: - Step Cards
-
-    private func stepCard(_ step: ExecutionStepItem, index: Int) -> some View {
-        let isExpanded = expandedStepId == step.id
-
-        return VStack(spacing: 0) {
-            // Header (tap to expand)
-            Button {
-                withAnimation(.spring(duration: SolaceTheme.springDuration)) {
-                    expandedStepId = isExpanded ? nil : step.id
-                }
-            } label: {
-                stepHeader(step, index: index)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("\(step.stepName) \(step.status)")
-            .accessibilityHint("Double tap to \(isExpanded ? "collapse" : "expand") step details")
-
-            // Expanded content
-            if isExpanded {
-                stepExpandedContent(step)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .background(.surface)
-        .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.sm))
-        .overlay(
-            HStack {
-                Rectangle()
-                    .fill(stepBorderColor(step.status))
-                    .frame(width: SolaceTheme.toolCardLeftBorderWidth)
-                Spacer()
-            }
-            .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.sm))
-        )
-    }
-
-    private func stepHeader(_ step: ExecutionStepItem, index: Int) -> some View {
-        HStack(spacing: SolaceTheme.sm) {
-            // Step number
-            Text("\(index + 1)")
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundStyle(.trust)
-                .frame(width: 20, height: 20)
-                .background(Color.surfaceElevated)
-                .clipShape(Circle())
-
-            // Status icon
-            stepStatusIcon(step.status)
-                .frame(width: 20, height: 20)
-
-            // Name
-            VStack(alignment: .leading, spacing: 2) {
-                Text(step.stepName)
-                    .font(.toolTitle)
-                    .foregroundStyle(.textPrimary)
-                    .lineLimit(1)
-            }
-
-            Spacer()
-
-            // Duration
-            if let duration = step.duration {
-                Text(String(format: "%.1fs", duration))
-                    .font(.toolDetail)
-                    .monospacedDigit()
-                    .foregroundStyle(.trust)
-            }
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.trust)
-                .rotationEffect(.degrees(isExpanded(step) ? 90 : 0))
-                .animation(.spring(duration: SolaceTheme.springDuration), value: isExpanded(step))
-        }
-        .padding(.horizontal, SolaceTheme.md)
-        .frame(minHeight: SolaceTheme.toolCardCollapsedHeight)
-    }
-
-    @ViewBuilder
-    private func stepStatusIcon(_ status: String) -> some View {
-        switch status {
-        case "running":
-            ProgressView()
-                .scaleEffect(0.7)
-                .tint(.electricBlue)
-
-        case "success":
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 14))
-                .foregroundStyle(.sageGreen)
-
-        case "error":
-            Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 14))
-                .foregroundStyle(.softRed)
-
-        case "skipped":
-            Image(systemName: "slash.circle")
-                .font(.system(size: 14))
-                .foregroundStyle(.trust)
-
-        default: // pending
-            Circle()
-                .strokeBorder(Color.trust.opacity(0.4), lineWidth: 1.5)
-                .frame(width: 14, height: 14)
-        }
-    }
-
-    private func stepExpandedContent(_ step: ExecutionStepItem) -> some View {
-        VStack(alignment: .leading, spacing: SolaceTheme.sm) {
-            Divider()
-                .background(.divider)
-
-            // Timing details
-            if let startedAt = step.startedAt {
-                HStack(spacing: SolaceTheme.sm) {
-                    Text("Started")
-                        .font(.timestamp)
-                        .foregroundStyle(.trust)
-                    Text(startedAt.formatted(date: .omitted, time: .standard))
-                        .font(.toolDetail)
-                        .foregroundStyle(.textPrimary)
-                }
-            }
-
-            if let completedAt = step.completedAt {
-                HStack(spacing: SolaceTheme.sm) {
-                    Text("Completed")
-                        .font(.timestamp)
-                        .foregroundStyle(.trust)
-                    Text(completedAt.formatted(date: .omitted, time: .standard))
-                        .font(.toolDetail)
-                        .foregroundStyle(.textPrimary)
-                }
-            }
-
-            // Output
-            if let output = step.output, !output.isEmpty {
-                VStack(alignment: .leading, spacing: SolaceTheme.xs) {
-                    Text("OUTPUT")
-                        .font(.sectionHeader)
-                        .foregroundStyle(.trust)
-                        .tracking(1.2)
-
-                    Text(output)
-                        .font(.toolDetail)
-                        .foregroundStyle(.textPrimary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(SolaceTheme.sm)
-                        .background(.codeBg)
-                        .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.xs))
-                        .lineLimit(10)
-                }
-            }
-
-            // Error
-            if let error = step.error, !error.isEmpty {
-                VStack(alignment: .leading, spacing: SolaceTheme.xs) {
-                    Text("ERROR")
-                        .font(.sectionHeader)
-                        .foregroundStyle(.softRed)
-                        .tracking(1.2)
-
-                    Text(error)
-                        .font(.toolDetail)
-                        .foregroundStyle(.softRed)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(SolaceTheme.sm)
-                        .background(.codeBg)
-                        .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.xs))
-                }
-            }
-        }
-        .padding(.horizontal, SolaceTheme.md)
-        .padding(.bottom, SolaceTheme.md)
-    }
-
     // MARK: - Cancel
 
     @State private var showCancelConfirmation = false
@@ -423,10 +321,6 @@ struct WorkflowExecutionView: View {
 
     // MARK: - Helpers
 
-    private func isExpanded(_ step: ExecutionStepItem) -> Bool {
-        expandedStepId == step.id
-    }
-
     private func statusColor(_ status: String) -> Color {
         switch status {
         case "completed": return .sageGreen
@@ -434,16 +328,6 @@ struct WorkflowExecutionView: View {
         case "running": return .electricBlue
         case "cancelled": return .amberGlow
         default: return .trust
-        }
-    }
-
-    private func stepBorderColor(_ status: String) -> Color {
-        switch status {
-        case "running": return .electricBlue
-        case "success": return .sageGreen
-        case "error": return .softRed
-        case "skipped": return .trust.opacity(0.4)
-        default: return .trust.opacity(0.2)
         }
     }
 

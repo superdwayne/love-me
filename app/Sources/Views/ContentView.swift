@@ -5,6 +5,7 @@ struct ContentView: View {
     @Environment(ConversationListViewModel.self) private var conversationListVM
     @Environment(WorkflowViewModel.self) private var workflowVM
     @Environment(EmailViewModel.self) private var emailVM
+    @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
     @State private var selectedConversation: String?
     @State private var selectedTab: AppTab = .chat
 
@@ -19,6 +20,9 @@ struct ContentView: View {
     }
 
     var body: some View {
+        if !hasSeenWelcome {
+            WelcomeView()
+        } else {
         TabView(selection: $selectedTab) {
             // Chat Tab
             NavigationSplitView {
@@ -66,6 +70,7 @@ struct ContentView: View {
             chatVM.loadConversation(conversationId)
             emailVM.navigateToConversationId = nil
         }
+        } // else
     }
 }
 

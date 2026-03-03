@@ -118,6 +118,62 @@ private struct OllamaPendingToolCall: Sendable {
     var argumentsJSON: String
 }
 
+// MARK: - Text-based Tool Call Parsing (fallback for models without native function calling)
+
+private struct TextToolCall: Codable {
+    let name: String
+    let arguments: [String: AnyCodableValue]?
+}
+
+/// Flexible JSON value type for parsing arbitrary tool call arguments
+private enum AnyCodableValue: Codable {
+    case string(String)
+    case int(Int)
+    case double(Double)
+    case bool(Bool)
+    case null
+    case array([AnyCodableValue])
+    case object([String: AnyCodableValue])
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let v = try? container.decode(String.self) { self = .string(v) }
+        else if let v = try? container.decode(Int.self) { self = .int(v) }
+        else if let v = try? container.decode(Double.self) { self = .double(v) }
+        else if let v = try? container.decode(Bool.self) { self = .bool(v) }
+        else if container.decodeNil() { self = .null }
+        else if let v = try? container.decode([AnyCodableValue].self) { self = .array(v) }
+        else if let v = try? container.decode([String: AnyCodableValue].self) { self = .object(v) }
+        else { throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unsupported value") }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let v): try container.encode(v)
+        case .int(let v): try container.encode(v)
+        case .double(let v): try container.encode(v)
+        case .bool(let v): try container.encode(v)
+        case .null: try container.encodeNil()
+        case .array(let v): try container.encode(v)
+        case .object(let v): try container.encode(v)
+        }
+    }
+
+    /// Convert to Any for JSONSerialization
+    var toAny: Any {
+        switch self {
+        case .string(let v): return v
+        case .int(let v): return v
+        case .double(let v): return v
+        case .bool(let v): return v
+        case .null: return NSNull()
+        case .array(let v): return v.map { $0.toAny }
+        case .object(let v): return v.mapValues { $0.toAny }
+        }
+    }
+}
+
 // MARK: - Ollama API Client
 
 enum OllamaAPIError: Error, Sendable {
@@ -155,7 +211,8 @@ actor OllamaAPIClient: LLMProvider {
     /// Check if the Ollama endpoint is reachable
     func healthCheck() async -> Bool {
         // Try the /v1/models endpoint (standard OpenAI-compat health check)
-        let baseURL = endpoint.deletingLastPathComponent().deletingLastPathComponent()
+        // endpoint is .../v1/chat/completions — go up 3 levels (completions, chat, v1) to reach the base URL
+        let baseURL = endpoint.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let healthURL = baseURL.appendingPathComponent("v1/models")
 
         var request = URLRequest(url: healthURL)
@@ -329,7 +386,12 @@ actor OllamaAPIClient: LLMProvider {
         // Parse SSE stream (OpenAI format: data: {...}\n\n)
         var hasEmittedTextStart = false
         var pendingToolCalls: [Int: OllamaPendingToolCall] = [:]
+        var nativeToolCallsDetected = false
         let decoder = JSONDecoder()
+
+        // Text buffer for detecting <tool_call> blocks in model output
+        var textBuffer = ""
+        var textToolCallIndex = 100  // Start high to avoid collision with native tool call indices
 
         for try await line in asyncBytes.lines {
             // Skip empty lines and SSE comments
@@ -357,17 +419,73 @@ actor OllamaAPIClient: LLMProvider {
             guard let choice = chunk.choices?.first else { continue }
             let delta = choice.delta
 
-            // Handle text content
+            // Handle text content — buffer for tool call detection
             if let content = delta?.content, !content.isEmpty {
-                if !hasEmittedTextStart {
-                    continuation.yield(.textStart)
-                    hasEmittedTextStart = true
+                textBuffer += content
+
+                // Check for complete <tool_call> blocks in buffer
+                while let toolCallRange = textBuffer.range(of: "<tool_call>"),
+                      let endRange = textBuffer.range(of: "</tool_call>") {
+                    // Extract any text before the tool call tag and emit it
+                    let textBefore = String(textBuffer[textBuffer.startIndex..<toolCallRange.lowerBound])
+                    if !textBefore.isEmpty {
+                        if !hasEmittedTextStart {
+                            continuation.yield(.textStart)
+                            hasEmittedTextStart = true
+                        }
+                        continuation.yield(.textDelta(textBefore))
+                    }
+
+                    // Extract the JSON between tags
+                    let jsonStr = String(textBuffer[toolCallRange.upperBound..<endRange.lowerBound])
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+
+                    // Parse and emit tool call events
+                    if let jsonData = jsonStr.data(using: .utf8),
+                       let toolJSON = try? JSONDecoder().decode(TextToolCall.self, from: jsonData) {
+                        let toolId = "ollama_tc_\(UUID().uuidString.prefix(8))"
+                        let argsString: String
+                        let argsAny = (toolJSON.arguments ?? [:]).mapValues { $0.toAny }
+                        if let argsData = try? JSONSerialization.data(withJSONObject: argsAny),
+                           let argsStr = String(data: argsData, encoding: .utf8) {
+                            argsString = argsStr
+                        } else {
+                            argsString = "{}"
+                        }
+
+                        pendingToolCalls[textToolCallIndex] = OllamaPendingToolCall(
+                            id: toolId, name: toolJSON.name, argumentsJSON: argsString
+                        )
+                        continuation.yield(.toolUseStart(id: toolId, name: toolJSON.name))
+                        continuation.yield(.toolUseDone(id: toolId, name: toolJSON.name, input: argsString))
+                        textToolCallIndex += 1
+
+                        Logger.info("Ollama text-based tool call parsed: \(toolJSON.name)")
+                    } else {
+                        Logger.error("Ollama text tool call parse failed: \(jsonStr)")
+                    }
+
+                    // Remove processed portion from buffer
+                    textBuffer = String(textBuffer[endRange.upperBound...])
                 }
-                continuation.yield(.textDelta(content))
+
+                // If no pending <tool_call> tag in buffer, flush safe text
+                if !textBuffer.contains("<tool_call") {
+                    if !textBuffer.isEmpty {
+                        if !hasEmittedTextStart {
+                            continuation.yield(.textStart)
+                            hasEmittedTextStart = true
+                        }
+                        continuation.yield(.textDelta(textBuffer))
+                        textBuffer = ""
+                    }
+                }
+                // Otherwise hold the buffer — might be a partial <tool_call> tag
             }
 
-            // Handle tool calls
+            // Handle native tool calls (OpenAI function calling format)
             if let toolCalls = delta?.tool_calls {
+                nativeToolCallsDetected = true
                 for tc in toolCalls {
                     let idx = tc.index ?? 0
 
@@ -387,13 +505,61 @@ actor OllamaAPIClient: LLMProvider {
 
             // Check for finish reason
             if let finishReason = choice.finish_reason {
-                if hasEmittedTextStart {
-                    continuation.yield(.textDone)
+                // Flush any remaining text buffer before finishing
+                if !textBuffer.isEmpty {
+                    // Check one last time for tool calls
+                    if let toolCallRange = textBuffer.range(of: "<tool_call>"),
+                       let endRange = textBuffer.range(of: "</tool_call>") {
+                        let textBefore = String(textBuffer[textBuffer.startIndex..<toolCallRange.lowerBound])
+                        if !textBefore.isEmpty {
+                            if !hasEmittedTextStart {
+                                continuation.yield(.textStart)
+                                hasEmittedTextStart = true
+                            }
+                            continuation.yield(.textDelta(textBefore))
+                        }
+                        let jsonStr = String(textBuffer[toolCallRange.upperBound..<endRange.lowerBound])
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        if let jsonData = jsonStr.data(using: .utf8),
+                           let toolJSON = try? JSONDecoder().decode(TextToolCall.self, from: jsonData) {
+                            let toolId = "ollama_tc_\(UUID().uuidString.prefix(8))"
+                            let argsString: String
+                            let argsAny = (toolJSON.arguments ?? [:]).mapValues { $0.toAny }
+                        if let argsData = try? JSONSerialization.data(withJSONObject: argsAny),
+                               let argsStr = String(data: argsData, encoding: .utf8) {
+                                argsString = argsStr
+                            } else {
+                                argsString = "{}"
+                            }
+                            pendingToolCalls[textToolCallIndex] = OllamaPendingToolCall(
+                                id: toolId, name: toolJSON.name, argumentsJSON: argsString
+                            )
+                            continuation.yield(.toolUseStart(id: toolId, name: toolJSON.name))
+                            continuation.yield(.toolUseDone(id: toolId, name: toolJSON.name, input: argsString))
+                            textToolCallIndex += 1
+                        }
+                        textBuffer = String(textBuffer[endRange.upperBound...])
+                    }
+                    // Emit any remaining non-tool text
+                    let remaining = textBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !remaining.isEmpty {
+                        if !hasEmittedTextStart {
+                            continuation.yield(.textStart)
+                            hasEmittedTextStart = true
+                        }
+                        continuation.yield(.textDelta(remaining))
+                    }
+                    textBuffer = ""
                 }
 
-                // Emit completed tool calls
-                if finishReason == "tool_calls" || finishReason == "stop" {
-                    for (_, toolCall) in pendingToolCalls.sorted(by: { $0.key < $1.key }) {
+                if hasEmittedTextStart {
+                    continuation.yield(.textDone)
+                    hasEmittedTextStart = false  // Prevent duplicate textDone
+                }
+
+                // Emit completed native tool calls
+                if (finishReason == "tool_calls" || finishReason == "stop") && nativeToolCallsDetected {
+                    for (_, toolCall) in pendingToolCalls.sorted(by: { $0.key < $1.key }).filter({ $0.key < 100 }) {
                         continuation.yield(.toolUseDone(
                             id: toolCall.id,
                             name: toolCall.name,
@@ -404,19 +570,33 @@ actor OllamaAPIClient: LLMProvider {
             }
         }
 
+        // Flush any remaining text buffer at end of stream
+        if !textBuffer.isEmpty {
+            let remaining = textBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !remaining.isEmpty {
+                if !hasEmittedTextStart {
+                    continuation.yield(.textStart)
+                    hasEmittedTextStart = true
+                }
+                continuation.yield(.textDelta(remaining))
+            }
+        }
+
         // If text was started but never explicitly done (some models skip finish_reason)
         if hasEmittedTextStart {
             continuation.yield(.textDone)
         }
 
-        // Emit any remaining tool calls that didn't get a finish_reason
-        for (_, toolCall) in pendingToolCalls.sorted(by: { $0.key < $1.key }) {
-            if !toolCall.argumentsJSON.isEmpty || !toolCall.name.isEmpty {
-                continuation.yield(.toolUseDone(
-                    id: toolCall.id,
-                    name: toolCall.name,
-                    input: toolCall.argumentsJSON
-                ))
+        // Emit any remaining native tool calls that didn't get a finish_reason
+        if nativeToolCallsDetected {
+            for (_, toolCall) in pendingToolCalls.sorted(by: { $0.key < $1.key }).filter({ $0.key < 100 }) {
+                if !toolCall.argumentsJSON.isEmpty || !toolCall.name.isEmpty {
+                    continuation.yield(.toolUseDone(
+                        id: toolCall.id,
+                        name: toolCall.name,
+                        input: toolCall.argumentsJSON
+                    ))
+                }
             }
         }
 

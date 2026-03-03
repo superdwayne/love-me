@@ -10,6 +10,7 @@ struct WorkflowDetailView: View {
     @State private var appeared = false
     @State private var showInputSheet = false
     @State private var inputValues: [String: String] = [:]
+    @State private var expandedDetailStepId: String?
 
     private var workflow: WorkflowDetail? {
         workflowVM.currentWorkflow
@@ -19,13 +20,14 @@ struct WorkflowDetailView: View {
         ScrollView {
             if let workflow {
                 VStack(spacing: SolaceTheme.lg) {
-                    headerCard(workflow)
-                    scheduleCard(workflow)
-                    stepsCard(workflow)
+                    heroHeader(workflow)
+                    stepsTimeline(workflow)
                     executionsSection
-                    actionsCard(workflow)
+                    runButton(workflow)
                 }
-                .padding(SolaceTheme.lg)
+                .padding(.horizontal, SolaceTheme.lg)
+                .padding(.top, SolaceTheme.sm)
+                .padding(.bottom, SolaceTheme.xxl)
             } else if workflowVM.isLoading {
                 VStack(spacing: SolaceTheme.lg) {
                     Spacer().frame(height: 100)
@@ -88,208 +90,253 @@ struct WorkflowDetailView: View {
         }
     }
 
-    // MARK: - Header
+    // MARK: - Hero Header
 
-    private func headerCard(_ workflow: WorkflowDetail) -> some View {
-        VStack(alignment: .leading, spacing: SolaceTheme.md) {
-            HStack {
-                VStack(alignment: .leading, spacing: SolaceTheme.xs) {
-                    Text(workflow.name)
-                        .font(.displayTitle)
-                        .foregroundStyle(.textPrimary)
+    private func heroHeader(_ workflow: WorkflowDetail) -> some View {
+        VStack(spacing: 0) {
+            // Gradient accent bar
+            LinearGradient(
+                colors: [.heart.opacity(0.6), .electricBlue.opacity(0.4)],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(height: 4)
+            .clipShape(RoundedRectangle(cornerRadius: 2))
 
-                    if !workflow.description.isEmpty {
-                        Text(workflow.description)
-                            .font(.chatMessage)
-                            .foregroundStyle(.trust)
-                    }
-                }
+            VStack(alignment: .leading, spacing: SolaceTheme.md) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: SolaceTheme.xs) {
+                        Text(workflow.name)
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .foregroundStyle(.textPrimary)
 
-                Spacer()
-
-                // Enabled toggle
-                Toggle("", isOn: Binding(
-                    get: { workflow.enabled },
-                    set: { _ in
-                        workflowVM.toggleWorkflowEnabled(id: workflow.id)
-                    }
-                ))
-                .labelsHidden()
-                .tint(.heart)
-            }
-        }
-        .padding(SolaceTheme.lg)
-        .background(Color.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-    }
-
-    // MARK: - Schedule
-
-    private func scheduleCard(_ workflow: WorkflowDetail) -> some View {
-        VStack(alignment: .leading, spacing: SolaceTheme.sm) {
-            Text("SCHEDULE")
-                .font(.sectionHeader)
-                .foregroundStyle(.trust)
-                .tracking(1.2)
-
-            HStack(spacing: SolaceTheme.sm) {
-                Image(systemName: "clock")
-                    .font(.system(size: 16))
-                    .foregroundStyle(.electricBlue)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(workflow.trigger.type.uppercased())
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.electricBlue)
-
-                    if workflow.trigger.type == "manual" {
-                        if let params = workflow.trigger.inputParams, !params.isEmpty {
-                            Text("\(params.count) input\(params.count == 1 ? "" : "s") required")
-                                .font(.toolDetail)
-                                .foregroundStyle(.textPrimary)
-                        } else {
-                            Text("Run on demand")
-                                .font(.toolDetail)
-                                .foregroundStyle(.textPrimary)
+                        if !workflow.description.isEmpty {
+                            Text(workflow.description)
+                                .font(.system(size: 14))
+                                .foregroundStyle(.trust)
+                                .lineLimit(3)
                         }
-                    } else if let cron = workflow.trigger.cronExpression, !cron.isEmpty {
-                        Text(cron)
-                            .font(.toolDetail)
-                            .foregroundStyle(.textPrimary)
                     }
 
-                    if let source = workflow.trigger.eventSource {
-                        Text("\(source):\(workflow.trigger.eventType ?? "")")
-                            .font(.toolDetail)
-                            .foregroundStyle(.textPrimary)
-                    }
+                    Spacer()
+
+                    Toggle("", isOn: Binding(
+                        get: { workflow.enabled },
+                        set: { _ in
+                            workflowVM.toggleWorkflowEnabled(id: workflow.id)
+                        }
+                    ))
+                    .labelsHidden()
+                    .tint(.heart)
                 }
 
-                Spacer()
+                // Info chips row
+                HStack(spacing: SolaceTheme.sm) {
+                    infoChip(
+                        icon: triggerIcon(workflow.trigger.type),
+                        text: triggerLabel(workflow),
+                        color: triggerColor(workflow.trigger.type)
+                    )
+
+                    infoChip(
+                        icon: "square.stack.3d.up.fill",
+                        text: "\(workflow.steps.count) step\(workflow.steps.count == 1 ? "" : "s")",
+                        color: .electricBlue
+                    )
+
+                    if !workflow.enabled {
+                        infoChip(icon: "pause.circle.fill", text: "Paused", color: .trust)
+                    }
+                }
             }
+            .padding(SolaceTheme.lg)
         }
-        .padding(SolaceTheme.lg)
         .background(Color.surface)
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    // MARK: - Steps
+    private func infoChip(icon: String, text: String, color: Color) -> some View {
+        HStack(spacing: SolaceTheme.xs) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .medium))
+            Text(text)
+                .font(.system(size: 11, weight: .semibold))
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, SolaceTheme.sm)
+        .padding(.vertical, SolaceTheme.xs)
+        .background(color.opacity(0.1))
+        .clipShape(Capsule())
+    }
 
-    private func stepsCard(_ workflow: WorkflowDetail) -> some View {
-        VStack(alignment: .leading, spacing: SolaceTheme.md) {
+    private func triggerIcon(_ type: String) -> String {
+        switch type {
+        case "cron": return "clock.fill"
+        case "manual": return "hand.tap.fill"
+        default: return "bolt.fill"
+        }
+    }
+
+    private func triggerColor(_ type: String) -> Color {
+        switch type {
+        case "cron": return .electricBlue
+        case "manual": return .sageGreen
+        default: return .amberGlow
+        }
+    }
+
+    private func triggerLabel(_ workflow: WorkflowDetail) -> String {
+        if workflow.trigger.type == "manual" {
+            if let params = workflow.trigger.inputParams, !params.isEmpty {
+                return "Manual · \(params.count) input\(params.count == 1 ? "" : "s")"
+            }
+            return "Manual"
+        }
+        if let cron = workflow.trigger.cronExpression, !cron.isEmpty {
+            return cron
+        }
+        return workflow.trigger.type.capitalized
+    }
+
+    // MARK: - Steps Timeline
+
+    private func stepsTimeline(_ workflow: WorkflowDetail) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Section header
             HStack {
-                Text("STEPS")
-                    .font(.sectionHeader)
-                    .foregroundStyle(.trust)
-                    .tracking(1.2)
+                HStack(spacing: SolaceTheme.sm) {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.electricBlue)
+                    Text("PIPELINE")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.trust)
+                        .tracking(1.2)
+                }
 
                 Spacer()
 
                 Text("\(workflow.steps.count)")
-                    .font(.toolDetail)
-                    .foregroundStyle(.trust)
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.electricBlue)
                     .padding(.horizontal, SolaceTheme.sm)
-                    .padding(.vertical, 2)
-                    .background(Color.surfaceElevated)
+                    .padding(.vertical, 3)
+                    .background(Color.electricBlue.opacity(0.1))
                     .clipShape(Capsule())
             }
+            .padding(.horizontal, SolaceTheme.lg)
+            .padding(.top, SolaceTheme.lg)
+            .padding(.bottom, SolaceTheme.md)
 
+            // Steps with visual connectors
             VStack(spacing: 0) {
                 ForEach(Array(workflow.steps.enumerated()), id: \.element.id) { index, step in
-                    stepRow(step, index: index)
+                    WorkflowStepCard(
+                        mode: .readOnly,
+                        index: index,
+                        name: step.name,
+                        toolName: step.toolName,
+                        serverName: step.serverName,
+                        inputs: step.inputs,
+                        isExpanded: expandedDetailStepId == step.id,
+                        onToggleExpand: {
+                            withAnimation(.spring(duration: SolaceTheme.springDuration)) {
+                                expandedDetailStepId = expandedDetailStepId == step.id ? nil : step.id
+                            }
+                        }
+                    )
 
                     if index < workflow.steps.count - 1 {
-                        HStack {
-                            Rectangle()
-                                .fill(Color.trust.opacity(0.3))
-                                .frame(width: 2, height: 16)
-                                .padding(.leading, 18)
+                        // Flow connector
+                        HStack(spacing: 0) {
+                            Spacer().frame(width: 18)
+                            VStack(spacing: 0) {
+                                Rectangle()
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [.electricBlue.opacity(0.4), .electricBlue.opacity(0.15)],
+                                            startPoint: .top,
+                                            endPoint: .bottom
+                                        )
+                                    )
+                                    .frame(width: 2, height: 12)
+
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(.electricBlue.opacity(0.3))
+
+                                Rectangle()
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [.electricBlue.opacity(0.15), .electricBlue.opacity(0.4)],
+                                            startPoint: .top,
+                                            endPoint: .bottom
+                                        )
+                                    )
+                                    .frame(width: 2, height: 4)
+                            }
                             Spacer()
                         }
                     }
                 }
             }
+            .padding(.horizontal, SolaceTheme.md)
+            .padding(.bottom, SolaceTheme.lg)
         }
-        .padding(SolaceTheme.lg)
         .background(Color.surface)
         .clipShape(RoundedRectangle(cornerRadius: 16))
-    }
-
-    private func stepRow(_ step: WorkflowStepInfo, index: Int) -> some View {
-        HStack(spacing: SolaceTheme.sm) {
-            // Step number
-            Circle()
-                .fill(Color.electricBlue.opacity(0.2))
-                .frame(width: 36, height: 36)
-                .overlay {
-                    Text("\(index + 1)")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(.electricBlue)
-                }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(step.name)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.textPrimary)
-                    .lineLimit(1)
-
-                HStack(spacing: SolaceTheme.xs) {
-                    Text(step.toolName)
-                        .font(.timestamp)
-                        .foregroundStyle(.trust)
-                        .lineLimit(1)
-
-                    if !step.serverName.isEmpty {
-                        Text("·")
-                            .foregroundStyle(.trust)
-                        Text(step.serverName)
-                            .font(.timestamp)
-                            .foregroundStyle(.trust)
-                    }
-                }
-
-                // Show input count if any
-                if !step.inputs.isEmpty {
-                    Text("\(step.inputs.count) input\(step.inputs.count == 1 ? "" : "s")")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.sageGreen)
-                        .padding(.horizontal, SolaceTheme.sm)
-                        .padding(.vertical, 2)
-                        .background(Color.sageGreen.opacity(0.12))
-                        .clipShape(Capsule())
-                }
-            }
-
-            Spacer()
-        }
-        .padding(.vertical, SolaceTheme.xs)
     }
 
     // MARK: - Executions
 
     private var executionsSection: some View {
         VStack(alignment: .leading, spacing: SolaceTheme.md) {
-            Text("RECENT RUNS")
-                .font(.sectionHeader)
-                .foregroundStyle(.trust)
-                .tracking(1.2)
-
-            if workflowVM.executions.isEmpty {
+            HStack {
                 HStack(spacing: SolaceTheme.sm) {
                     Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.trust.opacity(0.5))
-                    Text("No executions yet")
-                        .font(.toolDetail)
-                        .foregroundStyle(.trust.opacity(0.7))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.sageGreen)
+                    Text("RECENT RUNS")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.trust)
+                        .tracking(1.2)
                 }
-                .padding(.vertical, SolaceTheme.md)
-            } else {
-                ForEach(workflowVM.executions.prefix(5)) { execution in
-                    NavigationLink(value: execution.id) {
-                        executionRow(execution)
+
+                Spacer()
+
+                if !workflowVM.executions.isEmpty {
+                    Text("\(workflowVM.executions.count)")
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.sageGreen)
+                        .padding(.horizontal, SolaceTheme.sm)
+                        .padding(.vertical, 3)
+                        .background(Color.sageGreen.opacity(0.1))
+                        .clipShape(Capsule())
+                }
+            }
+
+            if workflowVM.executions.isEmpty {
+                HStack {
+                    Spacer()
+                    VStack(spacing: SolaceTheme.sm) {
+                        Image(systemName: "tray")
+                            .font(.system(size: 24))
+                            .foregroundStyle(.trust.opacity(0.3))
+                        Text("No executions yet")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.trust.opacity(0.5))
                     }
-                    .buttonStyle(.plain)
+                    .padding(.vertical, SolaceTheme.xl)
+                    Spacer()
+                }
+            } else {
+                VStack(spacing: SolaceTheme.sm) {
+                    ForEach(workflowVM.executions.prefix(5)) { execution in
+                        NavigationLink(value: execution.id) {
+                            executionCard(execution)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
         }
@@ -301,23 +348,32 @@ struct WorkflowDetailView: View {
         }
     }
 
-    private func executionRow(_ execution: ExecutionItem) -> some View {
-        HStack(spacing: SolaceTheme.sm) {
-            Circle()
-                .fill(executionColor(execution.status))
-                .frame(width: 8, height: 8)
+    private func executionCard(_ execution: ExecutionItem) -> some View {
+        HStack(spacing: SolaceTheme.md) {
+            // Status indicator
+            ZStack {
+                Circle()
+                    .fill(executionColor(execution.status).opacity(0.12))
+                    .frame(width: 32, height: 32)
+
+                Image(systemName: executionIcon(execution.status))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(executionColor(execution.status))
+            }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(execution.status.capitalized)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(.textPrimary)
 
-                Text(execution.startedAt, style: .relative)
-                    .font(.timestamp)
-                    .foregroundStyle(.trust)
-                    + Text(" ago")
-                    .font(.timestamp)
-                    .foregroundStyle(.trust)
+                HStack(spacing: SolaceTheme.xs) {
+                    Text(execution.startedAt, style: .relative)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.trust)
+                    Text("ago")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.trust)
+                }
             }
 
             Spacer()
@@ -325,24 +381,24 @@ struct WorkflowDetailView: View {
             if let completedAt = execution.completedAt {
                 let duration = completedAt.timeIntervalSince(execution.startedAt)
                 Text(formatDuration(duration))
-                    .font(.toolDetail)
-                    .monospacedDigit()
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundStyle(.trust)
             }
 
             Image(systemName: "chevron.right")
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.trust)
+                .foregroundStyle(.trust.opacity(0.5))
         }
-        .padding(.vertical, SolaceTheme.xs)
+        .padding(SolaceTheme.md)
+        .background(Color.surfaceElevated.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.sm))
     }
 
-    // MARK: - Actions
+    // MARK: - Run Button
 
-    private func actionsCard(_ workflow: WorkflowDetail) -> some View {
+    private func runButton(_ workflow: WorkflowDetail) -> some View {
         Button {
             if let params = workflow.trigger.inputParams, !params.isEmpty {
-                // Pre-fill empty values
                 inputValues = Dictionary(uniqueKeysWithValues: params.map { ($0.name, "") })
                 showInputSheet = true
             } else {
@@ -357,9 +413,16 @@ struct WorkflowDetailView: View {
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, SolaceTheme.md)
-            .background(Color.heart)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .padding(.vertical, 14)
+            .background(
+                LinearGradient(
+                    colors: [.heart, .heart.opacity(0.85)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .shadow(color: .heart.opacity(0.3), radius: 8, y: 4)
         }
         .sheet(isPresented: $showInputSheet) {
             if let params = workflow.trigger.inputParams {
@@ -384,6 +447,16 @@ struct WorkflowDetailView: View {
         case "running": return .electricBlue
         case "cancelled": return .amberGlow
         default: return .trust
+        }
+    }
+
+    private func executionIcon(_ status: String) -> String {
+        switch status {
+        case "completed": return "checkmark"
+        case "failed": return "xmark"
+        case "running": return "arrow.triangle.2.circlepath"
+        case "cancelled": return "stop.fill"
+        default: return "clock"
         }
     }
 

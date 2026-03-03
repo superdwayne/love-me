@@ -53,6 +53,14 @@ struct MessageBubble: View {
                             Label("Copy", systemImage: "doc.on.doc")
                         }
 
+                        if message.role == .user && !chatVM.isStreaming {
+                            Button {
+                                chatVM.startEditing(message)
+                            } label: {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                        }
+
                         if message.role == .user {
                             Button {
                                 chatVM.retryMessage(message)
@@ -72,6 +80,13 @@ struct MessageBubble: View {
                 Text(formattedTimestamp)
                     .font(.timestamp)
                     .foregroundStyle(.trust)
+
+                // Edited indicator
+                if message.isEdited {
+                    Text("(edited)")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.trust.opacity(0.6))
+                }
 
                 // Failed state
                 if message.sendFailed {
@@ -132,7 +147,9 @@ struct MessageBubble: View {
 
     private var bubbleContent: some View {
         Group {
-            if message.content.isEmpty && message.isStreaming && audioAttachments.isEmpty {
+            if chatVM.editingMessageId == message.id {
+                editingView
+            } else if message.content.isEmpty && message.isStreaming && audioAttachments.isEmpty {
                 streamingPlaceholder
             } else {
                 VStack(alignment: .leading, spacing: SolaceTheme.sm) {
@@ -164,14 +181,26 @@ struct MessageBubble: View {
                             }
                             .onChange(of: message.isStreaming) { _, streaming in
                                 if !streaming {
-                                    renderedContent = MarkdownRenderer.render(message.content)
-                                    lastRenderTime = Date()
+                                    renderWithSearch(message.content)
                                 }
                             }
                             .onAppear {
-                                renderedContent = MarkdownRenderer.render(message.content)
-                                lastRenderTime = Date()
+                                renderWithSearch(message.content)
                             }
+                            .onChange(of: chatVM.searchQuery) { _, _ in
+                                renderWithSearch(message.content)
+                            }
+                            .onChange(of: chatVM.currentMatchIndex) { _, _ in
+                                renderWithSearch(message.content)
+                            }
+                    }
+
+                    // Link previews (assistant messages only, after streaming)
+                    if message.role == .assistant && !message.isStreaming {
+                        LinkPreviewContainer(
+                            messageContent: message.content,
+                            isStreaming: message.isStreaming
+                        )
                     }
                 }
             }
@@ -185,6 +214,40 @@ struct MessageBubble: View {
             if message.role == .assistant {
                 RoundedRectangle(cornerRadius: SolaceTheme.bubbleRadius)
                     .stroke(Color.assistantBubbleBorder, lineWidth: 1)
+            }
+        }
+    }
+
+    private var editingView: some View {
+        @Bindable var vm = chatVM
+        return VStack(alignment: .trailing, spacing: SolaceTheme.sm) {
+            TextField("Edit message...", text: $vm.editingText, axis: .vertical)
+                .font(.chatMessage)
+                .foregroundStyle(.white)
+                .lineLimit(1...10)
+
+            HStack(spacing: SolaceTheme.sm) {
+                Button {
+                    chatVM.cancelEditing()
+                } label: {
+                    Text("Cancel")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .padding(.horizontal, SolaceTheme.md)
+                        .padding(.vertical, SolaceTheme.xs)
+                }
+
+                Button {
+                    chatVM.saveEdit()
+                } label: {
+                    Text("Save")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, SolaceTheme.md)
+                        .padding(.vertical, SolaceTheme.xs)
+                        .background(Color.white.opacity(0.2))
+                        .clipShape(Capsule())
+                }
             }
         }
     }
@@ -220,15 +283,23 @@ struct MessageBubble: View {
 
     private func throttleRender(_ content: String) {
         guard message.isStreaming else {
-            // Not streaming — always render immediately
-            renderedContent = MarkdownRenderer.render(content)
-            lastRenderTime = Date()
+            renderWithSearch(content)
             return
         }
         let now = Date()
         guard now.timeIntervalSince(lastRenderTime) >= 0.1 else { return }
-        renderedContent = MarkdownRenderer.render(content)
+        renderWithSearch(content)
         lastRenderTime = now
+    }
+
+    private func renderWithSearch(_ content: String) {
+        if chatVM.isSearchActive && !chatVM.searchQuery.isEmpty {
+            let isActive = chatVM.currentMatchMessageId == message.id
+            renderedContent = MarkdownRenderer.render(content, highlighting: chatVM.searchQuery, isActiveMatch: isActive)
+        } else {
+            renderedContent = MarkdownRenderer.render(content)
+        }
+        lastRenderTime = Date()
     }
 
     private static let timestampFormatter: DateFormatter = {

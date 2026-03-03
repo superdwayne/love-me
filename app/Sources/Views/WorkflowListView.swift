@@ -6,51 +6,44 @@ struct WorkflowListView: View {
     @State private var showBuilder = false
     @State private var showDeleteAlert = false
     @State private var workflowToDelete: String?
+    @State private var appeared = false
 
     var body: some View {
-        List {
+        ScrollView {
             if workflowVM.isLoading && workflowVM.workflows.isEmpty {
-                ForEach(0..<4, id: \.self) { _ in
-                    skeletonRow
-                }
-                .listRowBackground(Color.surface)
+                skeletonGrid
+                    .padding(.horizontal, SolaceTheme.lg)
+                    .padding(.top, SolaceTheme.lg)
             } else if workflowVM.workflows.isEmpty {
                 emptyState
-                    .listRowBackground(Color.appBackground)
-                    .listRowSeparator(.hidden)
             } else {
-                ForEach(workflowVM.workflows) { workflow in
-                    NavigationLink(value: workflow.id) {
-                        workflowRow(workflow)
-                    }
-                    .listRowBackground(Color.surface)
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) {
-                            workflowToDelete = workflow.id
-                            showDeleteAlert = true
-                        } label: {
-                            Label("Delete", systemImage: "trash")
+                LazyVStack(spacing: SolaceTheme.md) {
+                    ForEach(Array(workflowVM.workflows.enumerated()), id: \.element.id) { index, workflow in
+                        NavigationLink(value: workflow.id) {
+                            workflowCard(workflow, index: index)
                         }
-                    }
-                    .contextMenu {
-                        Button {
-                            workflowVM.runWorkflow(id: workflow.id)
-                        } label: {
-                            Label("Run Now", systemImage: "play.fill")
-                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button {
+                                workflowVM.runWorkflow(id: workflow.id)
+                            } label: {
+                                Label("Run Now", systemImage: "play.fill")
+                            }
 
-                        Button(role: .destructive) {
-                            workflowToDelete = workflow.id
-                            showDeleteAlert = true
-                        } label: {
-                            Label("Delete", systemImage: "trash")
+                            Button(role: .destructive) {
+                                workflowToDelete = workflow.id
+                                showDeleteAlert = true
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
                         }
                     }
                 }
+                .padding(.horizontal, SolaceTheme.lg)
+                .padding(.top, SolaceTheme.md)
+                .padding(.bottom, SolaceTheme.xxl)
             }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
         .background(.appBackground)
         .navigationTitle("Workflows")
         .toolbar {
@@ -79,7 +72,7 @@ struct WorkflowListView: View {
         }
         .sheet(isPresented: $showEditor) {
             NavigationStack {
-                WorkflowEditorView(existingWorkflow: nil)
+                CardWorkflowBuilderView()
             }
         }
         .sheet(isPresented: $showBuilder) {
@@ -102,107 +95,258 @@ struct WorkflowListView: View {
         }
         .onAppear {
             workflowVM.loadWorkflows()
+            withAnimation(.easeOut(duration: SolaceTheme.appearDuration)) {
+                appeared = true
+            }
         }
+        .toolbarBackground(.appBackground, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
     }
 
-    // MARK: - Subviews
+    // MARK: - Workflow Card
 
-    private func workflowRow(_ workflow: WorkflowItem) -> some View {
-        HStack(spacing: SolaceTheme.md) {
-            // Status dot
-            statusDot(for: workflow.lastRunStatus)
+    private func workflowCard(_ workflow: WorkflowItem, index: Int) -> some View {
+        VStack(alignment: .leading, spacing: SolaceTheme.md) {
+            // Top row: status indicator + name + enabled badge
+            HStack(alignment: .top, spacing: SolaceTheme.md) {
+                // Status icon with color ring
+                ZStack {
+                    Circle()
+                        .fill(statusColor(workflow.lastRunStatus).opacity(0.15))
+                        .frame(width: 40, height: 40)
 
-            VStack(alignment: .leading, spacing: SolaceTheme.xs) {
-                HStack(spacing: SolaceTheme.sm) {
-                    Text(workflow.name)
+                    Image(systemName: statusIcon(workflow.lastRunStatus))
                         .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(.textPrimary)
-                        .lineLimit(1)
+                        .foregroundStyle(statusColor(workflow.lastRunStatus))
+                }
 
-                    if !workflow.enabled {
-                        Text("OFF")
-                            .font(.system(size: 9, weight: .bold))
+                VStack(alignment: .leading, spacing: SolaceTheme.xs) {
+                    Text(workflow.name)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.textPrimary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+
+                    if !workflow.description.isEmpty {
+                        Text(workflow.description)
+                            .font(.system(size: 13))
                             .foregroundStyle(.trust)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(Color.trust.opacity(0.12))
-                            .clipShape(Capsule())
+                            .lineLimit(2)
                     }
                 }
 
-                HStack(spacing: SolaceTheme.sm) {
-                    triggerBadge(workflow.triggerType)
+                Spacer()
 
-                    if !workflow.triggerDetail.isEmpty {
-                        Text(workflow.triggerDetail)
-                            .font(.timestamp)
-                            .foregroundStyle(.trust)
-                            .lineLimit(1)
-                    }
+                if !workflow.enabled {
+                    Text("OFF")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.trust)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color.trust.opacity(0.12))
+                        .clipShape(Capsule())
+                }
+            }
 
-                    if let lastRun = workflow.lastRunAt {
-                        Text("· \(lastRun, style: .relative) ago")
-                            .font(.timestamp)
-                            .foregroundStyle(.trust)
+            // Metadata row: trigger + steps + last run
+            HStack(spacing: SolaceTheme.md) {
+                triggerBadge(workflow.triggerType)
+
+                // Step count with visual dots
+                HStack(spacing: SolaceTheme.xs) {
+                    stepDots(count: workflow.stepCount, status: workflow.lastRunStatus)
+                    Text("\(workflow.stepCount) step\(workflow.stepCount == 1 ? "" : "s")")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.trust)
+                }
+
+                Spacer()
+
+                if let lastRun = workflow.lastRunAt {
+                    HStack(spacing: SolaceTheme.xs) {
+                        Image(systemName: "clock")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.trust.opacity(0.6))
+                        Text(lastRun, style: .relative)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.trust.opacity(0.7))
                     }
                 }
             }
 
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.trust)
+            // Visual step pipeline preview
+            if workflow.stepCount > 0 {
+                stepPipeline(count: workflow.stepCount, status: workflow.lastRunStatus)
+            }
         }
-        .padding(.vertical, SolaceTheme.xs)
-        .accessibilityLabel("\(workflow.name), \(workflow.triggerType) trigger, \(workflow.enabled ? "enabled" : "disabled")")
+        .padding(SolaceTheme.lg)
+        .background(Color.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(
+                    statusColor(workflow.lastRunStatus).opacity(workflow.lastRunStatus == "running" ? 0.3 : 0.08),
+                    lineWidth: 1
+                )
+        )
+        .opacity(workflow.enabled ? 1.0 : 0.65)
+        .opacity(appeared ? 1.0 : 0.0)
+        .offset(y: appeared ? 0 : 12)
+        .animation(
+            .spring(duration: 0.4, bounce: 0.15).delay(Double(index) * 0.05),
+            value: appeared
+        )
     }
 
-    private func statusDot(for status: String?) -> some View {
-        Circle()
-            .fill(statusColor(status))
-            .frame(width: 10, height: 10)
+    // MARK: - Visual Step Pipeline
+
+    private func stepPipeline(count: Int, status: String?) -> some View {
+        GeometryReader { geo in
+            let maxDots = min(count, 8)
+            let dotSize: CGFloat = 6
+            let lineHeight: CGFloat = 2
+            let totalWidth = geo.size.width
+            let spacing = maxDots > 1 ? (totalWidth - CGFloat(maxDots) * dotSize) / CGFloat(maxDots - 1) : 0
+
+            ZStack(alignment: .leading) {
+                // Background line
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(Color.trust.opacity(0.12))
+                    .frame(height: lineHeight)
+
+                // Active line
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(pipelineColor(status).opacity(0.4))
+                    .frame(width: totalWidth * pipelineFraction(status), height: lineHeight)
+
+                // Dots
+                HStack(spacing: spacing) {
+                    ForEach(0..<maxDots, id: \.self) { i in
+                        Circle()
+                            .fill(i == 0 || status == "completed" ? pipelineColor(status) : pipelineColor(status).opacity(0.3))
+                            .frame(width: dotSize, height: dotSize)
+                    }
+                }
+            }
+        }
+        .frame(height: 6)
     }
+
+    private func pipelineColor(_ status: String?) -> Color {
+        switch status {
+        case "completed": return .sageGreen
+        case "failed": return .softRed
+        case "running": return .electricBlue
+        default: return .trust
+        }
+    }
+
+    private func pipelineFraction(_ status: String?) -> CGFloat {
+        switch status {
+        case "completed": return 1.0
+        case "failed": return 0.6
+        case "running": return 0.5
+        default: return 0.0
+        }
+    }
+
+    // MARK: - Step Dots
+
+    private func stepDots(count: Int, status: String?) -> some View {
+        HStack(spacing: 2) {
+            ForEach(0..<min(count, 5), id: \.self) { _ in
+                Circle()
+                    .fill(pipelineColor(status).opacity(0.6))
+                    .frame(width: 4, height: 4)
+            }
+            if count > 5 {
+                Text("+\(count - 5)")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.trust.opacity(0.6))
+            }
+        }
+    }
+
+    // MARK: - Status Helpers
 
     private func statusColor(_ status: String?) -> Color {
         switch status {
         case "completed": return .sageGreen
         case "failed": return .softRed
-        case "running": return .amberGlow
-        default: return .trust.opacity(0.4)
+        case "running": return .electricBlue
+        default: return .trust
+        }
+    }
+
+    private func statusIcon(_ status: String?) -> String {
+        switch status {
+        case "completed": return "checkmark.circle.fill"
+        case "failed": return "exclamationmark.circle.fill"
+        case "running": return "arrow.triangle.2.circlepath"
+        default: return "bolt.circle.fill"
         }
     }
 
     private func triggerBadge(_ type: String) -> some View {
-        Text(type.uppercased())
-            .font(.system(size: 10, weight: .bold))
-            .foregroundStyle(type == "cron" ? .electricBlue : .amberGlow)
-            .padding(.horizontal, SolaceTheme.sm)
-            .padding(.vertical, 2)
-            .background(
-                (type == "cron" ? Color.electricBlue : Color.amberGlow).opacity(0.15)
-            )
-            .clipShape(Capsule())
+        let icon: String
+        let color: Color
+        switch type {
+        case "cron":
+            icon = "clock.fill"
+            color = .electricBlue
+        case "manual":
+            icon = "hand.tap.fill"
+            color = .sageGreen
+        default:
+            icon = "bolt.fill"
+            color = .amberGlow
+        }
+
+        return HStack(spacing: SolaceTheme.xs) {
+            Image(systemName: icon)
+                .font(.system(size: 9))
+            Text(type.capitalized)
+                .font(.system(size: 10, weight: .bold))
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, SolaceTheme.sm)
+        .padding(.vertical, 3)
+        .background(color.opacity(0.12))
+        .clipShape(Capsule())
     }
 
+    // MARK: - Empty State
+
     private var emptyState: some View {
-        VStack(spacing: SolaceTheme.md) {
+        VStack(spacing: SolaceTheme.xl) {
             Spacer()
-                .frame(height: 80)
+                .frame(height: 60)
 
-            Image(systemName: "arrow.triangle.2.circlepath")
-                .font(.system(size: 40))
-                .foregroundStyle(.trust.opacity(0.5))
+            // Visual icon cluster
+            ZStack {
+                Circle()
+                    .fill(Color.heart.opacity(0.08))
+                    .frame(width: 120, height: 120)
 
-            Text("No workflows yet")
-                .font(.displaySubtitle)
-                .foregroundStyle(.textPrimary)
+                Circle()
+                    .fill(Color.heart.opacity(0.12))
+                    .frame(width: 80, height: 80)
 
-            Text("Automate tasks with scheduled or on-demand workflows.")
-                .font(.chatMessage)
-                .foregroundStyle(.trust)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, SolaceTheme.xxl)
+                Image(systemName: "gearshape.2.fill")
+                    .font(.system(size: 36))
+                    .foregroundStyle(.heart.opacity(0.7))
+            }
+
+            VStack(spacing: SolaceTheme.sm) {
+                Text("No workflows yet")
+                    .font(.system(size: 24, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.textPrimary)
+
+                Text("Automate tasks with scheduled\nor on-demand workflows.")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.trust)
+                    .multilineTextAlignment(.center)
+            }
 
             HStack(spacing: SolaceTheme.md) {
                 Button {
@@ -217,7 +361,7 @@ struct WorkflowListView: View {
                     .padding(.horizontal, SolaceTheme.xl)
                     .padding(.vertical, SolaceTheme.md)
                     .background(Color.heart)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
                 }
 
                 Button {
@@ -232,35 +376,49 @@ struct WorkflowListView: View {
                     .padding(.horizontal, SolaceTheme.lg)
                     .padding(.vertical, SolaceTheme.md)
                     .background(Color.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
                 }
             }
-            .padding(.top, SolaceTheme.sm)
 
             Spacer()
         }
         .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.horizontal, SolaceTheme.xl)
     }
 
-    private var skeletonRow: some View {
-        HStack(spacing: SolaceTheme.md) {
-            Circle()
-                .fill(Color.surfaceElevated)
-                .frame(width: 10, height: 10)
+    // MARK: - Skeleton
 
-            VStack(alignment: .leading, spacing: SolaceTheme.sm) {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.surfaceElevated)
-                    .frame(width: 160, height: 16)
+    private var skeletonGrid: some View {
+        VStack(spacing: SolaceTheme.md) {
+            ForEach(0..<3, id: \.self) { _ in
+                VStack(alignment: .leading, spacing: SolaceTheme.md) {
+                    HStack(spacing: SolaceTheme.md) {
+                        Circle()
+                            .fill(Color.surfaceElevated)
+                            .frame(width: 40, height: 40)
 
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.surfaceElevated.opacity(0.6))
-                    .frame(width: 80, height: 12)
+                        VStack(alignment: .leading, spacing: SolaceTheme.sm) {
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.surfaceElevated)
+                                .frame(width: 160, height: 16)
+
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.surfaceElevated.opacity(0.6))
+                                .frame(width: 100, height: 12)
+                        }
+
+                        Spacer()
+                    }
+
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.surfaceElevated.opacity(0.4))
+                        .frame(height: 6)
+                }
+                .padding(SolaceTheme.lg)
+                .background(Color.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .redacted(reason: .placeholder)
             }
-
-            Spacer()
         }
-        .padding(.vertical, SolaceTheme.xs)
-        .redacted(reason: .placeholder)
     }
 }

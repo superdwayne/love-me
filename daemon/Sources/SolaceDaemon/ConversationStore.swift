@@ -363,9 +363,41 @@ actor ConversationStore {
         return apiMessages
     }
 
+    /// Update a user message's content and remove all messages after it
+    func editMessage(conversationId: String, originalContent: String, newContent: String) throws -> StoredConversation {
+        var conversation = try load(id: conversationId)
+
+        // Find the message by matching content (search from end for most recent match)
+        guard let messageIndex = conversation.messages.lastIndex(where: {
+            $0.role == "user" && $0.content == originalContent
+        }) else {
+            throw ConversationStoreError.messageNotFound
+        }
+
+        // Update the message content
+        conversation.messages[messageIndex] = StoredMessage(
+            role: "user",
+            content: newContent,
+            timestamp: conversation.messages[messageIndex].timestamp,
+            metadata: conversation.messages[messageIndex].metadata
+        )
+
+        // Remove all messages after the edited one
+        if messageIndex + 1 < conversation.messages.count {
+            conversation.messages.removeSubrange((messageIndex + 1)...)
+        }
+
+        try save(conversation)
+        return conversation
+    }
+
     // MARK: - Private
 
     private func filePath(for id: String) -> String {
         "\(directory)/\(id).json"
     }
+}
+
+enum ConversationStoreError: Error {
+    case messageNotFound
 }

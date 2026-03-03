@@ -32,7 +32,7 @@ final class VoiceNotePlayer {
             try session.setCategory(.playback, mode: .default)
             try session.setActive(true)
 
-            let player = try AVAudioPlayer(data: audioData)
+            let player = try AVAudioPlayer(data: audioData, fileTypeHint: AVFileType.m4a.rawValue)
             player.prepareToPlay()
             player.play()
             self.audioPlayer = player

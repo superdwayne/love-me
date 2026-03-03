@@ -18,7 +18,7 @@ struct EmptyStateView: View {
 
             // Logo
             HStack(spacing: 0) {
-                Text("love")
+                Text("Solace")
                     .font(.emptyStateTitle)
                     .foregroundStyle(.textPrimary)
 
@@ -35,10 +35,6 @@ struct EmptyStateView: View {
                             breatheScale = 1.08
                         }
                     }
-
-                Text("Me")
-                    .font(.system(size: 28, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.textPrimary)
             }
 
             // Subtitle

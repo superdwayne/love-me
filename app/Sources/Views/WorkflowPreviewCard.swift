@@ -49,10 +49,16 @@ struct WorkflowPreviewCard: View {
             if !steps.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
-                        stepPill(step)
+                        WorkflowStepCard(
+                            mode: .preview,
+                            index: index,
+                            name: step.name,
+                            toolName: step.toolName,
+                            serverName: "",
+                            needsConfig: step.needsConfig
+                        )
 
                         if index < steps.count - 1 {
-                            // Connector arrow
                             HStack {
                                 Rectangle()
                                     .fill(Color.trust.opacity(0.3))
@@ -82,42 +88,5 @@ struct WorkflowPreviewCard: View {
         .background(Color.surface)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .opacity(isEnabled ? 1.0 : 0.6)
-    }
-
-    private func stepPill(_ step: PreviewStep) -> some View {
-        HStack(spacing: SolaceTheme.sm) {
-            // Step icon
-            Circle()
-                .fill(step.needsConfig ? Color.amberGlow.opacity(0.2) : Color.electricBlue.opacity(0.2))
-                .frame(width: 36, height: 36)
-                .overlay {
-                    Image(systemName: step.needsConfig ? "questionmark" : "gearshape")
-                        .font(.system(size: 14))
-                        .foregroundStyle(step.needsConfig ? .amberGlow : .electricBlue)
-                }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(step.name)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.textPrimary)
-                    .lineLimit(1)
-
-                Text(step.toolName)
-                    .font(.timestamp)
-                    .foregroundStyle(.trust)
-                    .lineLimit(1)
-            }
-
-            Spacer()
-
-            // Status indicator
-            Circle()
-                .fill(step.needsConfig ? Color.amberGlow : Color.sageGreen)
-                .frame(width: 8, height: 8)
-        }
-        .padding(.horizontal, SolaceTheme.md)
-        .padding(.vertical, SolaceTheme.sm)
-        .background(Color.surfaceElevated)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }

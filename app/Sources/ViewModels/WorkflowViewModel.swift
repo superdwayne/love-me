@@ -593,6 +593,13 @@ final class WorkflowViewModel {
 
         executions[execIndex].steps[stepIndex].status = status
 
+        // Haptics for step transitions
+        if status == "running" {
+            HapticManager.stepStarted()
+        } else if status == "success" || status == "error" {
+            HapticManager.stepCompleted()
+        }
+
         if let startStr = meta["startedAt"]?.stringValue,
            let date = dateFormatter.date(from: startStr) {
             executions[execIndex].steps[stepIndex].startedAt = date
@@ -627,6 +634,8 @@ final class WorkflowViewModel {
                let date = dateFormatter.date(from: endStr) {
                 executions[index].completedAt = date
             }
+
+            HapticManager.workflowCompleted()
 
             // Update the workflow's last run status
             let workflowId = executions[index].workflowId

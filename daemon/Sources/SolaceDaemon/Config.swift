@@ -26,7 +26,7 @@ struct OllamaProviderConfig: Codable, Sendable {
 
     static let `default` = OllamaProviderConfig(
         endpoint: "http://localhost:11434/v1/chat/completions",
-        model: "llama3"
+        model: "qwen3-coder-next"
     )
 }
 

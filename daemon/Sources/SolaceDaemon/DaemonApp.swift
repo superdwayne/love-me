@@ -222,6 +222,9 @@ actor DaemonApp {
         case WSMessageType.listConversations:
             await handleListConversations(client: client)
 
+        case WSMessageType.editMessage:
+            await handleEditMessage(message, client: client)
+
         // Workflow messages
         case WSMessageType.createWorkflow:
             await handleCreateWorkflow(message, client: client)
@@ -482,10 +485,40 @@ actor DaemonApp {
                 ))
             }
 
-            let systemPrompt = await buildSystemPrompt()
+            var systemPrompt = await buildSystemPrompt()
 
             // Only pass tools if provider supports them
-            let effectiveTools = llmProvider.supportsTools ? tools : []
+            var effectiveTools = llmProvider.supportsTools ? tools : []
+
+            // Augment system prompt for Ollama with text-based tool call instructions
+            if llmProvider.providerName == "Ollama" && !effectiveTools.isEmpty {
+                // Strip create_workflow from both the prompt AND the native tools array —
+                // Ollama models latch onto it because it's the simplest tool (just a description string)
+                effectiveTools = effectiveTools.filter { $0.name != "create_workflow" }
+                let toolList = effectiveTools.map { "- \($0.name): \($0.description)" }.joined(separator: "\n")
+                systemPrompt += """
+
+                \n\n# Tool Usage Instructions
+
+                You have access to the following tools:
+                \(toolList)
+
+                When you want to use a tool, you MUST output a tool call block in this EXACT format:
+
+                <tool_call>
+                {"name": "tool_name", "arguments": {"param": "value"}}
+                </tool_call>
+
+                CRITICAL RULES:
+                - Only use a tool when the user explicitly asks you to perform an action that requires it.
+                - Do NOT describe how to use tools or explain what you would do. Actually invoke them using the format above.
+                - You may use multiple <tool_call> blocks in one response.
+                - After outputting tool call blocks, STOP and wait for tool results before continuing.
+                - Tool results will be provided to you in follow-up messages.
+                - Always use the exact tool names listed above.
+                - For normal conversation, just respond naturally without using tools.
+                """
+            }
 
             Logger.info("Calling \(llmProvider.providerName) API: \(apiMessages.count) messages, \(effectiveTools.count) tools")
 
@@ -824,6 +857,41 @@ actor DaemonApp {
 
         } catch {
             await sendError(to: client, message: "Claude API error: \(error.localizedDescription)", code: "API_ERROR")
+        }
+    }
+
+    // MARK: - Edit Message
+
+    private func handleEditMessage(_ message: WSMessage, client: WebSocketClient) async {
+        guard let conversationId = message.conversationId,
+              let originalContent = message.metadata?["originalContent"]?.stringValue,
+              let newContent = message.content else {
+            await sendError(to: client, message: "Missing edit parameters", code: "MISSING_FIELD")
+            return
+        }
+
+        do {
+            let _ = try await conversationStore.editMessage(
+                conversationId: conversationId,
+                originalContent: originalContent,
+                newContent: newContent
+            )
+
+            // Confirm the edit
+            let confirmMsg = WSMessage(
+                type: WSMessageType.messageEdited,
+                conversationId: conversationId,
+                metadata: [
+                    "originalContent": .string(originalContent),
+                    "newContent": .string(newContent)
+                ]
+            )
+            try? await client.send(confirmMsg)
+
+            // Re-generate assistant response
+            await streamLLMResponse(conversationId: conversationId, client: client)
+        } catch {
+            await sendError(to: client, message: "Failed to edit message: \(error)", code: "EDIT_ERROR")
         }
     }
 

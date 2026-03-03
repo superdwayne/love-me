@@ -196,6 +196,8 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var aiProviderSection: some View {
+        @Bindable var settings = settingsVM
+
         Section {
             if settingsVM.isLoadingProviders {
                 HStack {
@@ -231,21 +233,17 @@ struct SettingsView: View {
                     Text("Provider")
                         .foregroundStyle(.textPrimary)
                     Spacer()
-                    Picker("", selection: Binding(
-                        get: { settingsVM.selectedProvider },
-                        set: { newValue in
-                            settingsVM.selectedProvider = newValue
-                            if newValue == "claude" {
-                                settingsVM.setProvider("claude")
-                            }
-                            // Ollama requires endpoint/model — switching handled by the connect button below
-                        }
-                    )) {
+                    Picker("", selection: $settings.selectedProvider) {
                         Text("Claude").tag("claude")
                         Text("Ollama").tag("ollama")
                     }
                     .pickerStyle(.segmented)
                     .frame(maxWidth: 200)
+                    .onChange(of: settingsVM.selectedProvider) { _, newValue in
+                        if newValue == "claude" {
+                            settingsVM.setProvider("claude")
+                        }
+                    }
                 }
                 .listRowBackground(Color.surface)
 

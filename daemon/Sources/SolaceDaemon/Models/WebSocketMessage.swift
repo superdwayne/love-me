@@ -80,6 +80,7 @@ enum WSMessageType {
     static let listConversations = "list_conversations"
     static let ping = "ping"
     static let cancelGeneration = "cancel_generation"
+    static let editMessage = "edit_message"
 
     // Server -> Client
     static let assistantChunk = "assistant_chunk"
@@ -95,6 +96,7 @@ enum WSMessageType {
     static let conversationLoaded = "conversation_loaded"
     static let conversationCreated = "conversation_created"
     static let conversationDeleted = "conversation_deleted"
+    static let messageEdited = "message_edited"
 
     // Client -> Server (Workflows)
     static let createWorkflow = "create_workflow"

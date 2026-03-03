@@ -140,7 +140,9 @@ struct WorkflowBuilderView: View {
         VStack(spacing: SolaceTheme.lg) {
             WorkflowPreviewCard(
                 name: result.name,
-                scheduleDescription: result.scheduleDescription,
+                scheduleDescription: result.triggerType == "manual"
+                    ? "Run on demand\(result.inputParams.map { " (\($0.count) input\($0.count == 1 ? "" : "s"))" } ?? "")"
+                    : result.scheduleDescription,
                 steps: result.steps.map { step in
                     WorkflowPreviewCard.PreviewStep(
                         id: step.id,

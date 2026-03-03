@@ -6,13 +6,29 @@ struct EditableStep: Identifiable {
     var toolName: String
     var serverName: String
     var onError: String
+    var inputs: [String: String]
 
-    init(id: String = UUID().uuidString, name: String = "", toolName: String = "", serverName: String = "", onError: String = "stop") {
+    init(id: String = UUID().uuidString, name: String = "", toolName: String = "", serverName: String = "", onError: String = "stop", inputs: [String: String] = [:]) {
         self.id = id
         self.name = name
         self.toolName = toolName
         self.serverName = serverName
         self.onError = onError
+        self.inputs = inputs
+    }
+}
+
+struct EditableInputParam: Identifiable {
+    let id: String
+    var name: String
+    var label: String
+    var placeholder: String
+
+    init(id: String = UUID().uuidString, name: String = "", label: String = "", placeholder: String = "") {
+        self.id = id
+        self.name = name
+        self.label = label
+        self.placeholder = placeholder
     }
 }
 
@@ -28,6 +44,7 @@ struct WorkflowEditorView: View {
     @State private var eventSource: String = ""
     @State private var eventType: String = ""
     @State private var steps: [EditableStep] = []
+    @State private var inputParams: [EditableInputParam] = []
     @State private var notifyOnStart = false
     @State private var notifyOnComplete = true
     @State private var notifyOnError = true
@@ -37,6 +54,7 @@ struct WorkflowEditorView: View {
     @State private var scheduleDebounceTask: Task<Void, Never>?
     @State private var showToolPicker: Bool = false
     @State private var editingStepIndex: Int?
+    @State private var showTemplatePicker: Bool = false
 
     private var isEditing: Bool { existingWorkflow != nil }
     private var isValid: Bool {
@@ -95,6 +113,29 @@ struct WorkflowEditorView: View {
                 workflowVM.loadMCPTools()
             }
         }
+        .sheet(isPresented: $showTemplatePicker) {
+            StepTemplatePicker(
+                templates: StepTemplates.merged(mcpTools: workflowVM.availableTools),
+                onSelect: { template in
+                    withAnimation(.spring(duration: SolaceTheme.springDuration)) {
+                        steps.append(EditableStep(
+                            name: template.name,
+                            toolName: template.toolName,
+                            serverName: template.serverName,
+                            inputs: template.defaultInputs
+                        ))
+                    }
+                },
+                onScratch: {
+                    withAnimation(.spring(duration: SolaceTheme.springDuration)) {
+                        steps.append(EditableStep())
+                    }
+                }
+            )
+            .onAppear {
+                workflowVM.loadMCPTools()
+            }
+        }
     }
 
     // MARK: - Info Section
@@ -135,6 +176,7 @@ struct WorkflowEditorView: View {
         Section {
             Picker("Trigger Type", selection: $triggerType) {
                 Text("Cron Schedule").tag("cron")
+                Text("Manual").tag("manual")
                 Text("Event").tag("event")
             }
             .foregroundStyle(.textPrimary)
@@ -217,6 +259,38 @@ struct WorkflowEditorView: View {
                     }
                     .listRowBackground(Color.surface)
                 }
+            } else if triggerType == "manual" {
+                // Manual trigger with optional input parameters
+                HStack(spacing: SolaceTheme.sm) {
+                    Image(systemName: "play.circle")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.electricBlue)
+                    Text("Run on demand with optional inputs")
+                        .font(.toolDetail)
+                        .foregroundStyle(.trust)
+                }
+                .listRowBackground(Color.surface)
+
+                ForEach(Array(inputParams.indices), id: \.self) { index in
+                    inputParamRow(param: $inputParams[index], index: index)
+                }
+                .onDelete { indexSet in
+                    inputParams.remove(atOffsets: indexSet)
+                }
+
+                Button {
+                    withAnimation(.spring(duration: SolaceTheme.springDuration)) {
+                        inputParams.append(EditableInputParam())
+                    }
+                } label: {
+                    HStack(spacing: SolaceTheme.sm) {
+                        Image(systemName: "plus.circle.fill")
+                            .foregroundStyle(.heart)
+                        Text("Add Input Parameter")
+                            .foregroundStyle(.heart)
+                    }
+                }
+                .listRowBackground(Color.surface)
             } else {
                 HStack {
                     Text("Source")
@@ -265,9 +339,7 @@ struct WorkflowEditorView: View {
             }
 
             Button {
-                withAnimation(.spring(duration: SolaceTheme.springDuration)) {
-                    steps.append(EditableStep())
-                }
+                showTemplatePicker = true
             } label: {
                 HStack(spacing: SolaceTheme.sm) {
                     Image(systemName: "plus.circle.fill")
@@ -368,6 +440,43 @@ struct WorkflowEditorView: View {
         .listRowBackground(Color.surface)
     }
 
+    private func inputParamRow(param: Binding<EditableInputParam>, index: Int) -> some View {
+        VStack(alignment: .leading, spacing: SolaceTheme.sm) {
+            HStack {
+                Image(systemName: "text.cursor")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.electricBlue)
+                TextField("Parameter name (e.g. url)", text: param.name)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.textPrimary)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+            }
+
+            HStack {
+                Text("Label")
+                    .font(.timestamp)
+                    .foregroundStyle(.trust)
+                    .frame(width: 60, alignment: .leading)
+                TextField("Human-readable label", text: param.label)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.textPrimary)
+            }
+
+            HStack {
+                Text("Hint")
+                    .font(.timestamp)
+                    .foregroundStyle(.trust)
+                    .frame(width: 60, alignment: .leading)
+                TextField("Placeholder text", text: param.placeholder)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.textPrimary)
+            }
+        }
+        .padding(.vertical, SolaceTheme.xs)
+        .listRowBackground(Color.surface)
+    }
+
     // MARK: - Notifications Section
 
     private var notificationsSection: some View {
@@ -413,12 +522,26 @@ struct WorkflowEditorView: View {
             resolvedCron = nil
         }
 
+        let resolvedInputParams: [InputParamInfo]?
+        if triggerType == "manual" && !inputParams.isEmpty {
+            resolvedInputParams = inputParams.filter { !$0.name.isEmpty }.map { param in
+                InputParamInfo(
+                    name: param.name,
+                    label: param.label.isEmpty ? param.name : param.label,
+                    placeholder: param.placeholder.isEmpty ? nil : param.placeholder
+                )
+            }
+        } else {
+            resolvedInputParams = nil
+        }
+
         let trigger = WorkflowTriggerInfo(
             type: triggerType,
             cronExpression: resolvedCron,
             eventSource: triggerType == "event" ? eventSource : nil,
             eventType: triggerType == "event" ? eventType : nil,
-            eventFilter: nil
+            eventFilter: nil,
+            inputParams: resolvedInputParams
         )
 
         let workflowSteps = steps.enumerated().map { index, step in
@@ -427,7 +550,7 @@ struct WorkflowEditorView: View {
                 name: step.name.isEmpty ? "Step \(index + 1)" : step.name,
                 toolName: step.toolName,
                 serverName: step.serverName,
-                inputs: [:],
+                inputs: step.inputs,
                 dependsOn: nil,
                 onError: step.onError
             )
@@ -474,8 +597,19 @@ struct WorkflowEditorView: View {
                 name: step.name,
                 toolName: step.toolName,
                 serverName: step.serverName,
-                onError: step.onError
+                onError: step.onError,
+                inputs: step.inputs
             )
+        }
+
+        if let params = existing.trigger.inputParams {
+            inputParams = params.map { param in
+                EditableInputParam(
+                    name: param.name,
+                    label: param.label,
+                    placeholder: param.placeholder ?? ""
+                )
+            }
         }
     }
 

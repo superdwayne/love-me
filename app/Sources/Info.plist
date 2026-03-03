@@ -3,7 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Solace needs access to your microphone to record voice notes for chat messages.</string>
+	<string>Solace needs access to your microphone for voice input.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Solace uses speech recognition to convert your voice into text messages.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Solace needs access to your local network to discover and connect to the daemon running on your Mac.</string>
 	<key>NSBonjourServices</key>

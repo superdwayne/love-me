@@ -37,6 +37,21 @@ final class ChatViewModel {
     var pendingAttachments: [PendingAttachment] = []
     var replyingToMessage: Message?
 
+    // Search state
+    var isSearchActive: Bool = false
+    var searchQuery: String = ""
+    var searchMatches: [(messageId: String, range: Range<String.Index>)] = []
+    var currentMatchIndex: Int = 0
+
+    var currentMatchMessageId: String? {
+        guard !searchMatches.isEmpty, currentMatchIndex < searchMatches.count else { return nil }
+        return searchMatches[currentMatchIndex].messageId
+    }
+
+    // Editing state
+    var editingMessageId: String?
+    var editingText: String = ""
+
     private let webSocket: WebSocketClient
 
     /// The daemon host (used to rewrite localhost image URLs for network access)
@@ -114,6 +129,103 @@ final class ChatViewModel {
 
     func clearReply() {
         replyingToMessage = nil
+    }
+
+    // MARK: - Search
+
+    func toggleSearch() {
+        isSearchActive.toggle()
+        if !isSearchActive {
+            searchQuery = ""
+            searchMatches = []
+            currentMatchIndex = 0
+        }
+    }
+
+    func updateSearchResults() {
+        guard !searchQuery.isEmpty else {
+            searchMatches = []
+            currentMatchIndex = 0
+            return
+        }
+
+        let query = searchQuery.lowercased()
+        var matches: [(messageId: String, range: Range<String.Index>)] = []
+
+        for message in messages {
+            let content = message.content.lowercased()
+            var searchStart = content.startIndex
+            while let range = content.range(of: query, range: searchStart..<content.endIndex) {
+                matches.append((messageId: message.id, range: range))
+                searchStart = range.upperBound
+            }
+        }
+
+        searchMatches = matches
+        currentMatchIndex = matches.isEmpty ? 0 : max(0, matches.count - 1)
+    }
+
+    func nextMatch() {
+        guard !searchMatches.isEmpty else { return }
+        currentMatchIndex = (currentMatchIndex + 1) % searchMatches.count
+    }
+
+    func previousMatch() {
+        guard !searchMatches.isEmpty else { return }
+        currentMatchIndex = (currentMatchIndex - 1 + searchMatches.count) % searchMatches.count
+    }
+
+    // MARK: - Editing
+
+    func startEditing(_ message: Message) {
+        editingMessageId = message.id
+        editingText = message.content
+    }
+
+    func cancelEditing() {
+        editingMessageId = nil
+        editingText = ""
+    }
+
+    func saveEdit() {
+        guard let editingId = editingMessageId,
+              let message = messages.first(where: { $0.id == editingId }) else { return }
+
+        let originalContent = message.content
+        let newContent = editingText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !newContent.isEmpty, newContent != originalContent else {
+            cancelEditing()
+            return
+        }
+
+        // Optimistically update local state
+        message.content = newContent
+        message.isEdited = true
+
+        // Remove all messages after the edited one
+        if let index = messages.firstIndex(where: { $0.id == editingId }) {
+            messages.removeSubrange((index + 1)...)
+        }
+
+        // Send edit to daemon
+        let wsMsg = WSMessage(
+            type: WSMessageType.editMessage,
+            conversationId: currentConversationId,
+            content: newContent,
+            metadata: ["originalContent": .string(originalContent)]
+        )
+        webSocket.send(wsMsg)
+
+        // Prepare for streaming response
+        isStreaming = true
+        let assistantMessage = Message(
+            role: .assistant,
+            isStreaming: true,
+            timestamp: Date()
+        )
+        messages.append(assistantMessage)
+
+        cancelEditing()
     }
 
     // MARK: - Public Actions
@@ -301,6 +413,10 @@ final class ChatViewModel {
 
         case WSMessageType.conversationLoaded:
             handleConversationLoaded(msg)
+
+        case WSMessageType.messageEdited:
+            // Server confirmed the edit, nothing extra needed since we optimistically updated
+            break
 
         default:
             break

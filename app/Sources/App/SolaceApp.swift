@@ -10,6 +10,7 @@ struct SolaceApp: App {
     @State private var emailVM: EmailViewModel
     @State private var settingsVM: SettingsViewModel
     @State private var bonjourBrowser = BonjourBrowser()
+    @State private var linkPreviewService = LinkPreviewService()
 
     init() {
         let ws = WebSocketClient()
@@ -53,6 +54,7 @@ struct SolaceApp: App {
                 .environment(emailVM)
                 .environment(settingsVM)
                 .environment(bonjourBrowser)
+                .environment(linkPreviewService)
                 .preferredColorScheme(.dark)
                 .task {
                     await autoConnect()

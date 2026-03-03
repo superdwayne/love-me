@@ -218,6 +218,18 @@ final class WebSocketClient {
                     HapticManager.connectionEstablished()
                 }
 
+                // Update active provider when provider changes
+                if wsMessage.type == WSMessageType.providerUpdated {
+                    if let success = wsMessage.metadata?["success"]?.boolValue, success {
+                        if let provider = wsMessage.metadata?["provider"]?.stringValue {
+                            self.activeProvider = provider
+                        }
+                        if let model = wsMessage.metadata?["model"]?.stringValue {
+                            self.activeModel = model
+                        }
+                    }
+                }
+
                 if wsMessage.type == WSMessageType.pong {
                     return
                 }
