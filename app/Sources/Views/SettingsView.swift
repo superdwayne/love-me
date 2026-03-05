@@ -220,9 +220,7 @@ struct SettingsView: View {
                         Circle()
                             .fill(Color.sageGreen)
                             .frame(width: 8, height: 8)
-                        Text(settingsVM.activeProvider == "ollama"
-                             ? "Ollama: \(settingsVM.activeModel)"
-                             : "Claude")
+                        Text(activeProviderLabel)
                             .foregroundStyle(.trust)
                     }
                 }
@@ -235,10 +233,11 @@ struct SettingsView: View {
                     Spacer()
                     Picker("", selection: $settings.selectedProvider) {
                         Text("Claude").tag("claude")
+                        Text("OpenAI").tag("openai")
                         Text("Ollama").tag("ollama")
                     }
                     .pickerStyle(.segmented)
-                    .frame(maxWidth: 200)
+                    .frame(maxWidth: 260)
                     .onChange(of: settingsVM.selectedProvider) { _, newValue in
                         if newValue == "claude" {
                             settingsVM.setProvider("claude")
@@ -246,6 +245,66 @@ struct SettingsView: View {
                     }
                 }
                 .listRowBackground(Color.surface)
+
+                // OpenAI configuration fields
+                if settingsVM.selectedProvider == "openai" {
+                    HStack {
+                        Text("Model")
+                            .foregroundStyle(.textPrimary)
+                        Spacer()
+                        TextField("gpt-4o",
+                                  text: Binding(
+                                    get: { settingsVM.openaiModel },
+                                    set: { settingsVM.openaiModel = $0 }
+                                  ))
+                            .multilineTextAlignment(.trailing)
+                            .foregroundStyle(.textPrimary)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                    }
+                    .listRowBackground(Color.surface)
+
+                    Text("API key is configured on the daemon via OPENAI_API_KEY in ~/.solace/.env")
+                        .font(.toolDetail)
+                        .foregroundStyle(.trust.opacity(0.7))
+                        .listRowBackground(Color.surface)
+
+                    // Connect button
+                    Button {
+                        settingsVM.setProvider("openai",
+                                               model: settingsVM.openaiModel)
+                    } label: {
+                        HStack {
+                            Spacer()
+                            if settingsVM.isSwitchingProvider {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                                    .tint(.trust)
+                                Text("Connecting...")
+                                    .foregroundStyle(.trust)
+                            } else {
+                                Text(settingsVM.activeProvider == "openai" ? "Update OpenAI" : "Connect to OpenAI")
+                                    .foregroundStyle(.heart)
+                            }
+                            Spacer()
+                        }
+                    }
+                    .disabled(settingsVM.isSwitchingProvider)
+                    .listRowBackground(Color.surface)
+
+                    // Error message
+                    if let error = settingsVM.providerError {
+                        HStack(spacing: SolaceTheme.xs) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.softRed)
+                                .font(.system(size: 12))
+                            Text(error)
+                                .font(.toolDetail)
+                                .foregroundStyle(.softRed)
+                        }
+                        .listRowBackground(Color.surface)
+                    }
+                }
 
                 // Ollama configuration fields (shown when Ollama is selected or configured)
                 if settingsVM.selectedProvider == "ollama" {
@@ -446,6 +505,19 @@ struct SettingsView: View {
                 .font(.sectionHeader)
                 .foregroundStyle(.trust)
                 .tracking(1.2)
+        }
+    }
+
+    // MARK: - Computed Properties
+
+    private var activeProviderLabel: String {
+        switch settingsVM.activeProvider {
+        case "ollama":
+            return "Ollama: \(settingsVM.activeModel)"
+        case "openai":
+            return "OpenAI: \(settingsVM.activeModel)"
+        default:
+            return "Claude"
         }
     }
 

@@ -1477,6 +1477,35 @@ actor DaemonApp {
             )
         }
 
+        // Wire auto-workflow builder for emails Claude recommends as "workflow"
+        await bridge.setBuildAndExecuteWorkflow { [weak self] prompt, conversationId in
+            guard let self = self else { return false }
+            guard let workflow = await self.buildWorkflowFromPrompt(prompt) else { return false }
+            do {
+                try await self.workflowStore.create(workflow)
+                let queue = self.workflowQueue
+                await queue.enqueue(
+                    workflow: workflow,
+                    triggerInfo: "auto_email_workflow",
+                    priority: .high,
+                    onComplete: { execution in
+                        switch execution.status {
+                        case .completed:
+                            Logger.info("Email auto-workflow '\(workflow.name)' completed")
+                        case .failed:
+                            Logger.error("Email auto-workflow '\(workflow.name)' failed")
+                        default:
+                            break
+                        }
+                    }
+                )
+                return true
+            } catch {
+                Logger.error("Failed to save/enqueue email auto-workflow: \(error)")
+                return false
+            }
+        }
+
         // Wire approval notifications to broadcast to clients
         let server = self.server
         await bridge.setOnApprovalCreated { [self] approval in

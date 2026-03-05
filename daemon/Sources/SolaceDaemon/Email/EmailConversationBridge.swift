@@ -29,6 +29,11 @@ actor EmailConversationBridge {
 
     private var onApprovalCreated: ApprovalCreatedHandler?
 
+    /// Builds and executes a workflow from a prompt. Input: email body prompt. Output: true if successful.
+    typealias WorkflowBuilder = @Sendable (String, String?) async -> Bool
+
+    private var buildAndExecuteWorkflow: WorkflowBuilder?
+
     // MARK: - Init
 
     init(
@@ -57,6 +62,10 @@ actor EmailConversationBridge {
 
     func setOnApprovalCreated(_ handler: @escaping ApprovalCreatedHandler) {
         self.onApprovalCreated = handler
+    }
+
+    func setBuildAndExecuteWorkflow(_ builder: @escaping WorkflowBuilder) {
+        self.buildAndExecuteWorkflow = builder
     }
 
     // MARK: - Public API
@@ -178,6 +187,18 @@ actor EmailConversationBridge {
             if result.recommendation == "dismiss" {
                 Logger.info("EmailConversationBridge: recommended dismiss for '\(email.subject)', skipping approval")
                 return
+            }
+
+            // Auto-build workflow when Claude recommends it and builder is available
+            if result.recommendation == "workflow", let builder = buildAndExecuteWorkflow {
+                let workflowPrompt = "From email by \(email.from) — Subject: \(email.subject)\n\n\(String(email.bodyText.prefix(4000)))"
+                Logger.info("EmailConversationBridge: auto-building workflow for '\(email.subject)'")
+                let success = await builder(workflowPrompt, conversationId)
+                if success {
+                    Logger.info("EmailConversationBridge: auto-workflow created for '\(email.subject)'")
+                    return
+                }
+                Logger.error("EmailConversationBridge: auto-workflow failed for '\(email.subject)', falling back to approval")
             }
 
             await createUnifiedApproval(
