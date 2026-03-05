@@ -13,7 +13,6 @@ struct ContentView: View {
         case chat
         case workflows
         case agentMail
-        case voice
     }
 
     private var pendingApprovalCount: Int {
@@ -63,15 +62,6 @@ struct ContentView: View {
             .tag(AppTab.agentMail)
             .badge(pendingApprovalCount > 0 ? pendingApprovalCount : 0)
 
-            // Voice Tab
-            NavigationStack {
-                VoiceTabView()
-            }
-            .tint(.heart)
-            .tabItem {
-                Label("Voice", systemImage: "waveform")
-            }
-            .tag(AppTab.voice)
         }
         .tint(.heart)
         .onChange(of: emailVM.navigateToConversationId) { _, conversationId in

@@ -4,6 +4,7 @@ struct SettingsView: View {
     @Environment(WebSocketClient.self) private var webSocket
     @Environment(BonjourBrowser.self) private var bonjourBrowser
     @Environment(SettingsViewModel.self) private var settingsVM
+    @Environment(AmbientListeningViewModel.self) private var ambientVM
     @Environment(\.dismiss) private var dismiss
     @AppStorage("ws_host") private var host = "localhost"
     @AppStorage("ws_port") private var port = 9200
@@ -24,6 +25,7 @@ struct SettingsView: View {
                 connectionSection
                 aiProviderSection
                 mcpServersSection
+                ambientListeningSection
                 aboutSection
                 dataSection
             }
@@ -438,6 +440,31 @@ struct SettingsView: View {
         }
         .onAppear {
             settingsVM.requestMCPServersList()
+        }
+    }
+
+    private var ambientListeningSection: some View {
+        Section {
+            HStack {
+                Text("Ambient Listening")
+                    .foregroundStyle(.textPrimary)
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { ambientVM.isListening },
+                    set: { _ in ambientVM.toggleListening() }
+                ))
+                .tint(.sageGreen)
+                .labelsHidden()
+            }
+            .listRowBackground(Color.surface)
+        } header: {
+            Text("AMBIENT LISTENING")
+                .font(.sectionHeader)
+                .foregroundStyle(.trust)
+                .tracking(1.2)
+        } footer: {
+            Text("Continuously captures speech and sends it to Solace for analysis.")
+                .foregroundStyle(.trust.opacity(0.6))
         }
     }
 
