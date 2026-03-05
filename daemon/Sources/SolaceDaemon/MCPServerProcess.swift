@@ -17,7 +17,10 @@ private final class MCPState: @unchecked Sendable {
 }
 
 /// Wraps an individual MCP server child process communicating via JSON-RPC over stdio
-final class MCPServerProcess: Sendable {
+///
+/// Conforms to MCPTransport protocol for unified transport abstraction.
+/// Launches a child process and communicates via stdio pipes.
+final class MCPServerProcess: MCPTransport {
     let name: String
     private let config: MCPServerConfig
     private let state = MCPState()
@@ -154,11 +157,14 @@ final class MCPServerProcess: Sendable {
                 toolDesc = ""
             }
             let inputSchema = toolObj["inputSchema"] ?? .object(["type": .string("object")])
+            let inferred = ToolTypeInference.infer(name: toolName, description: toolDesc, inputSchema: inputSchema)
             tools.append(MCPToolInfo(
                 name: toolName,
                 description: toolDesc,
                 inputSchema: inputSchema,
-                serverName: name
+                serverName: name,
+                outputType: inferred.output,
+                acceptsInputTypes: inferred.accepts
             ))
         }
 

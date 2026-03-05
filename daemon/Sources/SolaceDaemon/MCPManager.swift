@@ -3,11 +3,12 @@ import Foundation
 /// Manages MCP server lifecycle and tool routing
 actor MCPManager {
     private let config: DaemonConfig
-    private var stdioServers: [String: MCPServerProcess] = [:]
-    private var httpServers: [String: MCPHTTPServerProcess] = [:]
+    /// Unified server storage: all transports (stdio, HTTP, etc.) conform to MCPTransport protocol
+    private var servers: [String: MCPTransport] = [:]
     private var allTools: [MCPToolInfo] = []
     private var toolToServer: [String: String] = [:]
     private var enabledState: [String: Bool] = [:]
+    private var externalHandlers: [String: @Sendable (String, JSONValue) async throws -> MCPToolCallResult] = [:]
 
     init(config: DaemonConfig) {
         self.config = config
@@ -40,8 +41,7 @@ actor MCPManager {
                 }
             }
 
-            let totalServers = stdioServers.count + httpServers.count
-            Logger.info("MCP Manager: \(totalServers) server(s) started, \(allTools.count) tool(s) available")
+            Logger.info("MCP Manager: \(servers.count) server(s) started, \(allTools.count) tool(s) available")
         } catch {
             Logger.error("Failed to load MCP config: \(error)")
         }
@@ -49,20 +49,20 @@ actor MCPManager {
 
     /// Start a stdio-based MCP server
     private func startStdioServer(name: String, config: MCPServerConfig) async {
-        let process = MCPServerProcess(name: name, config: config)
+        let transport: MCPTransport = MCPServerProcess(name: name, config: config)
 
         do {
-            try await process.start()
-            stdioServers[name] = process
+            try await transport.start()
+            servers[name] = transport
 
-            let tools = try await process.discoverTools()
+            let tools = try await transport.discoverTools()
             for tool in tools {
                 allTools.append(tool)
                 toolToServer[tool.name] = name
             }
         } catch MCPError.timeout {
             Logger.error("MCP server '\(name)' timed out during startup - skipping")
-            process.stop()
+            transport.stop()
         } catch {
             Logger.error("Failed to start MCP server '\(name)': \(error)")
         }
@@ -72,16 +72,16 @@ actor MCPManager {
     private func startHTTPServer(name: String, config: MCPServerConfig) async {
         guard let url = config.url else { return }
 
-        let process = MCPHTTPServerProcess(name: name, url: url, headers: config.headers)
+        let transport: MCPTransport = MCPHTTPServerProcess(name: name, url: url, headers: config.headers)
 
         do {
             try await withTimeout(seconds: 30) {
-                try await process.start()
+                try await transport.start()
             }
-            httpServers[name] = process
+            servers[name] = transport
 
             let tools = try await withTimeout(seconds: 15) {
-                try await process.discoverTools()
+                try await transport.discoverTools()
             }
             for tool in tools {
                 allTools.append(tool)
@@ -89,7 +89,7 @@ actor MCPManager {
             }
         } catch MCPError.timeout {
             Logger.error("MCP HTTP server '\(name)' timed out during startup - skipping")
-            process.stop()
+            transport.stop()
         } catch {
             Logger.error("Failed to start MCP HTTP server '\(name)': \(error)")
         }
@@ -135,10 +135,10 @@ actor MCPManager {
         Logger.info("MCP Manager: routing tool '\(name)' to server '\(serverName)'")
 
         let result: MCPToolCallResult
-        if let stdioServer = stdioServers[serverName] {
-            result = try await stdioServer.callTool(name: name, arguments: arguments)
-        } else if let httpServer = httpServers[serverName] {
-            result = try await httpServer.callTool(name: name, arguments: arguments)
+        if let transport = servers[serverName] {
+            result = try await transport.callTool(name: name, arguments: arguments)
+        } else if let handler = externalHandlers[serverName] {
+            result = try await handler(name, arguments)
         } else {
             throw MCPError.toolNotFound(name)
         }
@@ -163,7 +163,7 @@ actor MCPManager {
 
     /// The names of all active (started) MCP servers
     var activeServerNames: Set<String> {
-        Set(stdioServers.keys).union(httpServers.keys)
+        Set(servers.keys)
     }
 
     // MARK: - Server Enabled State
@@ -180,9 +180,10 @@ actor MCPManager {
 
     /// Get info about all servers (name, type, enabled state, tool count)
     func getServerInfoList() -> [(name: String, isStdio: Bool, enabled: Bool, toolCount: Int)] {
-        let allServerNames = Set(stdioServers.keys).union(httpServers.keys)
-        return allServerNames.sorted().map { name in
-            let isStdio = stdioServers[name] != nil
+        return Set(servers.keys).sorted().map { name in
+            let transport = servers[name]
+            // Determine type by checking if it's a stdio transport (MCPServerProcess) vs HTTP
+            let isStdio = transport is MCPServerProcess
             let enabled = isServerEnabled(name)
             let count = allTools.filter { $0.serverName == name }.count
             return (name: name, isStdio: isStdio, enabled: enabled, toolCount: count)
@@ -191,26 +192,35 @@ actor MCPManager {
 
     /// Get server statuses for health endpoint
     func serverStatuses() -> [(name: String, running: Bool, toolCount: Int)] {
-        let allServerNames = Set(stdioServers.keys).union(httpServers.keys)
-        return allServerNames.sorted().map { name in
+        return Set(servers.keys).sorted().map { name in
             let enabled = isServerEnabled(name)
             let count = allTools.filter { $0.serverName == name }.count
             return (name: name, running: enabled, toolCount: count)
         }
     }
 
+    /// Register tools from an external handler (e.g. built-in email server)
+    func registerExternalTools(
+        serverName: String,
+        tools: [MCPToolInfo],
+        handler: @escaping @Sendable (String, JSONValue) async throws -> MCPToolCallResult
+    ) {
+        enabledState[serverName] = true
+        externalHandlers[serverName] = handler
+        for tool in tools {
+            allTools.append(tool)
+            toolToServer[tool.name] = serverName
+        }
+        Logger.info("MCP Manager: registered \(tools.count) external tool(s) from '\(serverName)'")
+    }
+
     /// Stop all MCP servers
     func stopAll() async {
-        for (name, server) in stdioServers {
-            server.stop()
+        for (name, transport) in servers {
+            transport.stop()
             Logger.info("MCP server '\(name)' shut down")
         }
-        for (name, server) in httpServers {
-            server.stop()
-            Logger.info("MCP HTTP server '\(name)' shut down")
-        }
-        stdioServers.removeAll()
-        httpServers.removeAll()
+        servers.removeAll()
         allTools.removeAll()
         toolToServer.removeAll()
         enabledState.removeAll()

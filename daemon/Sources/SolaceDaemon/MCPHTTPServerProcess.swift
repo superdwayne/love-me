@@ -1,7 +1,10 @@
 import Foundation
 
 /// Wraps an MCP server accessible via Streamable HTTP transport (POST JSON-RPC to a URL endpoint)
-final class MCPHTTPServerProcess: Sendable {
+///
+/// Conforms to MCPTransport protocol for unified transport abstraction.
+/// Communicates with remote MCP server via HTTP POST with Server-Sent Events for streaming responses.
+final class MCPHTTPServerProcess: MCPTransport {
     let name: String
     private let endpointURL: URL
     private let customHeaders: [String: String]
@@ -73,11 +76,14 @@ final class MCPHTTPServerProcess: Sendable {
                 toolDesc = ""
             }
             let inputSchema = toolObj["inputSchema"] ?? .object(["type": .string("object")])
+            let inferred = ToolTypeInference.infer(name: toolName, description: toolDesc, inputSchema: inputSchema)
             tools.append(MCPToolInfo(
                 name: toolName,
                 description: toolDesc,
                 inputSchema: inputSchema,
-                serverName: name
+                serverName: name,
+                outputType: inferred.output,
+                acceptsInputTypes: inferred.accepts
             ))
         }
 
