@@ -5,6 +5,7 @@ struct ContentView: View {
     @Environment(ConversationListViewModel.self) private var conversationListVM
     @Environment(WorkflowViewModel.self) private var workflowVM
     @Environment(EmailViewModel.self) private var emailVM
+    @Environment(AmbientListeningViewModel.self) private var ambientVM
     @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
     @State private var selectedConversation: String?
     @State private var selectedTab: AppTab = .chat
@@ -64,6 +65,11 @@ struct ContentView: View {
 
         }
         .tint(.heart)
+        .overlay {
+            if ambientVM.isListening || !ambientVM.suggestions.isEmpty {
+                AmbientListeningOverlay()
+            }
+        }
         .onChange(of: emailVM.navigateToConversationId) { _, conversationId in
             guard let conversationId else { return }
             selectedTab = .chat
@@ -223,45 +229,49 @@ struct AgentMailTabView: View {
                 .listRowBackground(Color.surface)
             } else {
                 ForEach(emailVM.inboxMessages) { message in
-                    HStack(spacing: SolaceTheme.md) {
-                        Image(systemName: "envelope.fill")
-                            .font(.system(size: 14))
-                            .foregroundStyle(.trust)
-                            .frame(width: 20)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(message.subject)
-                                .font(.chatMessage)
-                                .fontWeight(.medium)
-                                .foregroundStyle(.textPrimary)
-                                .lineLimit(1)
-
-                            Text(message.from)
-                                .font(.toolDetail)
+                    NavigationLink {
+                        EmailDetailView(messageId: message.id)
+                    } label: {
+                        HStack(spacing: SolaceTheme.md) {
+                            Image(systemName: "envelope.fill")
+                                .font(.system(size: 14))
                                 .foregroundStyle(.trust)
-                                .lineLimit(1)
+                                .frame(width: 20)
 
-                            Text(message.preview)
-                                .font(.toolDetail)
-                                .foregroundStyle(.trust.opacity(0.7))
-                                .lineLimit(1)
-                        }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(message.subject)
+                                    .font(.chatMessage)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(.textPrimary)
+                                    .lineLimit(1)
 
-                        Spacer()
+                                Text(message.from)
+                                    .font(.toolDetail)
+                                    .foregroundStyle(.trust)
+                                    .lineLimit(1)
 
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(relativeDate(message.date))
-                                .font(.timestamp)
-                                .foregroundStyle(.trust)
+                                Text(message.preview)
+                                    .font(.toolDetail)
+                                    .foregroundStyle(.trust.opacity(0.7))
+                                    .lineLimit(1)
+                            }
 
-                            if message.attachmentCount > 0 {
-                                Image(systemName: "paperclip")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.trust.opacity(0.5))
+                            Spacer()
+
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(relativeDate(message.date))
+                                    .font(.timestamp)
+                                    .foregroundStyle(.trust)
+
+                                if message.attachmentCount > 0 {
+                                    Image(systemName: "paperclip")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.trust.opacity(0.5))
+                                }
                             }
                         }
+                        .frame(minHeight: SolaceTheme.minTouchTarget)
                     }
-                    .frame(minHeight: SolaceTheme.minTouchTarget)
                     .listRowBackground(Color.surface)
                 }
             }

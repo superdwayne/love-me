@@ -77,7 +77,7 @@ struct WorkflowListView: View {
         }
         .sheet(isPresented: $showBuilder) {
             NavigationStack {
-                WorkflowBuilderView()
+                WorkflowBuilderWrapperView()
             }
         }
         .alert("Delete Workflow", isPresented: $showDeleteAlert) {

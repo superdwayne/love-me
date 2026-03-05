@@ -411,9 +411,14 @@ struct SettingsView: View {
                     .listRowBackground(Color.surface)
             } else {
                 ForEach(settingsVM.mcpServers) { server in
-                    HStack {
+                    let brand = ServerBrandConfig.brand(for: server.name)
+                    HStack(spacing: SolaceTheme.md) {
+                        Image(systemName: brand.icon)
+                            .font(.system(size: 16))
+                            .foregroundStyle(brand.color)
+                            .frame(width: 24)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(server.name)
+                            Text(brand.displayName)
                                 .foregroundStyle(.textPrimary)
                             Text("\(server.type) \u{00B7} \(server.toolCount) tool\(server.toolCount == 1 ? "" : "s")")
                                 .font(.toolDetail)
