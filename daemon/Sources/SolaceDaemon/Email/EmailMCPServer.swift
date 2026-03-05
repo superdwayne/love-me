@@ -116,11 +116,15 @@ actor EmailMCPServer {
     /// Convert tool definitions to MCPToolInfo format for registration with MCPManager.
     func getMCPToolInfos() -> [MCPToolInfo] {
         getToolDefinitions().map { def in
-            MCPToolInfo(
+            let schema = buildInputSchema(from: def)
+            let inferred = ToolTypeInference.infer(name: def.name, description: def.description, inputSchema: schema)
+            return MCPToolInfo(
                 name: def.name,
                 description: def.description,
-                inputSchema: buildInputSchema(from: def),
-                serverName: Self.serverName
+                inputSchema: schema,
+                serverName: Self.serverName,
+                outputType: inferred.output,
+                acceptsInputTypes: inferred.accepts
             )
         }
     }

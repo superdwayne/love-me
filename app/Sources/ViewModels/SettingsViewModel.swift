@@ -32,6 +32,9 @@ final class SettingsViewModel {
     var isTestingOllama = false
     var ollamaTestResult: OllamaTestResult?
 
+    // OpenAI config fields (editable)
+    var openaiModel: String = "gpt-4o"
+
     enum OllamaTestResult {
         case success
         case failed(String)
@@ -147,13 +150,17 @@ final class SettingsViewModel {
             )
             loaded.append(info)
 
-            // Populate editable fields from current Ollama config
+            // Populate editable fields from current provider configs
             if name == "ollama" {
                 if !info.endpoint.isEmpty {
                     ollamaEndpoint = info.endpoint
                 }
                 if !info.model.isEmpty {
                     ollamaModel = info.model
+                }
+            } else if name == "openai" {
+                if !info.model.isEmpty {
+                    openaiModel = info.model
                 }
             }
         }

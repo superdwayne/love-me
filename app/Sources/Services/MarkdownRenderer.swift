@@ -22,7 +22,7 @@ enum MarkdownRenderer {
                     if !codeBlockContent.isEmpty {
                         var codeAttr = AttributedString(codeBlockContent)
                         codeAttr.font = .codeFont
-                        codeAttr.foregroundColor = Color(red: 241/255, green: 241/255, blue: 244/255)
+                        codeAttr.foregroundColor = .textPrimary
                         codeAttr.backgroundColor = .codeBg
                         result.append(codeAttr)
                         result.append(AttributedString("\n"))
@@ -94,7 +94,7 @@ enum MarkdownRenderer {
         if inCodeBlock && !codeBlockContent.isEmpty {
             var codeAttr = AttributedString(codeBlockContent)
             codeAttr.font = .codeFont
-            codeAttr.foregroundColor = Color(red: 241/255, green: 241/255, blue: 244/255)
+            codeAttr.foregroundColor = .textPrimary
             codeAttr.backgroundColor = .codeBg
             result.append(codeAttr)
         }
@@ -122,8 +122,8 @@ enum MarkdownRenderer {
             let attrRange = attrStart..<attrEnd
 
             result[attrRange].backgroundColor = isActiveMatch
-                ? Color.amberGlow.opacity(0.6)
-                : Color.amberGlow.opacity(0.3)
+                ? Color.warning.opacity(0.6)
+                : Color.warning.opacity(0.3)
 
             searchStart = range.upperBound
         }
@@ -145,7 +145,7 @@ enum MarkdownRenderer {
                     var codeAttr = AttributedString(code)
                     codeAttr.font = .system(size: 14, design: .monospaced)
                     codeAttr.backgroundColor = .codeBg
-                    codeAttr.foregroundColor = Color(red: 241/255, green: 241/255, blue: 244/255)
+                    codeAttr.foregroundColor = .textPrimary
                     result.append(codeAttr)
                     remaining = remaining[remaining.index(after: endTick)...]
                     continue
@@ -189,7 +189,7 @@ enum MarkdownRenderer {
                             let linkText = String(remaining[afterBracket..<closeBracket])
                             let urlString = String(remaining[afterParen..<closeParen])
                             var linkAttr = AttributedString(linkText)
-                            linkAttr.foregroundColor = .electricBlue
+                            linkAttr.foregroundColor = .info
                             linkAttr.underlineStyle = .single
                             if let url = URL(string: urlString) {
                                 linkAttr.link = url

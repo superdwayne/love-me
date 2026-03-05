@@ -9,8 +9,10 @@ struct SolaceApp: App {
     @State private var workflowVM: WorkflowViewModel
     @State private var emailVM: EmailViewModel
     @State private var settingsVM: SettingsViewModel
+    @State private var ambientVM: AmbientListeningViewModel
     @State private var bonjourBrowser = BonjourBrowser()
     @State private var linkPreviewService = LinkPreviewService()
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         let ws = WebSocketClient()
@@ -19,6 +21,7 @@ struct SolaceApp: App {
         let workflow = WorkflowViewModel(webSocket: ws)
         let email = EmailViewModel(webSocket: ws)
         let settings = SettingsViewModel(webSocket: ws)
+        let ambient = AmbientListeningViewModel(webSocket: ws)
 
         // Wire up message routing to all view models
         ws.onMessage = { @MainActor message in
@@ -27,6 +30,7 @@ struct SolaceApp: App {
             workflow.handleMessage(message)
             email.handleMessage(message)
             settings.handleMessage(message)
+            ambient.handleMessage(message)
         }
 
         _webSocket = State(initialValue: ws)
@@ -35,6 +39,7 @@ struct SolaceApp: App {
         _workflowVM = State(initialValue: workflow)
         _emailVM = State(initialValue: email)
         _settingsVM = State(initialValue: settings)
+        _ambientVM = State(initialValue: ambient)
 
         // Request notification permission
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
@@ -53,11 +58,30 @@ struct SolaceApp: App {
                 .environment(workflowVM)
                 .environment(emailVM)
                 .environment(settingsVM)
+                .environment(ambientVM)
                 .environment(bonjourBrowser)
                 .environment(linkPreviewService)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(.light)
                 .task {
                     await autoConnect()
+                }
+                .onChange(of: scenePhase) { _, newPhase in
+                    let musicEnabled = UserDefaults.standard.bool(forKey: "ambient_music_enabled")
+                    switch newPhase {
+                    case .active:
+                        if musicEnabled {
+                            AmbientMusicManager.shared.fadeIn()
+                        }
+                    case .background:
+                        if AmbientMusicManager.shared.isPlaying {
+                            AmbientMusicManager.shared.fadeOut()
+                        }
+                        if ambientVM.isListening {
+                            ambientVM.toggleListening()
+                        }
+                    default:
+                        break
+                    }
                 }
         }
     }

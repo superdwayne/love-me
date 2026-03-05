@@ -50,11 +50,32 @@
 		C8CDB55A0E0A1A1B221CA908 /* WorkflowExecutionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 239984BDB5B06C5F5AA127E9 /* WorkflowExecutionView.swift */; };
 		D1A2B3C4E5F60005A2B3C4D5 /* SpeechRecognitionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F60005A2B3C4D6 /* SpeechRecognitionManager.swift */; };
 		E1F4A83D2C7B9E0F00A1B2C3 /* EmailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F4A83C2C7B9E0F00A1B2C3 /* EmailViewModel.swift */; };
+		3DFC37F20CBDEA278EECF1BF /* ConversationBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A8B79B14A405F9F1F7E811E /* ConversationBlockView.swift */; };
 		EA22E42948C42A43394268EF /* ConversationListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F9683C6A0C7EACE0FA68AD9 /* ConversationListView.swift */; };
 		EA734A29167DC252BE3C0512 /* EmailTriggersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 507B46DABC0079BDC637D157 /* EmailTriggersView.swift */; };
 		F1A2B3C4D5E6F7081920ABCD /* EmailApprovalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F7081920ABCE /* EmailApprovalView.swift */; };
 		F3FBD3E8F4B303D2F519D76A /* ConnectionBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBE12B2E96ED817B70C3B6FD /* ConnectionBanner.swift */; };
 		F4387B295CC63DBF3DE864D0 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 176BC2E06CFDBA18907AA518 /* ContentView.swift */; };
+		AA11223344556677AABB0001 /* SpiritGuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11223344556677AABB0002 /* SpiritGuideView.swift */; };
+		AA11223344556677AABB0003 /* GlassModifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11223344556677AABB0004 /* GlassModifiers.swift */; };
+		AA11223344556677AABB0005 /* AmbientBackgroundView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11223344556677AABB0006 /* AmbientBackgroundView.swift */; };
+		BB11223344556677AABB0001 /* SpaceGrotesk-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = BB11223344556677AABB0002 /* SpaceGrotesk-Medium.ttf */; };
+		BB11223344556677AABB0003 /* SpaceGrotesk-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = BB11223344556677AABB0004 /* SpaceGrotesk-Bold.ttf */; };
+		BB11223344556677AABB0005 /* Inter-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = BB11223344556677AABB0006 /* Inter-Regular.ttf */; };
+		BB11223344556677AABB0007 /* Inter-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = BB11223344556677AABB0008 /* Inter-Medium.ttf */; };
+		BB11223344556677AABB0009 /* Inter-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = BB11223344556677AABB000A /* Inter-Bold.ttf */; };
+		CC22334455667788AABB0002 /* ServerBrandConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC22334455667788AABB0001 /* ServerBrandConfig.swift */; };
+		CC22334455667788AABB0006 /* WorkflowBuilderWrapperView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC22334455667788AABB0005 /* WorkflowBuilderWrapperView.swift */; };
+		DD11223344556677AABB0001 /* AmbientMusicManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD11223344556677AABB0002 /* AmbientMusicManager.swift */; };
+		DD11223344556677AABB0003 /* garden.m4a in Resources */ = {isa = PBXBuildFile; fileRef = DD11223344556677AABB0004 /* garden.m4a */; };
+		DD11223344556677AABB0005 /* water.m4a in Resources */ = {isa = PBXBuildFile; fileRef = DD11223344556677AABB0006 /* water.m4a */; };
+		DD11223344556677AABB0007 /* rest.m4a in Resources */ = {isa = PBXBuildFile; fileRef = DD11223344556677AABB0008 /* rest.m4a */; };
+		EE11223344556677AABB0001 /* AmbientListeningManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE11223344556677AABB0002 /* AmbientListeningManager.swift */; };
+		EE11223344556677AABB0003 /* AmbientListeningViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE11223344556677AABB0004 /* AmbientListeningViewModel.swift */; };
+		EE11223344556677AABB0005 /* AmbientListeningOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE11223344556677AABB0006 /* AmbientListeningOverlay.swift */; };
+		AA1B2C3D4E5F6A09B2C3D4E5 /* VoiceTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1B2C3D4E5F6A09B2C3D4E6 /* VoiceTabView.swift */; };
+		BB1B2C3D4E5F6A10B2C3D4E5 /* EmailDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1B2C3D4E5F6A10B2C3D4E6 /* EmailDetailView.swift */; };
+		CC1B2C3D4E5F6A11B2C3D4E5 /* EmailReplyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC1B2C3D4E5F6A11B2C3D4E6 /* EmailReplyView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -79,6 +100,7 @@
 		507B46DABC0079BDC637D157 /* EmailTriggersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailTriggersView.swift; sourceTree = "<group>"; };
 		5ADC742D1AC83496380B9613 /* WebSocketMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketMessage.swift; sourceTree = "<group>"; };
 		5C934430A65F81F55D43D411 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		2A8B79B14A405F9F1F7E811E /* ConversationBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationBlockView.swift; sourceTree = "<group>"; };
 		5F9683C6A0C7EACE0FA68AD9 /* ConversationListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationListView.swift; sourceTree = "<group>"; };
 		721D711231E025E6E7D22354 /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
 		7F78B1B97ED626ED28DBDA80 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
@@ -108,12 +130,34 @@
 		FA964706C90AB2ADB8F48737 /* WorkflowEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowEditorView.swift; sourceTree = "<group>"; };
 		FBAB90B5366DFAAC1309B6DD /* EmailSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailSettingsView.swift; sourceTree = "<group>"; };
 		FF610C4AEFAC2266E2E2CDBE /* Conversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Conversation.swift; sourceTree = "<group>"; };
+		AA11223344556677AABB0002 /* SpiritGuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpiritGuideView.swift; sourceTree = "<group>"; };
+		AA11223344556677AABB0004 /* GlassModifiers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassModifiers.swift; sourceTree = "<group>"; };
+		AA11223344556677AABB0006 /* AmbientBackgroundView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmbientBackgroundView.swift; sourceTree = "<group>"; };
+		BB11223344556677AABB0002 /* SpaceGrotesk-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SpaceGrotesk-Medium.ttf"; sourceTree = "<group>"; };
+		BB11223344556677AABB0004 /* SpaceGrotesk-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SpaceGrotesk-Bold.ttf"; sourceTree = "<group>"; };
+		BB11223344556677AABB0006 /* Inter-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Inter-Regular.ttf"; sourceTree = "<group>"; };
+		BB11223344556677AABB0008 /* Inter-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Inter-Medium.ttf"; sourceTree = "<group>"; };
+		BB11223344556677AABB000A /* Inter-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Inter-Bold.ttf"; sourceTree = "<group>"; };
+		CC22334455667788AABB0001 /* ServerBrandConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerBrandConfig.swift; sourceTree = "<group>"; };
+		CC22334455667788AABB0005 /* WorkflowBuilderWrapperView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowBuilderWrapperView.swift; sourceTree = "<group>"; };
+		DD11223344556677AABB0002 /* AmbientMusicManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmbientMusicManager.swift; sourceTree = "<group>"; };
+		DD11223344556677AABB0004 /* garden.m4a */ = {isa = PBXFileReference; lastKnownFileType = file; path = garden.m4a; sourceTree = "<group>"; };
+		DD11223344556677AABB0006 /* water.m4a */ = {isa = PBXFileReference; lastKnownFileType = file; path = water.m4a; sourceTree = "<group>"; };
+		DD11223344556677AABB0008 /* rest.m4a */ = {isa = PBXFileReference; lastKnownFileType = file; path = rest.m4a; sourceTree = "<group>"; };
+		EE11223344556677AABB0002 /* AmbientListeningManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmbientListeningManager.swift; sourceTree = "<group>"; };
+		EE11223344556677AABB0004 /* AmbientListeningViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmbientListeningViewModel.swift; sourceTree = "<group>"; };
+		EE11223344556677AABB0006 /* AmbientListeningOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmbientListeningOverlay.swift; sourceTree = "<group>"; };
+		AA1B2C3D4E5F6A09B2C3D4E6 /* VoiceTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTabView.swift; sourceTree = "<group>"; };
+		BB1B2C3D4E5F6A10B2C3D4E6 /* EmailDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailDetailView.swift; sourceTree = "<group>"; };
+		CC1B2C3D4E5F6A11B2C3D4E6 /* EmailReplyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailReplyView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
 		67BA5AFD83F05A3B927852DD /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				EE11223344556677AABB0002 /* AmbientListeningManager.swift */,
+				DD11223344556677AABB0002 /* AmbientMusicManager.swift */,
 				B1A2C3D4E5F60003A2B3C4D6 /* AudioRecorderManager.swift */,
 				A1B2C3D4E5F60718192A3B4D /* BonjourBrowser.swift */,
 				D50AD61F5240C4A072DD9DDD /* HapticManager.swift */,
@@ -132,6 +176,7 @@
 				0A1B2C3D4E5F6A04B2C3D4E6 /* LinkPreview.swift */,
 				A1C2D3E4F5A60001B2C3D4E6 /* MCPServerInfo.swift */,
 				7F78B1B97ED626ED28DBDA80 /* Message.swift */,
+				CC22334455667788AABB0001 /* ServerBrandConfig.swift */,
 				0A1B2C3D4E5F6A01B2C3D4E6 /* StepTemplate.swift */,
 				5C934430A65F81F55D43D411 /* Theme.swift */,
 				5ADC742D1AC83496380B9613 /* WebSocketMessage.swift */,
@@ -150,6 +195,7 @@
 		8E7AC94A36A626A64811B315 /* ViewModels */ = {
 			isa = PBXGroup;
 			children = (
+				EE11223344556677AABB0004 /* AmbientListeningViewModel.swift */,
 				A8394523FAC9063A0EFD32DB /* ChatViewModel.swift */,
 				8B743237B7D6998033A5C46A /* ConversationListViewModel.swift */,
 				E1F4A83C2C7B9E0F00A1B2C3 /* EmailViewModel.swift */,
@@ -171,8 +217,32 @@
 			isa = PBXGroup;
 			children = (
 				C2D3E4F5A6B7C8D9E0F1A2B4 /* Assets.xcassets */,
+				DD11223344556677AABB0010 /* Audio */,
+				CC11223344556677AABB0001 /* Fonts */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		DD11223344556677AABB0010 /* Audio */ = {
+			isa = PBXGroup;
+			children = (
+				DD11223344556677AABB0004 /* garden.m4a */,
+				DD11223344556677AABB0008 /* rest.m4a */,
+				DD11223344556677AABB0006 /* water.m4a */,
+			);
+			path = Audio;
+			sourceTree = "<group>";
+		};
+		CC11223344556677AABB0001 /* Fonts */ = {
+			isa = PBXGroup;
+			children = (
+				BB11223344556677AABB0006 /* Inter-Regular.ttf */,
+				BB11223344556677AABB0008 /* Inter-Medium.ttf */,
+				BB11223344556677AABB000A /* Inter-Bold.ttf */,
+				BB11223344556677AABB0002 /* SpaceGrotesk-Medium.ttf */,
+				BB11223344556677AABB0004 /* SpaceGrotesk-Bold.ttf */,
+			);
+			path = Fonts;
 			sourceTree = "<group>";
 		};
 		C5BE4CBC6D02F2F172297DD3 = {
@@ -200,27 +270,36 @@
 		D65427A6A770EE0AD8192EFB /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				AA11223344556677AABB0006 /* AmbientBackgroundView.swift */,
+				EE11223344556677AABB0006 /* AmbientListeningOverlay.swift */,
 				0A1B2C3D4E5F6A08B2C3D4E6 /* CardWorkflowBuilderView.swift */,
 				0A1B2C3D4E5F6A07B2C3D4E6 /* ChatSearchBar.swift */,
 				20A39B3AA07F0FD11EBA9239 /* ChatView.swift */,
 				DBE12B2E96ED817B70C3B6FD /* ConnectionBanner.swift */,
 				176BC2E06CFDBA18907AA518 /* ContentView.swift */,
+				2A8B79B14A405F9F1F7E811E /* ConversationBlockView.swift */,
 				5F9683C6A0C7EACE0FA68AD9 /* ConversationListView.swift */,
 				F1A2B3C4D5E6F7081920ABCE /* EmailApprovalView.swift */,
+				BB1B2C3D4E5F6A10B2C3D4E6 /* EmailDetailView.swift */,
+				CC1B2C3D4E5F6A11B2C3D4E6 /* EmailReplyView.swift */,
 				FBAB90B5366DFAAC1309B6DD /* EmailSettingsView.swift */,
 				507B46DABC0079BDC637D157 /* EmailTriggersView.swift */,
 				721D711231E025E6E7D22354 /* EmptyStateView.swift */,
+				AA11223344556677AABB0004 /* GlassModifiers.swift */,
 				B108799742FC44169DE33DA4 /* InputBar.swift */,
 				0A1B2C3D4E5F6A06B2C3D4E6 /* LinkPreviewCard.swift */,
 				842D7A428DCA9812A2D6EAA6 /* MessageBubble.swift */,
 				4D6DF452C51A884B99D83E4E /* SettingsView.swift */,
+				AA11223344556677AABB0002 /* SpiritGuideView.swift */,
 				0A1B2C3D4E5F6A03B2C3D4E6 /* StepTemplatePicker.swift */,
 				8D575BD1A5173A3916F7D9AD /* ThinkingPanel.swift */,
 				34E2683792F27CE368A3B65B /* ToolCard.swift */,
 				25A5A941DA6B5BD5C8DE3E63 /* ToolPickerSheet.swift */,
 				C1A2B3C4D5E60004B2C3D4E6 /* VoiceNotePlayerView.swift */,
+				AA1B2C3D4E5F6A09B2C3D4E6 /* VoiceTabView.swift */,
 				E2A3B4C5D6E70009F3A4B5C7 /* WelcomeView.swift */,
 				250210591A3F2F9DE821065B /* WorkflowBuilderView.swift */,
+				CC22334455667788AABB0005 /* WorkflowBuilderWrapperView.swift */,
 				29CD3B3FA7ED7CF3391BABF3 /* WorkflowDetailView.swift */,
 				FA964706C90AB2ADB8F48737 /* WorkflowEditorView.swift */,
 				239984BDB5B06C5F5AA127E9 /* WorkflowExecutionView.swift */,
@@ -285,6 +364,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				C2D3E4F5A6B7C8D9E0F1A2B3 /* Assets.xcassets in Resources */,
+				DD11223344556677AABB0003 /* garden.m4a in Resources */,
+				DD11223344556677AABB0007 /* rest.m4a in Resources */,
+				DD11223344556677AABB0005 /* water.m4a in Resources */,
+				BB11223344556677AABB0001 /* SpaceGrotesk-Medium.ttf in Resources */,
+				BB11223344556677AABB0003 /* SpaceGrotesk-Bold.ttf in Resources */,
+				BB11223344556677AABB0005 /* Inter-Regular.ttf in Resources */,
+				BB11223344556677AABB0007 /* Inter-Medium.ttf in Resources */,
+				BB11223344556677AABB0009 /* Inter-Bold.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -302,6 +389,7 @@
 				F3FBD3E8F4B303D2F519D76A /* ConnectionBanner.swift in Sources */,
 				F4387B295CC63DBF3DE864D0 /* ContentView.swift in Sources */,
 				37FA24722DA341E0FC0E2AA2 /* Conversation.swift in Sources */,
+				3DFC37F20CBDEA278EECF1BF /* ConversationBlockView.swift in Sources */,
 				EA22E42948C42A43394268EF /* ConversationListView.swift in Sources */,
 				461136E0BB5E451E9E610E4E /* ConversationListViewModel.swift in Sources */,
 				F1A2B3C4D5E6F7081920ABCD /* EmailApprovalView.swift in Sources */,
@@ -342,6 +430,18 @@
 				0A1B2C3D4E5F6A06B2C3D4E5 /* LinkPreviewCard.swift in Sources */,
 				0A1B2C3D4E5F6A07B2C3D4E5 /* ChatSearchBar.swift in Sources */,
 				0A1B2C3D4E5F6A08B2C3D4E5 /* CardWorkflowBuilderView.swift in Sources */,
+				AA11223344556677AABB0001 /* SpiritGuideView.swift in Sources */,
+				AA11223344556677AABB0003 /* GlassModifiers.swift in Sources */,
+				AA11223344556677AABB0005 /* AmbientBackgroundView.swift in Sources */,
+				CC22334455667788AABB0002 /* ServerBrandConfig.swift in Sources */,
+				CC22334455667788AABB0006 /* WorkflowBuilderWrapperView.swift in Sources */,
+				DD11223344556677AABB0001 /* AmbientMusicManager.swift in Sources */,
+				EE11223344556677AABB0001 /* AmbientListeningManager.swift in Sources */,
+				EE11223344556677AABB0003 /* AmbientListeningViewModel.swift in Sources */,
+				EE11223344556677AABB0005 /* AmbientListeningOverlay.swift in Sources */,
+				AA1B2C3D4E5F6A09B2C3D4E5 /* VoiceTabView.swift in Sources */,
+				BB1B2C3D4E5F6A10B2C3D4E5 /* EmailDetailView.swift in Sources */,
+				CC1B2C3D4E5F6A11B2C3D4E5 /* EmailReplyView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

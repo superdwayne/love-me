@@ -9,6 +9,29 @@ struct InboxMessage: Identifiable, Sendable {
     let date: Date
     let preview: String
     let attachmentCount: Int
+    let threadId: String
+}
+
+/// Full email detail model.
+struct EmailDetail: Identifiable, Sendable {
+    let id: String
+    let threadId: String
+    let from: String
+    let to: [String]
+    let cc: [String]
+    let subject: String
+    let bodyText: String
+    let bodyHtml: String?
+    let attachments: [EmailAttachmentInfo]
+    let receivedAt: Date
+    let labels: [String]
+}
+
+struct EmailAttachmentInfo: Identifiable, Sendable {
+    let id: String
+    let filename: String
+    let mimeType: String
+    let size: Int
 }
 
 /// Display model for email trigger rules.
@@ -105,6 +128,21 @@ final class EmailViewModel {
     var pendingApprovals: [EmailApprovalDisplay] = []
     var showApprovalBanner = false
     var navigateToConversationId: String?
+    var selectedEmailId: String?
+    var currentEmailDetail: EmailDetail?
+    var isLoadingDetail = false
+    var searchText = ""
+
+    var filteredInboxMessages: [InboxMessage] {
+        if searchText.isEmpty {
+            return inboxMessages
+        }
+        return inboxMessages.filter { message in
+            message.subject.localizedCaseInsensitiveContains(searchText) ||
+            message.from.localizedCaseInsensitiveContains(searchText) ||
+            message.preview.localizedCaseInsensitiveContains(searchText)
+        }
+    }
 
     private let webSocket: WebSocketClient
 
@@ -160,6 +198,15 @@ final class EmailViewModel {
 
         case WSMessageType.emailTriggerDeleted:
             handleTriggerDeleted(msg)
+
+        case WSMessageType.emailDetailResult:
+            handleEmailDetailResult(msg)
+
+        case WSMessageType.emailReplyResult:
+            handleEmailReplyResult(msg)
+
+        case WSMessageType.emailActionResult:
+            handleEmailActionResult(msg)
 
         case WSMessageType.error:
             if let code = msg.metadata?["code"]?.stringValue,
@@ -319,6 +366,47 @@ final class EmailViewModel {
         HapticManager.messageSent()
     }
 
+    // MARK: - Email Detail / Actions
+
+    func loadEmailDetail(id: String) {
+        isLoadingDetail = true
+        selectedEmailId = id
+        webSocket.send(WSMessage(
+            type: WSMessageType.emailGetDetail,
+            metadata: ["messageId": .string(id)]
+        ))
+    }
+
+    func sendReply(messageId: String, threadId: String, body: String) {
+        webSocket.send(WSMessage(
+            type: WSMessageType.emailReply,
+            metadata: [
+                "messageId": .string(messageId),
+                "threadId": .string(threadId),
+                "body": .string(body)
+            ]
+        ))
+        HapticManager.messageSent()
+    }
+
+    func archiveEmail(id: String) {
+        webSocket.send(WSMessage(
+            type: WSMessageType.emailArchive,
+            metadata: ["messageId": .string(id)]
+        ))
+        inboxMessages.removeAll { $0.id == id }
+        HapticManager.messageSent()
+    }
+
+    func deleteEmail(id: String) {
+        webSocket.send(WSMessage(
+            type: WSMessageType.emailDelete,
+            metadata: ["messageId": .string(id)]
+        ))
+        inboxMessages.removeAll { $0.id == id }
+        HapticManager.toolError()
+    }
+
     // MARK: - Private Handlers
 
     private func handleEmailStatus(_ msg: WSMessage) {
@@ -395,7 +483,8 @@ final class EmailViewModel {
                 subject: dict["subject"]?.stringValue ?? "(no subject)",
                 date: date,
                 preview: dict["preview"]?.stringValue ?? "",
-                attachmentCount: dict["attachmentCount"]?.intValue ?? 0
+                attachmentCount: dict["attachmentCount"]?.intValue ?? 0,
+                threadId: dict["threadId"]?.stringValue ?? id
             ))
         }
 
@@ -447,6 +536,97 @@ final class EmailViewModel {
     private func handleTriggerDeleted(_ msg: WSMessage) {
         guard let id = msg.metadata?["id"]?.stringValue ?? msg.id else { return }
         triggerRules.removeAll { $0.id == id }
+    }
+
+    // MARK: - Email Detail Handlers
+
+    private func handleEmailDetailResult(_ msg: WSMessage) {
+        isLoadingDetail = false
+        guard let meta = msg.metadata else { return }
+
+        let dateFormatter = ISO8601DateFormatter()
+        let receivedAt: Date
+        if let dateStr = meta["receivedAt"]?.stringValue,
+           let parsed = dateFormatter.date(from: dateStr) {
+            receivedAt = parsed
+        } else {
+            receivedAt = Date()
+        }
+
+        var attachments: [EmailAttachmentInfo] = []
+        if case .array(let items) = meta["attachments"] {
+            for item in items {
+                guard case .object(let dict) = item else { continue }
+                attachments.append(EmailAttachmentInfo(
+                    id: dict["id"]?.stringValue ?? UUID().uuidString,
+                    filename: dict["filename"]?.stringValue ?? "unknown",
+                    mimeType: dict["mimeType"]?.stringValue ?? "application/octet-stream",
+                    size: dict["size"]?.intValue ?? 0
+                ))
+            }
+        }
+
+        var toList: [String] = []
+        if case .array(let items) = meta["to"] {
+            for item in items {
+                if let str = item.stringValue {
+                    toList.append(str)
+                }
+            }
+        }
+
+        var ccList: [String] = []
+        if case .array(let items) = meta["cc"] {
+            for item in items {
+                if let str = item.stringValue {
+                    ccList.append(str)
+                }
+            }
+        }
+
+        var labels: [String] = []
+        if case .array(let items) = meta["labels"] {
+            for item in items {
+                if let str = item.stringValue {
+                    labels.append(str)
+                }
+            }
+        }
+
+        currentEmailDetail = EmailDetail(
+            id: meta["id"]?.stringValue ?? selectedEmailId ?? "",
+            threadId: meta["threadId"]?.stringValue ?? "",
+            from: meta["from"]?.stringValue ?? "",
+            to: toList,
+            cc: ccList,
+            subject: meta["subject"]?.stringValue ?? "(no subject)",
+            bodyText: meta["bodyText"]?.stringValue ?? "",
+            bodyHtml: meta["bodyHtml"]?.stringValue,
+            attachments: attachments,
+            receivedAt: receivedAt,
+            labels: labels
+        )
+    }
+
+    private func handleEmailReplyResult(_ msg: WSMessage) {
+        let success = msg.metadata?["success"]?.boolValue ?? false
+        if success {
+            HapticManager.toolCompleted()
+            // Refresh inbox
+            requestInboxMessages()
+        } else {
+            HapticManager.toolError()
+        }
+    }
+
+    private func handleEmailActionResult(_ msg: WSMessage) {
+        let success = msg.metadata?["success"]?.boolValue ?? false
+        if success {
+            HapticManager.toolCompleted()
+            requestInboxMessages()
+        } else {
+            HapticManager.toolError()
+        }
     }
 
     // MARK: - Approval Handlers

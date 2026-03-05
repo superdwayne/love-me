@@ -12,6 +12,8 @@ struct WorkflowDefinition: Codable, Sendable {
     var notificationPrefs: NotificationPrefs
     let created: Date
     var updated: Date
+    var originalPrompt: String?
+    var enhancedPrompt: String?
 
     init(
         id: String = UUID().uuidString,
@@ -22,7 +24,9 @@ struct WorkflowDefinition: Codable, Sendable {
         steps: [WorkflowStep],
         notificationPrefs: NotificationPrefs = NotificationPrefs(),
         created: Date = Date(),
-        updated: Date = Date()
+        updated: Date = Date(),
+        originalPrompt: String? = nil,
+        enhancedPrompt: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -33,6 +37,8 @@ struct WorkflowDefinition: Codable, Sendable {
         self.notificationPrefs = notificationPrefs
         self.created = created
         self.updated = updated
+        self.originalPrompt = originalPrompt
+        self.enhancedPrompt = enhancedPrompt
     }
 }
 
@@ -110,7 +116,7 @@ struct WorkflowStep: Codable, Sendable {
         serverName: String,
         inputTemplate: [String: StringOrVariable] = [:],
         dependsOn: [String]? = nil,
-        onError: ErrorPolicy = .stop
+        onError: ErrorPolicy = .autofix
     ) {
         self.id = id
         self.name = name
@@ -226,6 +232,7 @@ enum ErrorPolicy: String, Codable, Sendable {
     case stop
     case skip
     case retry
+    case autofix
 }
 
 // MARK: - Notification Preferences
@@ -324,6 +331,7 @@ enum StepResultStatus: String, Codable, Sendable {
     case success
     case error
     case skipped
+    case fixing
 }
 
 // MARK: - Workflow Summary (for listing)

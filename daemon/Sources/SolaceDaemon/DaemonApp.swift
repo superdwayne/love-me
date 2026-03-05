@@ -314,6 +314,19 @@ actor DaemonApp {
         case WSMessageType.emailApprovalsList:
             await handleEmailApprovalsList(client: client)
 
+        // Email Detail / Actions
+        case WSMessageType.emailGetDetail:
+            await handleEmailGetDetail(message, client: client)
+
+        case WSMessageType.emailReply:
+            await handleEmailReply(message, client: client)
+
+        case WSMessageType.emailArchive:
+            await handleEmailArchive(message, client: client)
+
+        case WSMessageType.emailDelete:
+            await handleEmailDelete(message, client: client)
+
         // Visual Builder messages
         case WSMessageType.mcpToolsList:
             await handleMCPToolsList(client: client)
@@ -1824,6 +1837,7 @@ actor DaemonApp {
             let items = messages.map { msg -> MetadataValue in
                 .object([
                     "id": .string(msg.id),
+                    "threadId": .string(msg.threadId),
                     "from": .string(msg.from),
                     "subject": .string(msg.subject),
                     "date": .string(formatter.string(from: msg.receivedAt)),
@@ -1839,6 +1853,131 @@ actor DaemonApp {
             try? await client.send(msg)
         } catch {
             await sendError(to: client, message: "Failed to list emails: \(error.localizedDescription)", code: "EMAIL_ERROR")
+        }
+    }
+
+    // MARK: - Email Detail / Action Handlers
+
+    private func handleEmailGetDetail(_ message: WSMessage, client: WebSocketClient) async {
+        guard let messageId = message.metadata?["messageId"]?.stringValue,
+              let agentMail = agentMailClient else {
+            await sendError(to: client, message: "Email not configured or missing messageId", code: "EMAIL_ERROR")
+            return
+        }
+
+        do {
+            let fullMessage = try await agentMail.getMessage(id: messageId)
+            let formatter = ISO8601DateFormatter()
+
+            let attachmentItems = fullMessage.attachments.map { att -> MetadataValue in
+                .object([
+                    "id": .string(att.id),
+                    "filename": .string(att.filename),
+                    "mimeType": .string(att.mimeType),
+                    "size": .int(att.size)
+                ])
+            }
+
+            let toItems = fullMessage.to.map { MetadataValue.string($0) }
+            let ccItems = fullMessage.cc.map { MetadataValue.string($0) }
+            let labelItems = fullMessage.labels.map { MetadataValue.string($0) }
+
+            let msg = WSMessage(
+                type: WSMessageType.emailDetailResult,
+                metadata: [
+                    "id": .string(fullMessage.id),
+                    "threadId": .string(fullMessage.threadId),
+                    "from": .string(fullMessage.from),
+                    "to": .array(toItems),
+                    "cc": .array(ccItems),
+                    "subject": .string(fullMessage.subject),
+                    "bodyText": .string(fullMessage.bodyText),
+                    "bodyHtml": fullMessage.bodyHtml.map { .string($0) } ?? .null,
+                    "attachments": .array(attachmentItems),
+                    "receivedAt": .string(formatter.string(from: fullMessage.receivedAt)),
+                    "labels": .array(labelItems)
+                ]
+            )
+            try? await client.send(msg)
+        } catch {
+            await sendError(to: client, message: "Failed to get email detail: \(error.localizedDescription)", code: "EMAIL_ERROR")
+        }
+    }
+
+    private func handleEmailReply(_ message: WSMessage, client: WebSocketClient) async {
+        guard let messageId = message.metadata?["messageId"]?.stringValue,
+              let threadId = message.metadata?["threadId"]?.stringValue,
+              let body = message.metadata?["body"]?.stringValue,
+              let agentMail = agentMailClient else {
+            await sendError(to: client, message: "Missing reply data or email not configured", code: "EMAIL_ERROR")
+            return
+        }
+
+        do {
+            let newMessageId = try await agentMail.replyToEmail(messageId: messageId, threadId: threadId, body: body)
+            Logger.info("Reply sent successfully: \(newMessageId)")
+            let msg = WSMessage(
+                type: WSMessageType.emailReplyResult,
+                metadata: ["success": .bool(true), "messageId": .string(newMessageId)]
+            )
+            try? await client.send(msg)
+        } catch {
+            Logger.error("Failed to send reply: \(error)")
+            let msg = WSMessage(
+                type: WSMessageType.emailReplyResult,
+                metadata: ["success": .bool(false), "error": .string(error.localizedDescription)]
+            )
+            try? await client.send(msg)
+        }
+    }
+
+    private func handleEmailArchive(_ message: WSMessage, client: WebSocketClient) async {
+        guard let messageId = message.metadata?["messageId"]?.stringValue,
+              let agentMail = agentMailClient else {
+            await sendError(to: client, message: "Missing messageId or email not configured", code: "EMAIL_ERROR")
+            return
+        }
+
+        do {
+            try await agentMail.archiveMessage(messageId: messageId)
+            Logger.info("Email archived: \(messageId)")
+            let msg = WSMessage(
+                type: WSMessageType.emailActionResult,
+                metadata: ["success": .bool(true), "action": .string("archive")]
+            )
+            try? await client.send(msg)
+        } catch {
+            Logger.error("Failed to archive email: \(error)")
+            let msg = WSMessage(
+                type: WSMessageType.emailActionResult,
+                metadata: ["success": .bool(false), "error": .string(error.localizedDescription)]
+            )
+            try? await client.send(msg)
+        }
+    }
+
+    private func handleEmailDelete(_ message: WSMessage, client: WebSocketClient) async {
+        guard let messageId = message.metadata?["messageId"]?.stringValue,
+              let agentMail = agentMailClient else {
+            await sendError(to: client, message: "Missing messageId or email not configured", code: "EMAIL_ERROR")
+            return
+        }
+
+        do {
+            try await agentMail.deleteMessage(messageId: messageId)
+            Logger.info("Email deleted: \(messageId)")
+            let msg = WSMessage(
+                type: WSMessageType.emailActionResult,
+                metadata: ["success": .bool(true), "action": .string("delete")]
+            )
+            try? await client.send(msg)
+        } catch {
+            Logger.error("Failed to delete email: \(error)")
+            let msg = WSMessage(
+                type: WSMessageType.emailActionResult,
+                metadata: ["success": .bool(false), "error": .string(error.localizedDescription)]
+            )
+            try? await client.send(msg)
         }
     }
 

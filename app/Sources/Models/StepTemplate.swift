@@ -19,10 +19,10 @@ enum StepTemplateCategory: String, CaseIterable, Identifiable {
 
     var color: Color {
         switch self {
-        case .aiContent: return .heart
-        case .filesData: return .amberGlow
-        case .communication: return .sageGreen
-        case .custom: return .electricBlue
+        case .aiContent: return .coral
+        case .filesData: return .warning
+        case .communication: return .success
+        case .custom: return .info
         }
     }
 }
@@ -68,7 +68,7 @@ enum StepTemplates {
             description: "Use AI to generate or transform text content",
             category: .aiContent,
             icon: "brain.head.profile",
-            iconColor: .heart,
+            iconColor: .coral,
             toolName: "generate_text",
             defaultInputs: ["prompt": ""]
         ),
@@ -77,7 +77,7 @@ enum StepTemplates {
             description: "Read contents from a file path",
             category: .filesData,
             icon: "doc.text",
-            iconColor: .amberGlow,
+            iconColor: .warning,
             toolName: "read_file",
             defaultInputs: ["path": ""]
         ),
@@ -86,7 +86,7 @@ enum StepTemplates {
             description: "Write content to a file path",
             category: .filesData,
             icon: "doc.text.fill",
-            iconColor: .amberGlow,
+            iconColor: .warning,
             toolName: "write_file",
             defaultInputs: ["path": "", "content": ""]
         ),
@@ -95,7 +95,7 @@ enum StepTemplates {
             description: "Execute a shell command",
             category: .filesData,
             icon: "terminal",
-            iconColor: .electricBlue,
+            iconColor: .info,
             toolName: "run_command",
             defaultInputs: ["command": ""]
         ),
@@ -104,7 +104,7 @@ enum StepTemplates {
             description: "Send an email message",
             category: .communication,
             icon: "paperplane",
-            iconColor: .sageGreen,
+            iconColor: .success,
             toolName: "send_email",
             defaultInputs: ["to": "", "subject": "", "body": ""]
         ),
@@ -113,7 +113,7 @@ enum StepTemplates {
             description: "Make an HTTP request to an API endpoint",
             category: .filesData,
             icon: "network",
-            iconColor: .electricBlue,
+            iconColor: .info,
             toolName: "http_request",
             defaultInputs: ["url": "", "method": "GET"]
         ),

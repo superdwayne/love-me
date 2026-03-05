@@ -3,20 +3,23 @@ import Foundation
 // MARK: - Provider Configuration Types
 
 struct ProviderConfig: Codable, Sendable {
-    let defaultProvider: String  // "claude" or "ollama"
+    let defaultProvider: String  // "claude", "ollama", or "openai"
     let ollama: OllamaProviderConfig?
     let claude: ClaudeProviderConfig?
+    let openai: OpenAIProviderConfig?
 
     static let `default` = ProviderConfig(
         defaultProvider: "claude",
         ollama: nil,
-        claude: ClaudeProviderConfig(model: DaemonConfig.defaultModel)
+        claude: ClaudeProviderConfig(model: DaemonConfig.defaultModel),
+        openai: nil
     )
 
     enum CodingKeys: String, CodingKey {
         case defaultProvider = "default"
         case ollama
         case claude
+        case openai
     }
 }
 
@@ -34,6 +37,12 @@ struct ClaudeProviderConfig: Codable, Sendable {
     let model: String
 }
 
+struct OpenAIProviderConfig: Codable, Sendable {
+    let model: String
+
+    static let `default` = OpenAIProviderConfig(model: "gpt-4o")
+}
+
 // MARK: - Daemon Config
 
 struct DaemonConfig: Sendable {
@@ -41,6 +50,7 @@ struct DaemonConfig: Sendable {
     let model: String
     let apiKey: String?
     let ollamaApiKey: String?
+    let openaiApiKey: String?
     let mcpConfigPath: String
     let conversationsDirectory: String
     let workflowsDirectory: String
@@ -72,6 +82,11 @@ struct DaemonConfig: Sendable {
         providerConfig.ollama
     }
 
+    /// OpenAI configuration (if any)
+    var openaiConfig: OpenAIProviderConfig? {
+        providerConfig.openai
+    }
+
     init() {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
         let basePath = "\(homeDir)/.solace"
@@ -88,6 +103,7 @@ struct DaemonConfig: Sendable {
         self.port = port
         self.apiKey = Self.loadEnvVar("ANTHROPIC_API_KEY", basePath: basePath)
         self.ollamaApiKey = Self.loadEnvVar("OLLAMA_API_KEY", basePath: basePath)
+        self.openaiApiKey = Self.loadEnvVar("OPENAI_API_KEY", basePath: basePath)
         self.mcpConfigPath = "\(basePath)/mcp.json"
         self.conversationsDirectory = "\(basePath)/conversations"
         self.workflowsDirectory = "\(basePath)/workflows"

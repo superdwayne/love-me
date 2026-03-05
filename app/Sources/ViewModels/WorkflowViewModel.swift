@@ -87,11 +87,34 @@ struct WorkflowNotification: Sendable {
     let type: String  // started, completed, failed, stepCompleted
 }
 
+enum ToolIOType: String, Codable, Sendable, CaseIterable {
+    case text
+    case image
+    case file
+    case json
+    case audio
+    case video
+    case mesh3d
+    case code
+    case any
+}
+
+struct SchemaProperty: Sendable {
+    let name: String
+    let type: String  // "string", "number", "boolean", "integer", "array", "object"
+    let description: String
+    let isRequired: Bool
+    let enumValues: [String]?
+}
+
 struct MCPToolItem: Identifiable, Sendable {
     var id: String { "\(serverName)_\(name)" }
     let name: String
     let description: String
     let serverName: String
+    let outputType: ToolIOType
+    let acceptsInputTypes: [ToolIOType]
+    let schemaProperties: [SchemaProperty]
 }
 
 struct ParsedSchedule: Sendable {
@@ -756,10 +779,48 @@ final class WorkflowViewModel {
         for item in items {
             guard case .object(let dict) = item else { continue }
             guard let name = dict["name"]?.stringValue else { continue }
+
+            let outputType = ToolIOType(rawValue: dict["outputType"]?.stringValue ?? "any") ?? .any
+            var acceptsInputTypes: [ToolIOType] = [.any]
+            if case .array(let typesArr) = dict["acceptsInputTypes"] {
+                acceptsInputTypes = typesArr.compactMap { ToolIOType(rawValue: $0.stringValue ?? "") }
+                if acceptsInputTypes.isEmpty { acceptsInputTypes = [.any] }
+            }
+
+            // Parse inputSchema properties
+            var schemaProps: [SchemaProperty] = []
+            if case .object(let schema) = dict["inputSchema"],
+               case .object(let properties) = schema["properties"] {
+                var requiredNames: Set<String> = []
+                if case .array(let reqArr) = schema["required"] {
+                    requiredNames = Set(reqArr.compactMap(\.stringValue))
+                }
+                for (propName, propValue) in properties {
+                    guard case .object(let propDict) = propValue else { continue }
+                    let propType = propDict["type"]?.stringValue ?? "string"
+                    let propDesc = propDict["description"]?.stringValue ?? ""
+                    var enumVals: [String]?
+                    if case .array(let enumArr) = propDict["enum"] {
+                        enumVals = enumArr.compactMap(\.stringValue)
+                    }
+                    schemaProps.append(SchemaProperty(
+                        name: propName,
+                        type: propType,
+                        description: propDesc,
+                        isRequired: requiredNames.contains(propName),
+                        enumValues: enumVals
+                    ))
+                }
+                schemaProps.sort { ($0.isRequired ? 0 : 1, $0.name) < ($1.isRequired ? 0 : 1, $1.name) }
+            }
+
             loaded.append(MCPToolItem(
                 name: name,
                 description: dict["description"]?.stringValue ?? "",
-                serverName: dict["serverName"]?.stringValue ?? ""
+                serverName: dict["serverName"]?.stringValue ?? "",
+                outputType: outputType,
+                acceptsInputTypes: acceptsInputTypes,
+                schemaProperties: schemaProps
             ))
         }
         availableTools = loaded

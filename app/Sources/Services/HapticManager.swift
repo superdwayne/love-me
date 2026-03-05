@@ -60,4 +60,24 @@ enum HapticManager: Sendable {
     static func workflowCompleted() {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
+
+    @MainActor
+    static func cardDropped() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    @MainActor
+    static func cardRemoved() {
+        UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+    }
+
+    @MainActor
+    static func cardTapped() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    @MainActor
+    static func cardSwapped() {
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+    }
 }

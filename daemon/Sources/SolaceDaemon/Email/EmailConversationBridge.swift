@@ -11,7 +11,7 @@ actor EmailConversationBridge {
 
     private let triggerStore: EmailTriggerStore
     private let workflowStore: WorkflowStore
-    private let workflowExecutor: WorkflowExecutor
+    private let workflowQueue: WorkflowQueue
     private let eventBus: EventBus
     private let approvalStore: EmailApprovalStore
     private let agentMailClient: AgentMailClient?
@@ -34,7 +34,7 @@ actor EmailConversationBridge {
     init(
         triggerStore: EmailTriggerStore,
         workflowStore: WorkflowStore,
-        workflowExecutor: WorkflowExecutor,
+        workflowQueue: WorkflowQueue,
         eventBus: EventBus,
         approvalStore: EmailApprovalStore,
         agentMailClient: AgentMailClient? = nil,
@@ -42,7 +42,7 @@ actor EmailConversationBridge {
     ) {
         self.triggerStore = triggerStore
         self.workflowStore = workflowStore
-        self.workflowExecutor = workflowExecutor
+        self.workflowQueue = workflowQueue
         self.eventBus = eventBus
         self.approvalStore = approvalStore
         self.agentMailClient = agentMailClient
@@ -283,18 +283,22 @@ actor EmailConversationBridge {
                 let triggerInfo = "email_trigger: rule=\(rule.id), from=\(email.from), subject=\(email.subject)"
                 Logger.info("EmailConversationBridge: executing workflow '\(workflow.name)' triggered by email from \(email.from)")
 
-                let executor = self.workflowExecutor
-                Task {
-                    let execution = await executor.execute(workflow: workflow, triggerInfo: triggerInfo)
-                    switch execution.status {
-                    case .completed:
-                        Logger.info("EmailConversationBridge: workflow '\(workflow.name)' completed for email trigger")
-                    case .failed:
-                        Logger.error("EmailConversationBridge: workflow '\(workflow.name)' failed for email trigger")
-                    default:
-                        break
+                let queue = self.workflowQueue
+                await queue.enqueue(
+                    workflow: workflow,
+                    triggerInfo: triggerInfo,
+                    priority: .high,
+                    onComplete: { execution in
+                        switch execution.status {
+                        case .completed:
+                            Logger.info("EmailConversationBridge: workflow '\(workflow.name)' completed for email trigger")
+                        case .failed:
+                            Logger.error("EmailConversationBridge: workflow '\(workflow.name)' failed for email trigger")
+                        default:
+                            break
+                        }
                     }
-                }
+                )
             } catch {
                 Logger.error("EmailConversationBridge: failed to load workflow \(rule.workflowId) for trigger \(rule.id): \(error)")
             }

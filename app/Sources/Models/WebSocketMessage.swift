@@ -165,6 +165,17 @@ enum WSMessageType {
     static let emailPollResult = "email_poll_result"
     static let emailReceived = "email_received"
 
+    // Client -> Server (Email Detail / Actions)
+    static let emailGetDetail = "email_get_detail"
+    static let emailReply = "email_reply"
+    static let emailArchive = "email_archive"
+    static let emailDelete = "email_delete"
+
+    // Server -> Client (Email Detail / Actions)
+    static let emailDetailResult = "email_detail_result"
+    static let emailReplyResult = "email_reply_result"
+    static let emailActionResult = "email_action_result"
+
     // Client -> Server (Email Approval)
     static let emailApprovalApprove = "email_approval_approve"
     static let emailApprovalDismiss = "email_approval_dismiss"
@@ -189,4 +200,13 @@ enum WSMessageType {
 
     // Server -> Client (Health)
     static let healthResult = "health_result"
+
+    // Client -> Server (Ambient Listening)
+    static let ambientAnalyze = "ambient_analyze"
+    static let ambientActionApprove = "ambient_action_approve"
+
+    // Server -> Client (Ambient Listening)
+    static let ambientAnalyzing = "ambient_analyzing"
+    static let ambientSuggestions = "ambient_suggestions"
+    static let ambientActionResult = "ambient_action_result"
 }

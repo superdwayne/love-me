@@ -55,7 +55,7 @@ actor AgentMailClient {
         )
 
         let jsonData = try JSONEncoder().encode(payload)
-        let data = try await request(url: "\(baseURL)/inboxes/\(inboxId)/messages", method: "POST", body: jsonData)
+        let data = try await request(url: "\(baseURL)/inboxes/\(inboxId)/messages/send", method: "POST", body: jsonData)
 
         let response = try JSONDecoder.agentMail.decode(AgentMailSendResponse.self, from: data)
         return response.message_id
@@ -78,6 +78,27 @@ actor AgentMailClient {
     /// Download an attachment by message and attachment ID.
     func getAttachment(messageId: String, attachmentId: String) async throws -> Data {
         try await request(url: "\(baseURL)/inboxes/\(inboxId)/messages/\(messageId)/attachments/\(attachmentId)")
+    }
+
+    /// Update labels on a message (archive, trash, etc.).
+    func updateMessageLabels(messageId: String, addLabels: [String] = [], removeLabels: [String] = []) async throws {
+        let encodedId = messageId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? messageId
+        let body: [String: [String]] = [
+            "add_labels": addLabels,
+            "remove_labels": removeLabels
+        ]
+        let jsonData = try JSONEncoder().encode(body)
+        _ = try await request(url: "\(baseURL)/inboxes/\(inboxId)/messages/\(encodedId)", method: "PATCH", body: jsonData)
+    }
+
+    /// Archive a message by adding the "archived" label.
+    func archiveMessage(messageId: String) async throws {
+        try await updateMessageLabels(messageId: messageId, addLabels: ["archived"])
+    }
+
+    /// Move a message to trash.
+    func deleteMessage(messageId: String) async throws {
+        try await updateMessageLabels(messageId: messageId, addLabels: ["trash"])
     }
 
     // MARK: - Networking
