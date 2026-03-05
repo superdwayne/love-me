@@ -13,6 +13,7 @@ actor DaemonApp {
     // Workflow subsystem
     private let workflowStore: WorkflowStore
     private let workflowExecutor: WorkflowExecutor
+    private let workflowQueue: WorkflowQueue
     private let workflowScheduler: WorkflowScheduler
     private let notificationService: NotificationService
     private let eventBus: EventBus
@@ -29,6 +30,9 @@ actor DaemonApp {
     private var emailPollingService: EmailPollingService?
     private var emailConversationBridge: EmailConversationBridge?
     private var emailApprovalStore: EmailApprovalStore?
+
+    // Prompt enhancement pipeline
+    private let promptEnhancer: PromptEnhancer
 
     // Ollama health check
     private var ollamaHealthTask: Task<Void, Never>?
@@ -67,25 +71,35 @@ actor DaemonApp {
         self.emailTriggerStore = EmailTriggerStore(basePath: basePath)
         self.attachmentProcessor = AttachmentProcessor(basePath: basePath)
 
-        // Executor needs mcpManager and store
-        self.workflowExecutor = WorkflowExecutor(mcpManager: mcpManager, store: workflowStore)
+        // Prompt enhancement pipeline
+        self.promptEnhancer = PromptEnhancer(llmProvider: claudeClient, mcpManager: mcpManager)
 
-        // Scheduler fires workflow executions
-        let executor = self.workflowExecutor
+        // Executor needs mcpManager, store, and eventBus for decoupling
+        self.workflowExecutor = WorkflowExecutor(mcpManager: mcpManager, store: workflowStore, eventBus: eventBus, llmProvider: claudeClient)
+
+        // Queue manages concurrent execution with priority-based scheduling
+        self.workflowQueue = WorkflowQueue(workflowExecutor: self.workflowExecutor, maxConcurrent: 5)
+
+        // Scheduler fires workflow executions through the queue with low priority
+        let queue = self.workflowQueue
         let notifService = self.notificationService
 
         self.workflowScheduler = WorkflowScheduler { workflow in
-            let execution = await executor.execute(workflow: workflow, triggerInfo: "cron: \(workflow.trigger)")
-
-            // Send notifications based on execution result
-            switch execution.status {
-            case .completed:
-                await notifService.notifyWorkflowCompleted(execution: execution, prefs: workflow.notificationPrefs)
-            case .failed:
-                await notifService.notifyWorkflowFailed(execution: execution, prefs: workflow.notificationPrefs)
-            default:
-                break
-            }
+            await queue.enqueue(
+                workflow: workflow,
+                triggerInfo: "cron: \(workflow.trigger)",
+                priority: .low,
+                onComplete: { execution in
+                    switch execution.status {
+                    case .completed:
+                        await notifService.notifyWorkflowCompleted(execution: execution, prefs: workflow.notificationPrefs)
+                    case .failed:
+                        await notifService.notifyWorkflowFailed(execution: execution, prefs: workflow.notificationPrefs)
+                    default:
+                        break
+                    }
+                }
+            )
         }
     }
 
@@ -129,18 +143,24 @@ actor DaemonApp {
             // Subscribe event-based workflows to the event bus
             for workflow in enabledWorkflows {
                 if case .event(let source, let eventType, _) = workflow.trigger {
-                    let executor = self.workflowExecutor
+                    let queue = self.workflowQueue
                     let notifService = self.notificationService
                     await eventBus.subscribe(source: source, eventType: eventType, id: workflow.id) { _ in
-                        let execution = await executor.execute(workflow: workflow, triggerInfo: "event: \(source):\(eventType)")
-                        switch execution.status {
-                        case .completed:
-                            await notifService.notifyWorkflowCompleted(execution: execution, prefs: workflow.notificationPrefs)
-                        case .failed:
-                            await notifService.notifyWorkflowFailed(execution: execution, prefs: workflow.notificationPrefs)
-                        default:
-                            break
-                        }
+                        await queue.enqueue(
+                            workflow: workflow,
+                            triggerInfo: "event: \(source):\(eventType)",
+                            priority: .normal,
+                            onComplete: { execution in
+                                switch execution.status {
+                                case .completed:
+                                    await notifService.notifyWorkflowCompleted(execution: execution, prefs: workflow.notificationPrefs)
+                                case .failed:
+                                    await notifService.notifyWorkflowFailed(execution: execution, prefs: workflow.notificationPrefs)
+                                default:
+                                    break
+                                }
+                            }
+                        )
                     }
                 }
             }
@@ -321,6 +341,13 @@ actor DaemonApp {
         // Health
         case WSMessageType.getHealth:
             await handleGetHealth(client: client)
+
+        // Ambient Listening
+        case WSMessageType.ambientAnalyze:
+            await handleAmbientAnalyze(message, client: client)
+
+        case WSMessageType.ambientActionApprove:
+            await handleAmbientActionApprove(message, client: client)
 
         default:
             Logger.error("Unknown message type: \(message.type)")
@@ -1011,18 +1038,24 @@ actor DaemonApp {
                 if case .cron = workflow.trigger {
                     await workflowScheduler.add(workflow: workflow)
                 } else if case .event(let source, let eventType, _) = workflow.trigger {
-                    let executor = self.workflowExecutor
+                    let queue = self.workflowQueue
                     let notifService = self.notificationService
                     await eventBus.subscribe(source: source, eventType: eventType, id: workflow.id) { _ in
-                        let execution = await executor.execute(workflow: workflow, triggerInfo: "event: \(source):\(eventType)")
-                        switch execution.status {
-                        case .completed:
-                            await notifService.notifyWorkflowCompleted(execution: execution, prefs: workflow.notificationPrefs)
-                        case .failed:
-                            await notifService.notifyWorkflowFailed(execution: execution, prefs: workflow.notificationPrefs)
-                        default:
-                            break
-                        }
+                        await queue.enqueue(
+                            workflow: workflow,
+                            triggerInfo: "event: \(source):\(eventType)",
+                            priority: .normal,
+                            onComplete: { execution in
+                                switch execution.status {
+                                case .completed:
+                                    await notifService.notifyWorkflowCompleted(execution: execution, prefs: workflow.notificationPrefs)
+                                case .failed:
+                                    await notifService.notifyWorkflowFailed(execution: execution, prefs: workflow.notificationPrefs)
+                                default:
+                                    break
+                                }
+                            }
+                        )
                     }
                 }
             }
@@ -1056,18 +1089,24 @@ actor DaemonApp {
                 if case .cron = workflow.trigger {
                     await workflowScheduler.add(workflow: workflow)
                 } else if case .event(let source, let eventType, _) = workflow.trigger {
-                    let executor = self.workflowExecutor
+                    let queue = self.workflowQueue
                     let notifService = self.notificationService
                     await eventBus.subscribe(source: source, eventType: eventType, id: workflow.id) { _ in
-                        let execution = await executor.execute(workflow: workflow, triggerInfo: "event: \(source):\(eventType)")
-                        switch execution.status {
-                        case .completed:
-                            await notifService.notifyWorkflowCompleted(execution: execution, prefs: workflow.notificationPrefs)
-                        case .failed:
-                            await notifService.notifyWorkflowFailed(execution: execution, prefs: workflow.notificationPrefs)
-                        default:
-                            break
-                        }
+                        await queue.enqueue(
+                            workflow: workflow,
+                            triggerInfo: "event: \(source):\(eventType)",
+                            priority: .normal,
+                            onComplete: { execution in
+                                switch execution.status {
+                                case .completed:
+                                    await notifService.notifyWorkflowCompleted(execution: execution, prefs: workflow.notificationPrefs)
+                                case .failed:
+                                    await notifService.notifyWorkflowFailed(execution: execution, prefs: workflow.notificationPrefs)
+                                default:
+                                    break
+                                }
+                            }
+                        )
                     }
                 }
             }
@@ -1181,20 +1220,23 @@ actor DaemonApp {
                 prefs: workflow.notificationPrefs
             )
 
-            // Execute in background
-            let capturedParams = inputParams
-            Task {
-                let execution = await workflowExecutor.execute(workflow: workflow, triggerInfo: "manual", inputParams: capturedParams)
-
-                switch execution.status {
-                case .completed:
-                    await notificationService.notifyWorkflowCompleted(execution: execution, prefs: workflow.notificationPrefs)
-                case .failed:
-                    await notificationService.notifyWorkflowFailed(execution: execution, prefs: workflow.notificationPrefs)
-                default:
-                    break
+            // Enqueue with normal priority (user-initiated)
+            await workflowQueue.enqueue(
+                workflow: workflow,
+                triggerInfo: "manual",
+                inputParams: inputParams,
+                priority: .normal,
+                onComplete: { execution in
+                    switch execution.status {
+                    case .completed:
+                        await self.notificationService.notifyWorkflowCompleted(execution: execution, prefs: workflow.notificationPrefs)
+                    case .failed:
+                        await self.notificationService.notifyWorkflowFailed(execution: execution, prefs: workflow.notificationPrefs)
+                    default:
+                        break
+                    }
                 }
-            }
+            )
         } catch {
             await sendError(to: client, message: "Failed to run workflow: \(error)", code: "STORAGE_ERROR")
         }
@@ -1206,7 +1248,7 @@ actor DaemonApp {
             return
         }
 
-        await workflowExecutor.cancel(executionId: executionId)
+        await workflowQueue.cancel(executionId: executionId)
     }
 
     private func handleListExecutions(_ message: WSMessage, client: WebSocketClient) async {
@@ -1316,15 +1358,20 @@ actor DaemonApp {
         if let output = stepResult.output { stepDict["output"] = .string(output) }
         if let error = stepResult.error { stepDict["error"] = .string(error) }
 
+        // Flatten step fields into top-level metadata (app expects meta["stepId"], not nested)
+        var metadata: [String: MetadataValue] = [
+            "executionId": .string(execution.id),
+            "workflowId": .string(execution.workflowId),
+            "workflowName": .string(execution.workflowName)
+        ]
+        for (key, value) in stepDict {
+            metadata[key] = value
+        }
+
         let msg = WSMessage(
             type: WSMessageType.workflowStepUpdate,
             id: execution.id,
-            metadata: [
-                "executionId": .string(execution.id),
-                "workflowId": .string(execution.workflowId),
-                "workflowName": .string(execution.workflowName),
-                "step": .object(stepDict)
-            ]
+            metadata: metadata
         )
         await server.broadcast(msg)
     }
@@ -1341,6 +1388,21 @@ actor DaemonApp {
         if let completedAt = execution.completedAt {
             dict["completedAt"] = .string(formatter.string(from: completedAt))
         }
+
+        // Include steps array so app can populate execution UI immediately
+        let stepsArray: [MetadataValue] = execution.stepResults.map { step in
+            var stepDict: [String: MetadataValue] = [
+                "id": .string(step.stepId),
+                "stepName": .string(step.stepName),
+                "status": .string(step.status.rawValue)
+            ]
+            if let startedAt = step.startedAt { stepDict["startedAt"] = .string(formatter.string(from: startedAt)) }
+            if let completedAt = step.completedAt { stepDict["completedAt"] = .string(formatter.string(from: completedAt)) }
+            if let output = step.output { stepDict["output"] = .string(output) }
+            if let error = step.error { stepDict["error"] = .string(error) }
+            return .object(stepDict)
+        }
+        dict["steps"] = .array(stepsArray)
 
         let msgType = (execution.status == .running)
             ? WSMessageType.workflowExecutionStarted
@@ -1365,6 +1427,16 @@ actor DaemonApp {
         let client = AgentMailClient(apiKey: emailConfig.apiKey, inboxId: emailConfig.inboxId)
         self.agentMailClient = client
 
+        // Register email tools with MCPManager so workflows can use send_email, etc.
+        let emailServer = EmailMCPServer(agentMailClient: client, attachmentProcessor: attachmentProcessor)
+        let emailTools = await emailServer.getMCPToolInfos()
+        await mcpManager.registerExternalTools(
+            serverName: EmailMCPServer.serverName,
+            tools: emailTools
+        ) { name, arguments in
+            try await emailServer.callTool(name: name, arguments: arguments)
+        }
+
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
         let basePath = "\(homeDir)/.solace"
 
@@ -1374,7 +1446,7 @@ actor DaemonApp {
         let bridge = EmailConversationBridge(
             triggerStore: emailTriggerStore,
             workflowStore: workflowStore,
-            workflowExecutor: workflowExecutor,
+            workflowQueue: workflowQueue,
             eventBus: eventBus,
             approvalStore: approvalStore,
             agentMailClient: client,
@@ -1892,35 +1964,34 @@ actor DaemonApp {
 
         do {
             let workflow = try await workflowStore.get(id: workflowId)
-            let executor = self.workflowExecutor
             let approvalId = approval.id
 
-            Task {
-                let execution = await executor.execute(
-                    workflow: workflow,
-                    triggerInfo: "email_approval: \(approval.email.subject)"
-                )
-
-                switch execution.status {
-                case .completed:
-                    Logger.info("Approved workflow '\(workflow.name)' completed")
-                    await self.composeAndSendReply(approval: approval, execution: execution)
-                case .failed:
-                    Logger.error("Approved workflow '\(workflow.name)' failed")
-                    try? await self.emailApprovalStore?.update(id: approvalId, status: .failed)
-                    let failMsg = WSMessage(
-                        type: WSMessageType.emailAutoReplyStatus,
-                        id: approvalId,
-                        metadata: [
-                            "status": .string("failed"),
-                            "reason": .string("Workflow execution failed")
-                        ]
-                    )
-                    await self.server.broadcast(failMsg)
-                default:
-                    break
+            await workflowQueue.enqueue(
+                workflow: workflow,
+                triggerInfo: "email_approval: \(approval.email.subject)",
+                priority: .high,
+                onComplete: { execution in
+                    switch execution.status {
+                    case .completed:
+                        Logger.info("Approved workflow '\(workflow.name)' completed")
+                        await self.composeAndSendReply(approval: approval, execution: execution)
+                    case .failed:
+                        Logger.error("Approved workflow '\(workflow.name)' failed")
+                        try? await self.emailApprovalStore?.update(id: approvalId, status: .failed)
+                        let failMsg = WSMessage(
+                            type: WSMessageType.emailAutoReplyStatus,
+                            id: approvalId,
+                            metadata: [
+                                "status": .string("failed"),
+                                "reason": .string("Workflow execution failed")
+                            ]
+                        )
+                        await self.server.broadcast(failMsg)
+                    default:
+                        break
+                    }
                 }
-            }
+            )
         } catch {
             Logger.error("Failed to load workflow for approval \(approval.id): \(error)")
         }
@@ -1976,35 +2047,34 @@ actor DaemonApp {
 
             Logger.info("On-demand workflow '\(workflow.name)' created for approval \(approval.id)")
 
-            let executor = self.workflowExecutor
             let approvalId = approval.id
 
-            Task {
-                let execution = await executor.execute(
-                    workflow: workflow,
-                    triggerInfo: "email_approval_auto: \(approval.email.subject)"
-                )
-
-                switch execution.status {
-                case .completed:
-                    Logger.info("On-demand workflow '\(workflow.name)' completed")
-                    await self.composeAndSendReply(approval: approval, execution: execution)
-                case .failed:
-                    Logger.error("On-demand workflow '\(workflow.name)' failed")
-                    try? await self.emailApprovalStore?.update(id: approvalId, status: .failed)
-                    let failMsg = WSMessage(
-                        type: WSMessageType.emailAutoReplyStatus,
-                        id: approvalId,
-                        metadata: [
-                            "status": .string("failed"),
-                            "reason": .string("Workflow execution failed")
-                        ]
-                    )
-                    await self.server.broadcast(failMsg)
-                default:
-                    break
+            await workflowQueue.enqueue(
+                workflow: workflow,
+                triggerInfo: "email_approval_auto: \(approval.email.subject)",
+                priority: .high,
+                onComplete: { execution in
+                    switch execution.status {
+                    case .completed:
+                        Logger.info("On-demand workflow '\(workflow.name)' completed")
+                        await self.composeAndSendReply(approval: approval, execution: execution)
+                    case .failed:
+                        Logger.error("On-demand workflow '\(workflow.name)' failed")
+                        try? await self.emailApprovalStore?.update(id: approvalId, status: .failed)
+                        let failMsg = WSMessage(
+                            type: WSMessageType.emailAutoReplyStatus,
+                            id: approvalId,
+                            metadata: [
+                                "status": .string("failed"),
+                                "reason": .string("Workflow execution failed")
+                            ]
+                        )
+                        await self.server.broadcast(failMsg)
+                    default:
+                        break
+                    }
                 }
-            }
+            )
         } catch {
             Logger.error("Failed to build workflow for approval \(approval.id): \(error)")
             try? await emailApprovalStore?.update(id: approval.id, status: .failed)
@@ -2095,35 +2165,34 @@ actor DaemonApp {
             Logger.info("Auto flow created: workflow '\(workflow.name)' + trigger rule for '\(approval.email.from)'")
 
             // Execute the workflow for the current email
-            let executor = self.workflowExecutor
             let approvalId = approval.id
 
-            Task {
-                let execution = await executor.execute(
-                    workflow: workflow,
-                    triggerInfo: "email_auto_flow: \(approval.email.subject)"
-                )
-
-                switch execution.status {
-                case .completed:
-                    Logger.info("Auto flow workflow '\(workflow.name)' completed")
-                    await self.composeAndSendReply(approval: approval, execution: execution)
-                case .failed:
-                    Logger.error("Auto flow workflow '\(workflow.name)' failed")
-                    try? await self.emailApprovalStore?.update(id: approvalId, status: .failed)
-                    let failMsg = WSMessage(
-                        type: WSMessageType.emailAutoReplyStatus,
-                        id: approvalId,
-                        metadata: [
-                            "status": .string("failed"),
-                            "reason": .string("Workflow execution failed")
-                        ]
-                    )
-                    await self.server.broadcast(failMsg)
-                default:
-                    break
+            await workflowQueue.enqueue(
+                workflow: workflow,
+                triggerInfo: "email_auto_flow: \(approval.email.subject)",
+                priority: .high,
+                onComplete: { execution in
+                    switch execution.status {
+                    case .completed:
+                        Logger.info("Auto flow workflow '\(workflow.name)' completed")
+                        await self.composeAndSendReply(approval: approval, execution: execution)
+                    case .failed:
+                        Logger.error("Auto flow workflow '\(workflow.name)' failed")
+                        try? await self.emailApprovalStore?.update(id: approvalId, status: .failed)
+                        let failMsg = WSMessage(
+                            type: WSMessageType.emailAutoReplyStatus,
+                            id: approvalId,
+                            metadata: [
+                                "status": .string("failed"),
+                                "reason": .string("Workflow execution failed")
+                            ]
+                        )
+                        await self.server.broadcast(failMsg)
+                    default:
+                        break
+                    }
                 }
-            }
+            )
         } catch {
             Logger.error("Failed to build auto flow for approval \(approval.id): \(error)")
             try? await emailApprovalStore?.update(id: approval.id, status: .failed)
@@ -2299,7 +2368,9 @@ actor DaemonApp {
                 "name": .string(tool.name),
                 "description": .string(tool.description),
                 "serverName": .string(tool.serverName),
-                "inputSchema": metadataFromJSON(tool.inputSchema)
+                "inputSchema": metadataFromJSON(tool.inputSchema),
+                "outputType": .string(tool.outputType.rawValue),
+                "acceptsInputTypes": .array(tool.acceptsInputTypes.map { .string($0.rawValue) })
             ])
         }
         let msg = WSMessage(
@@ -2398,6 +2469,7 @@ actor DaemonApp {
           ],
           "steps": [
             {
+              "id": "step_1",
               "name": "Step Name",
               "toolName": "exact_tool_name_from_catalog",
               "serverName": "exact_server_name_from_catalog",
@@ -2415,9 +2487,16 @@ actor DaemonApp {
         - For manual triggers, define each runtime input in "inputParams" and reference them in step inputs as {{__input__.param_name}}
         - When triggerType is "manual", omit "schedule". When triggerType is "cron", omit "inputParams"
 
+        Step variable references:
+        - Give each step a short id like "step_1", "step_2", etc.
+        - To reference a previous step's output, use {{step_id.$}} (the $ means the entire output)
+        - To reference a specific JSON field from a previous step, use {{step_id.field_name}}
+        - Example: if step_1 produces search results, step_2 can use {{step_1.$}} to get all results
+        - For runtime input parameters (manual trigger), use {{__input__.param_name}}
+
         Rules:
-        - Map user descriptions to real tools from the catalog when possible
-        - If no matching tool exists, set toolName to a descriptive placeholder and needsConfiguration to true
+        - CRITICAL: Only use tools that exist in the catalog above. NEVER invent tool names.
+        - If no matching tool exists for a capability the user needs, set needsConfiguration to true and explain in the step name what tool is needed
         - Steps are linear (executed top-to-bottom in sequence)
         - Use the user's language for step names (human-readable)
         - Keep step count minimal — only what the user described
@@ -2468,6 +2547,7 @@ actor DaemonApp {
                 let steps: [AIStep]
             }
             struct AIStep: Codable {
+                let id: String?
                 let name: String
                 let toolName: String
                 let serverName: String
@@ -2488,12 +2568,19 @@ actor DaemonApp {
             }
 
             // Build workflow steps
+            // Map AI-generated step IDs to UUIDs so template references like {{step_1.$}} resolve correctly
             let workflowId = UUID().uuidString
+            var aiIdToUUID: [String: String] = [:]
+            for (index, aiStep) in aiWorkflow.steps.enumerated() {
+                let aiId = aiStep.id ?? "step_\(index)"
+                aiIdToUUID[aiId] = UUID().uuidString
+            }
             var stepMetadata: [MetadataValue] = []
             var previousStepId: String?
 
-            for aiStep in aiWorkflow.steps {
-                let stepId = UUID().uuidString
+            for (index, aiStep) in aiWorkflow.steps.enumerated() {
+                let aiId = aiStep.id ?? "step_\(index)"
+                let stepId = aiIdToUUID[aiId]!
                 var stepDict: [String: MetadataValue] = [
                     "id": .string(stepId),
                     "name": .string(aiStep.name),
@@ -2504,22 +2591,28 @@ actor DaemonApp {
                 ]
 
                 // Include AI-generated inputs (convert JSONValue -> string for MetadataValue)
+                // Remap AI step IDs to UUIDs in template references like {{step_1.$}}
                 if let inputs = aiStep.inputs, !inputs.isEmpty {
                     var inputDict: [String: MetadataValue] = [:]
                     for (key, value) in inputs {
+                        var strValue: String
                         switch value {
                         case .string(let str):
-                            inputDict[key] = .string(str)
+                            strValue = str
                         case .int(let num):
-                            inputDict[key] = .string(String(num))
+                            strValue = String(num)
                         case .double(let num):
-                            inputDict[key] = .string(String(num))
+                            strValue = String(num)
                         case .bool(let b):
-                            inputDict[key] = .string(String(b))
+                            strValue = String(b)
                         default:
-                            // For arrays/objects/null, serialize to JSON string
-                            inputDict[key] = .string(value.toJSONString())
+                            strValue = value.toJSONString()
                         }
+                        // Replace AI step IDs with UUIDs in template references
+                        for (aiStepId, uuid) in aiIdToUUID {
+                            strValue = strValue.replacingOccurrences(of: "{{\(aiStepId).", with: "{{\(uuid).")
+                        }
+                        inputDict[key] = .string(strValue)
                     }
                     stepDict["inputs"] = .object(inputDict)
                 }
@@ -2675,6 +2768,24 @@ actor DaemonApp {
             return nil
         }
 
+        // Enhance the prompt via the multi-agent pipeline (Claude only — too slow for local/alternative models)
+        let originalPrompt = prompt
+        var effectivePrompt = prompt
+        var enhancedPromptText: String? = nil
+
+        if llmProvider.providerName == "Claude" {
+            do {
+                let result = try await promptEnhancer.enhance(prompt: prompt)
+                effectivePrompt = result.enhancedPrompt
+                enhancedPromptText = result.enhancedPrompt
+                Logger.info("buildWorkflowFromPrompt: Using enhanced prompt (\(effectivePrompt.count) chars)")
+            } catch {
+                Logger.error("buildWorkflowFromPrompt: Enhancement failed, using original prompt: \(error)")
+            }
+        } else {
+            Logger.info("buildWorkflowFromPrompt: Skipping enhancement for \(llmProvider.providerName) (non-Claude provider)")
+        }
+
         let tools = await mcpManager.getTools()
         let toolCatalog = tools.map { tool -> String in
             var entry = "- \(tool.name) (server: \(tool.serverName)): \(tool.description)"
@@ -2721,6 +2832,7 @@ actor DaemonApp {
           ],
           "steps": [
             {
+              "id": "step_1",
               "name": "Step Name",
               "toolName": "exact_tool_name_from_catalog",
               "serverName": "exact_server_name_from_catalog",
@@ -2738,9 +2850,16 @@ actor DaemonApp {
         - For manual triggers, define each runtime input in "inputParams" and reference them in step inputs as {{__input__.param_name}}
         - When triggerType is "manual", omit "schedule". When triggerType is "cron", omit "inputParams"
 
+        Step variable references:
+        - Give each step a short id like "step_1", "step_2", etc.
+        - To reference a previous step's output, use {{step_id.$}} (the $ means the entire output)
+        - To reference a specific JSON field from a previous step, use {{step_id.field_name}}
+        - Example: if step_1 produces search results, step_2 can use {{step_1.$}} to get all results
+        - For runtime input parameters (manual trigger), use {{__input__.param_name}}
+
         Rules:
-        - Map user descriptions to real tools from the catalog when possible
-        - If no matching tool exists, set toolName to a descriptive placeholder and needsConfiguration to true
+        - CRITICAL: Only use tools that exist in the catalog above. NEVER invent tool names.
+        - If no matching tool exists for a capability the user needs, set needsConfiguration to true and explain in the step name what tool is needed
         - Steps are linear (executed top-to-bottom in sequence)
         - Use the user's language for step names (human-readable)
         - Keep step count minimal — only what the user described
@@ -2749,7 +2868,7 @@ actor DaemonApp {
         - For code execution tools, write the actual code that accomplishes the user's goal
         """
 
-        let userMessage = MessageParam(role: "user", text: prompt)
+        let userMessage = MessageParam(role: "user", text: effectivePrompt)
 
         do {
             let responseText = try await llmProvider.singleRequest(
@@ -2786,6 +2905,7 @@ actor DaemonApp {
                 let steps: [AIStep]
             }
             struct AIStep: Codable {
+                let id: String?
                 let name: String
                 let toolName: String
                 let serverName: String
@@ -2812,17 +2932,29 @@ actor DaemonApp {
                 trigger = .cron(expression: cronExpression)
             }
 
+            // Map AI-generated step IDs to UUIDs so template references resolve correctly
+            var aiIdToUUID: [String: String] = [:]
+            for (index, aiStep) in aiWorkflow.steps.enumerated() {
+                let aiId = aiStep.id ?? "step_\(index)"
+                aiIdToUUID[aiId] = UUID().uuidString
+            }
+
             var steps: [WorkflowStep] = []
             var previousStepId: String?
 
-            for aiStep in aiWorkflow.steps {
-                let stepId = UUID().uuidString
+            for (index, aiStep) in aiWorkflow.steps.enumerated() {
+                let aiId = aiStep.id ?? "step_\(index)"
+                let stepId = aiIdToUUID[aiId]!
                 var inputTemplate: [String: StringOrVariable] = [:]
 
                 if let inputs = aiStep.inputs {
                     for (key, value) in inputs {
                         switch value {
-                        case .string(let str):
+                        case .string(var str):
+                            // Remap AI step IDs to UUIDs in template references
+                            for (aiStepId, uuid) in aiIdToUUID {
+                                str = str.replacingOccurrences(of: "{{\(aiStepId).", with: "{{\(uuid).")
+                            }
                             if str.contains("{{") {
                                 inputTemplate[key] = .template(str)
                             } else {
@@ -2846,7 +2978,7 @@ actor DaemonApp {
                     serverName: aiStep.serverName,
                     inputTemplate: inputTemplate,
                     dependsOn: dependsOn,
-                    onError: .stop
+                    onError: .autofix
                 ))
                 previousStepId = stepId
             }
@@ -2857,7 +2989,9 @@ actor DaemonApp {
                 description: aiWorkflow.description,
                 enabled: true,
                 trigger: trigger,
-                steps: steps
+                steps: steps,
+                originalPrompt: originalPrompt,
+                enhancedPrompt: enhancedPromptText
             )
 
         } catch {
@@ -2960,6 +3094,283 @@ actor DaemonApp {
         try? await client.send(msg)
     }
 
+    // MARK: - Ambient Listening
+
+    private func handleAmbientAnalyze(_ message: WSMessage, client: WebSocketClient) async {
+        guard let transcript = message.content, !transcript.isEmpty else {
+            await sendError(to: client, message: "Missing transcript content", code: "MISSING_FIELD")
+            return
+        }
+
+        // Send "analyzing" indicator
+        let analyzingMsg = WSMessage(type: WSMessageType.ambientAnalyzing)
+        try? await client.send(analyzingMsg)
+
+        let systemPrompt = """
+        You are Solace, an AI assistant analyzing a transcript from ambient speech recognition. \
+        The user has been speaking near their device and this text was captured.
+
+        Analyze the transcript and generate actionable suggestions. For each suggestion, determine the best type:
+        - "summary": Summarize what was discussed
+        - "task": Create a task or to-do item from what was mentioned
+        - "workflow": Suggest creating an automation workflow
+        - "reminder": Set a reminder for something mentioned
+        - "chat": Start a conversation about a topic that was discussed
+
+        Output ONLY a valid JSON array (no markdown, no explanation) with this schema:
+        [
+          {
+            "id": "unique_id",
+            "type": "summary|task|workflow|reminder|chat",
+            "title": "Short action title",
+            "description": "Brief description of what this action would do",
+            "actionPayload": "The specific content/prompt to use when executing this action",
+            "confidence": 0.0 to 1.0
+          }
+        ]
+
+        Rules:
+        - Generate 1-3 suggestions, only include high-confidence ones (> 0.5)
+        - If the transcript is too short or unclear, return an empty array []
+        - Keep titles under 50 characters
+        - The actionPayload should be the prompt/content needed to execute the action
+        - For workflow type, the actionPayload should describe the workflow to create
+        - For chat type, the actionPayload should be the opening message/question
+        - For task/reminder, the actionPayload should be the task description
+        """
+
+        let userMessage = MessageParam(role: "user", text: "Transcript:\n\(transcript)")
+
+        do {
+            let responseText = try await llmProvider.singleRequest(
+                messages: [userMessage],
+                systemPrompt: systemPrompt
+            )
+
+            var cleaned = responseText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if cleaned.hasPrefix("```") {
+                if let firstNewline = cleaned.firstIndex(of: "\n") {
+                    cleaned = String(cleaned[cleaned.index(after: firstNewline)...])
+                }
+                if cleaned.hasSuffix("```") {
+                    cleaned = String(cleaned.dropLast(3)).trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+            }
+
+            guard let jsonData = cleaned.data(using: .utf8) else {
+                Logger.error("Ambient analyze: invalid response")
+                return
+            }
+
+            struct AISuggestion: Codable {
+                let id: String
+                let type: String
+                let title: String
+                let description: String
+                let actionPayload: String
+                let confidence: Double
+            }
+
+            let suggestions = try JSONDecoder().decode([AISuggestion].self, from: jsonData)
+
+            let suggestionValues: [MetadataValue] = suggestions.map { s in
+                .object([
+                    "id": .string(s.id),
+                    "type": .string(s.type),
+                    "title": .string(s.title),
+                    "description": .string(s.description),
+                    "actionPayload": .string(s.actionPayload),
+                    "confidence": .double(s.confidence)
+                ])
+            }
+
+            let resultMsg = WSMessage(
+                type: WSMessageType.ambientSuggestions,
+                metadata: ["suggestions": .array(suggestionValues)]
+            )
+            try? await client.send(resultMsg)
+
+        } catch {
+            Logger.error("Ambient analyze failed: \(error)")
+            // Send empty suggestions so client stops spinner
+            let emptyMsg = WSMessage(
+                type: WSMessageType.ambientSuggestions,
+                metadata: ["suggestions": .array([])]
+            )
+            try? await client.send(emptyMsg)
+        }
+    }
+
+    private func handleAmbientActionApprove(_ message: WSMessage, client: WebSocketClient) async {
+        guard let suggestionId = message.id else {
+            await sendError(to: client, message: "Missing suggestion ID", code: "MISSING_FIELD")
+            return
+        }
+
+        let suggestionType = message.metadata?["type"]?.stringValue ?? "chat"
+        let title = message.metadata?["title"]?.stringValue ?? ""
+        let actionPayload = message.metadata?["actionPayload"]?.stringValue ?? ""
+
+        switch suggestionType {
+        case "workflow":
+            // Build and execute a workflow from the suggestion
+            guard let workflow = await buildWorkflowFromPrompt(actionPayload) else {
+                let failMsg = WSMessage(
+                    type: WSMessageType.ambientActionResult,
+                    id: suggestionId,
+                    metadata: [
+                        "success": .bool(false),
+                        "error": .string("Failed to generate workflow")
+                    ]
+                )
+                try? await client.send(failMsg)
+                return
+            }
+
+            do {
+                try await workflowStore.create(workflow)
+                let wfMsg = WSMessage(
+                    type: WSMessageType.workflowCreated,
+                    metadata: [
+                        "workflowId": .string(workflow.id),
+                        "name": .string(workflow.name),
+                        "stepCount": .int(workflow.steps.count)
+                    ]
+                )
+                await server.broadcast(wfMsg)
+
+                await workflowQueue.enqueue(
+                    workflow: workflow,
+                    triggerInfo: "ambient_listening: \(title)",
+                    priority: .normal
+                )
+
+                let successMsg = WSMessage(
+                    type: WSMessageType.ambientActionResult,
+                    id: suggestionId,
+                    metadata: [
+                        "success": .bool(true),
+                        "workflowId": .string(workflow.id)
+                    ]
+                )
+                try? await client.send(successMsg)
+            } catch {
+                let failMsg = WSMessage(
+                    type: WSMessageType.ambientActionResult,
+                    id: suggestionId,
+                    metadata: [
+                        "success": .bool(false),
+                        "error": .string("Failed to save workflow: \(error.localizedDescription)")
+                    ]
+                )
+                try? await client.send(failMsg)
+            }
+
+        case "chat":
+            // Create a new conversation and send the message
+            do {
+                let conversation = try await conversationStore.create()
+                let createMsg = WSMessage(
+                    type: WSMessageType.conversationCreated,
+                    conversationId: conversation.id,
+                    metadata: ["title": .string(title)]
+                )
+                try? await client.send(createMsg)
+
+                // Send the action payload as a user message
+                let userMsg = WSMessage(
+                    type: WSMessageType.userMessage,
+                    conversationId: conversation.id,
+                    content: actionPayload
+                )
+                await handleUserMessage(userMsg, client: client)
+
+                let successMsg = WSMessage(
+                    type: WSMessageType.ambientActionResult,
+                    id: suggestionId,
+                    metadata: [
+                        "success": .bool(true),
+                        "conversationId": .string(conversation.id)
+                    ]
+                )
+                try? await client.send(successMsg)
+            } catch {
+                let failMsg = WSMessage(
+                    type: WSMessageType.ambientActionResult,
+                    id: suggestionId,
+                    metadata: [
+                        "success": .bool(false),
+                        "error": .string("Failed to create conversation: \(error.localizedDescription)")
+                    ]
+                )
+                try? await client.send(failMsg)
+            }
+
+        case "summary":
+            // Summary is already displayed client-side, just acknowledge
+            let successMsg = WSMessage(
+                type: WSMessageType.ambientActionResult,
+                id: suggestionId,
+                metadata: ["success": .bool(true)]
+            )
+            try? await client.send(successMsg)
+
+        case "task", "reminder":
+            // Create a chat conversation with the task/reminder context
+            do {
+                let conversation = try await conversationStore.create()
+                let createMsg = WSMessage(
+                    type: WSMessageType.conversationCreated,
+                    conversationId: conversation.id,
+                    metadata: ["title": .string(title)]
+                )
+                try? await client.send(createMsg)
+
+                let prompt = suggestionType == "reminder"
+                    ? "Set a reminder: \(actionPayload)"
+                    : "Create a task: \(actionPayload)"
+
+                let userMsg = WSMessage(
+                    type: WSMessageType.userMessage,
+                    conversationId: conversation.id,
+                    content: prompt
+                )
+                await handleUserMessage(userMsg, client: client)
+
+                let successMsg = WSMessage(
+                    type: WSMessageType.ambientActionResult,
+                    id: suggestionId,
+                    metadata: [
+                        "success": .bool(true),
+                        "conversationId": .string(conversation.id)
+                    ]
+                )
+                try? await client.send(successMsg)
+            } catch {
+                let failMsg = WSMessage(
+                    type: WSMessageType.ambientActionResult,
+                    id: suggestionId,
+                    metadata: [
+                        "success": .bool(false),
+                        "error": .string("Failed: \(error.localizedDescription)")
+                    ]
+                )
+                try? await client.send(failMsg)
+            }
+
+        default:
+            let failMsg = WSMessage(
+                type: WSMessageType.ambientActionResult,
+                id: suggestionId,
+                metadata: [
+                    "success": .bool(false),
+                    "error": .string("Unknown suggestion type: \(suggestionType)")
+                ]
+            )
+            try? await client.send(failMsg)
+        }
+    }
+
     // MARK: - Image URL Extraction
 
     /// Extract an image URL from tool result content for inline display in chat.
@@ -3037,9 +3448,9 @@ actor DaemonApp {
         if case .array(let stepValues) = metadata["steps"] {
             for stepValue in stepValues {
                 if case .object(let stepDict) = stepValue {
-                    // Parse inputTemplate
+                    // Parse inputTemplate (also accept "inputs" key from AI builder)
                     var inputTemplate: [String: StringOrVariable] = [:]
-                    if case .object(let inputDict) = stepDict["inputTemplate"] {
+                    if case .object(let inputDict) = stepDict["inputTemplate"] ?? stepDict["inputs"] {
                         for (key, val) in inputDict {
                             if case .object(let varObj) = val {
                                 if varObj["type"]?.stringValue == "template",
@@ -3050,7 +3461,12 @@ actor DaemonApp {
                                     inputTemplate[key] = .variable(stepId: stepId, jsonPath: jsonPath)
                                 }
                             } else if let strVal = val.stringValue {
-                                inputTemplate[key] = .literal(strVal)
+                                // Detect {{...}} patterns and treat as templates
+                                if strVal.contains("{{") && strVal.contains("}}") {
+                                    inputTemplate[key] = .template(strVal)
+                                } else {
+                                    inputTemplate[key] = .literal(strVal)
+                                }
                             }
                         }
                     }
@@ -3217,6 +3633,11 @@ actor DaemonApp {
                 // Start periodic health check to reconnect
                 startOllamaHealthCheck(config: ollamaConfig)
             }
+        } else if config.defaultProvider == "openai", let openaiKey = config.openaiApiKey {
+            let openaiConfig = config.openaiConfig ?? OpenAIProviderConfig.default
+            let openaiClient = OpenAIAPIClient(model: openaiConfig.model, apiKey: openaiKey)
+            llmProvider = openaiClient
+            Logger.info("OpenAI provider active: \(openaiConfig.model)")
         } else {
             llmProvider = claudeClient
             Logger.info("Claude provider active: \(config.claudeModel)")
@@ -3307,6 +3728,17 @@ actor DaemonApp {
             ])
         }
 
+        // OpenAI
+        let openaiConfig = config.openaiConfig
+        providers.append([
+            "name": .string("openai"),
+            "displayName": .string("OpenAI"),
+            "model": .string(openaiConfig?.model ?? OpenAIProviderConfig.default.model),
+            "active": .bool(llmProvider.providerName == "OpenAI"),
+            "available": .bool(config.openaiApiKey != nil),
+            "configured": .bool(config.openaiApiKey != nil)
+        ])
+
         let msg = WSMessage(
             type: WSMessageType.providersStatus,
             metadata: [
@@ -3336,7 +3768,8 @@ actor DaemonApp {
             let newConfig = ProviderConfig(
                 defaultProvider: "claude",
                 ollama: config.providerConfig.ollama,
-                claude: ClaudeProviderConfig(model: config.claudeModel)
+                claude: ClaudeProviderConfig(model: config.claudeModel),
+                openai: config.providerConfig.openai
             )
             try? DaemonConfig.saveProviderConfig(newConfig, path: config.providersConfigPath)
 
@@ -3368,7 +3801,8 @@ actor DaemonApp {
                 let newConfig = ProviderConfig(
                     defaultProvider: "ollama",
                     ollama: OllamaProviderConfig(endpoint: ollamaEndpoint, model: ollamaModel),
-                    claude: config.providerConfig.claude
+                    claude: config.providerConfig.claude,
+                    openai: config.providerConfig.openai
                 )
                 try? DaemonConfig.saveProviderConfig(newConfig, path: config.providersConfigPath)
 
@@ -3393,6 +3827,43 @@ actor DaemonApp {
                 )
                 try? await client.send(msg)
             }
+
+        case "openai":
+            guard let openaiKey = config.openaiApiKey else {
+                let msg = WSMessage(
+                    type: WSMessageType.providerUpdated,
+                    metadata: [
+                        "provider": .string("openai"),
+                        "success": .bool(false),
+                        "error": .string("OPENAI_API_KEY not set in ~/.solace/.env")
+                    ]
+                )
+                try? await client.send(msg)
+                return
+            }
+
+            let openaiModel = model ?? config.openaiConfig?.model ?? OpenAIProviderConfig.default.model
+            let openaiClient = OpenAIAPIClient(model: openaiModel, apiKey: openaiKey)
+            switchProvider(to: openaiClient)
+
+            // Update config
+            let newConfig = ProviderConfig(
+                defaultProvider: "openai",
+                ollama: config.providerConfig.ollama,
+                claude: config.providerConfig.claude,
+                openai: OpenAIProviderConfig(model: openaiModel)
+            )
+            try? DaemonConfig.saveProviderConfig(newConfig, path: config.providersConfigPath)
+
+            let msg = WSMessage(
+                type: WSMessageType.providerUpdated,
+                metadata: [
+                    "provider": .string("openai"),
+                    "model": .string(openaiModel),
+                    "success": .bool(true)
+                ]
+            )
+            await server.broadcast(msg)
 
         default:
             await sendError(to: client, message: "Unknown provider: \(providerName)", code: "UNKNOWN_PROVIDER")

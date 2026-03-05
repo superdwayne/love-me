@@ -5,23 +5,34 @@ import Foundation
 /// Steps are topologically sorted based on their `dependsOn` declarations and
 /// executed sequentially. Each step's output is available for variable resolution
 /// in downstream steps.
+///
+/// Note: This actor is decoupled from DaemonApp via EventBus for workflow events.
+/// The previous callback-based pattern is still supported for backwards compatibility,
+/// but new code should subscribe to workflow events via EventBus instead.
 actor WorkflowExecutor {
     private let mcpManager: MCPManager
     private let store: WorkflowStore
+    private let llmProvider: (any LLMProvider)?
+    private let eventBus: EventBus
     private var runningExecutions: [String: Task<Void, Never>] = [:]
 
-    /// Callback for broadcasting individual step updates to WebSocket clients
+    /// Legacy: Callback for broadcasting individual step updates to WebSocket clients
+    /// Deprecated: Use EventBus to subscribe to "workflow:step_update" events instead
     private var onStepUpdate: (@Sendable (WorkflowExecution, StepResult) async -> Void)?
 
-    /// Callback for broadcasting execution-level updates to WebSocket clients
+    /// Legacy: Callback for broadcasting execution-level updates to WebSocket clients
+    /// Deprecated: Use EventBus to subscribe to "workflow:execution_update" events instead
     private var onExecutionUpdate: (@Sendable (WorkflowExecution) async -> Void)?
 
-    init(mcpManager: MCPManager, store: WorkflowStore) {
+    init(mcpManager: MCPManager, store: WorkflowStore, eventBus: EventBus, llmProvider: (any LLMProvider)? = nil) {
         self.mcpManager = mcpManager
         self.store = store
+        self.eventBus = eventBus
+        self.llmProvider = llmProvider
     }
 
-    /// Set callbacks for broadcasting updates (called after init to break circular references)
+    /// Set callbacks for broadcasting updates (legacy API, kept for backwards compatibility)
+    /// Deprecated: Use EventBus subscription instead for cleaner decoupling
     func setCallbacks(
         onStepUpdate: @escaping @Sendable (WorkflowExecution, StepResult) async -> Void,
         onExecutionUpdate: @escaping @Sendable (WorkflowExecution) async -> Void
@@ -221,6 +232,19 @@ actor WorkflowExecutor {
                 switch step.onError {
                 case .stop, .retry:
                     // .retry falls through here on the last attempt
+                    // Try auto-fix first if LLM provider is available
+                    if llmProvider != nil {
+                        Logger.info("Step '\(step.name)' failed, attempting auto-fix before stopping: \(errorMessage)")
+                        let fixed = await attemptAutoFix(
+                            step: step,
+                            originalArguments: arguments,
+                            errorMessage: errorMessage,
+                            stepOutputs: &stepOutputs,
+                            execution: &execution
+                        )
+                        if fixed { return true }
+                    }
+                    // Auto-fix unavailable or failed — original stop behavior
                     Logger.error("Step '\(step.name)' failed, stopping execution: \(errorMessage)")
                     updateStepResult(&execution, stepId: step.id) { stepResult in
                         stepResult.status = .error
@@ -243,12 +267,190 @@ actor WorkflowExecutor {
                     }
                     await saveAndBroadcastStep(&execution, stepId: step.id)
                     return true
+
+                case .autofix:
+                    Logger.info("Step '\(step.name)' failed, attempting auto-fix: \(errorMessage)")
+                    let fixed = await attemptAutoFix(
+                        step: step,
+                        originalArguments: arguments,
+                        errorMessage: errorMessage,
+                        stepOutputs: &stepOutputs,
+                        execution: &execution
+                    )
+                    if !fixed {
+                        execution.status = .failed
+                        execution.completedAt = Date()
+                        await saveAndBroadcastExecution(&execution)
+                        return false
+                    }
+                    return true
                 }
             }
         }
 
         // Should never reach here, but satisfy the compiler
         return true
+    }
+
+    // MARK: - Auto-Fix
+
+    /// Attempt to fix a failed step by asking the LLM to correct the inputs.
+    /// Returns `true` if the fix succeeded, `false` otherwise.
+    private func attemptAutoFix(
+        step: WorkflowStep,
+        originalArguments: JSONValue,
+        errorMessage: String,
+        stepOutputs: inout [String: String],
+        execution: inout WorkflowExecution
+    ) async -> Bool {
+        // 1. Set step status to "fixing" and broadcast
+        updateStepResult(&execution, stepId: step.id) { stepResult in
+            stepResult.status = .fixing
+            stepResult.error = errorMessage
+        }
+        await saveAndBroadcastStep(&execution, stepId: step.id)
+
+        // 2. Guard LLM provider exists
+        guard let llm = llmProvider else {
+            Logger.error("Auto-fix unavailable: no LLM provider configured")
+            updateStepResult(&execution, stepId: step.id) { stepResult in
+                stepResult.status = .error
+                stepResult.completedAt = Date()
+                stepResult.error = "Auto-fix unavailable (no LLM configured). Original error: \(errorMessage)"
+            }
+            await saveAndBroadcastStep(&execution, stepId: step.id)
+            return false
+        }
+
+        // 3. Get tool schema
+        let toolInfo = await mcpManager.getTools().first(where: { $0.name == step.toolName })
+        let schemaString: String
+        if let schema = toolInfo?.inputSchema,
+           let data = try? JSONEncoder().encode(schema),
+           let str = String(data: data, encoding: .utf8) {
+            schemaString = str
+        } else {
+            schemaString = "(schema unavailable)"
+        }
+
+        // 4. Build original inputs string
+        let originalInputsString: String
+        if let data = try? JSONEncoder().encode(originalArguments),
+           let str = String(data: data, encoding: .utf8) {
+            originalInputsString = str
+        } else {
+            originalInputsString = "(unavailable)"
+        }
+
+        // 5. Build previous step outputs context (truncated)
+        let prevOutputs = stepOutputs.map { key, value in
+            let truncated = value.count > 500 ? String(value.prefix(500)) + "..." : value
+            return "  \(key): \(truncated)"
+        }.joined(separator: "\n")
+
+        // 6. Call LLM
+        let systemPrompt = "You are a workflow step debugger. A step failed. Analyze the error and return ONLY a corrected JSON object with fixed inputs. No explanation, no markdown fences, just valid JSON."
+
+        let userPrompt = """
+        Tool: \(step.toolName)
+        Server: \(step.serverName)
+        Description: \(toolInfo?.description ?? "(unknown)")
+
+        Input Schema:
+        \(schemaString)
+
+        Original inputs sent:
+        \(originalInputsString)
+
+        Error message:
+        \(errorMessage)
+
+        Previous step outputs:
+        \(prevOutputs.isEmpty ? "(none)" : prevOutputs)
+
+        Return ONLY a corrected JSON object with the fixed inputs.
+        """
+
+        let fixedInputsString: String
+        do {
+            fixedInputsString = try await llm.singleRequest(
+                messages: [MessageParam(role: "user", text: userPrompt)],
+                systemPrompt: systemPrompt
+            )
+            Logger.info("Auto-fix LLM response for step '\(step.name)': \(fixedInputsString.prefix(200))")
+        } catch {
+            Logger.error("Auto-fix LLM call failed: \(error)")
+            updateStepResult(&execution, stepId: step.id) { stepResult in
+                stepResult.status = .error
+                stepResult.completedAt = Date()
+                stepResult.error = "Auto-fix LLM call failed: \(error). Original error: \(errorMessage)"
+            }
+            await saveAndBroadcastStep(&execution, stepId: step.id)
+            return false
+        }
+
+        // 7. Parse response — strip markdown fences if present
+        var cleaned = fixedInputsString.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleaned.hasPrefix("```json") {
+            cleaned = String(cleaned.dropFirst(7))
+        } else if cleaned.hasPrefix("```") {
+            cleaned = String(cleaned.dropFirst(3))
+        }
+        if cleaned.hasSuffix("```") {
+            cleaned = String(cleaned.dropLast(3))
+        }
+        cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard let jsonData = cleaned.data(using: .utf8),
+              let fixedArgs = try? JSONDecoder().decode(JSONValue.self, from: jsonData) else {
+            Logger.error("Auto-fix: LLM returned invalid JSON")
+            updateStepResult(&execution, stepId: step.id) { stepResult in
+                stepResult.status = .error
+                stepResult.completedAt = Date()
+                stepResult.error = "Auto-fix failed: LLM returned invalid JSON. Original error: \(errorMessage)"
+            }
+            await saveAndBroadcastStep(&execution, stepId: step.id)
+            return false
+        }
+
+        // 8. Retry with fixed inputs
+        let fixedArguments: JSONValue
+        if case .object = fixedArgs {
+            fixedArguments = fixedArgs
+        } else {
+            fixedArguments = .object(["input": fixedArgs])
+        }
+
+        do {
+            let result = try await mcpManager.callTool(name: step.toolName, arguments: fixedArguments)
+
+            if result.isError {
+                throw WorkflowExecutorError.toolReturnedError(result.content)
+            }
+
+            // Success — mark step as success
+            updateStepResult(&execution, stepId: step.id) { stepResult in
+                stepResult.status = .success
+                stepResult.completedAt = Date()
+                stepResult.output = result.content
+                stepResult.error = nil
+            }
+            stepOutputs[step.id] = result.content
+            await saveAndBroadcastStep(&execution, stepId: step.id)
+            Logger.info("Auto-fix succeeded for step '\(step.name)'")
+            return true
+
+        } catch {
+            let fixError = "\(error)"
+            Logger.error("Auto-fix retry failed for step '\(step.name)': \(fixError)")
+            updateStepResult(&execution, stepId: step.id) { stepResult in
+                stepResult.status = .error
+                stepResult.completedAt = Date()
+                stepResult.error = "Original: \(errorMessage) | Fix attempt: \(fixError)"
+            }
+            await saveAndBroadcastStep(&execution, stepId: step.id)
+            return false
+        }
     }
 
     // MARK: - Topological Sort
