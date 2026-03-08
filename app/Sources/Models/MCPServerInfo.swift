@@ -4,6 +4,7 @@ struct MCPServerInfo: Identifiable {
     let name: String
     let type: String  // "stdio" or "http"
     var enabled: Bool
+    var ollamaEnabled: Bool
     let toolCount: Int
 
     var id: String { name }

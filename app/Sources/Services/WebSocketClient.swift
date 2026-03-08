@@ -19,7 +19,7 @@ private final class OnceGuard: @unchecked Sendable {
     }
 }
 
-enum ConnectionState: Sendable {
+enum ConnectionState: Sendable, Equatable {
     case connected
     case connecting
     case disconnected
@@ -100,25 +100,33 @@ final class WebSocketClient {
         connectionState = .disconnected
     }
 
-    func send(_ message: WSMessage) {
-        guard connectionState == .connected, let wsTask = webSocketTask else { return }
+    /// Send a message over the WebSocket. Returns true if send succeeded.
+    @discardableResult
+    func send(_ message: WSMessage) -> Bool {
+        guard connectionState == .connected, let wsTask = webSocketTask else {
+            lastError = "Not connected to daemon"
+            if connectionState == .disconnected {
+                scheduleReconnect()
+            }
+            return false
+        }
 
         let encoder = JSONEncoder()
         guard let data = try? encoder.encode(message),
               let jsonString = String(data: data, encoding: .utf8) else {
-            return
+            lastError = "Failed to encode message"
+            return false
         }
 
-        wsTask.send(.string(jsonString)) { sendError in
+        wsTask.send(.string(jsonString)) { [weak self] sendError in
             if let sendError {
-                let description = sendError.localizedDescription
                 Task { @MainActor in
-                    // Note: we don't use [weak self] to avoid Sendable capture issues
-                    // This is acceptable since WebSocketClient outlives individual sends
-                    _ = description // Logged for debugging
+                    self?.lastError = sendError.localizedDescription
+                    self?.handleDisconnection()
                 }
             }
         }
+        return true
     }
 
     func testConnection(host testHost: String, port testPort: Int) async -> Bool {
@@ -306,8 +314,12 @@ final class WebSocketClient {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, self.connectionState == .disconnected else { return }
+                guard let self, self.connectionState != .connected else { return }
                 print("[WS] App foregrounded, reconnecting...")
+                if self.connectionState == .connecting {
+                    self.cleanup()
+                    self.connectionState = .disconnected
+                }
                 self.connect()
             }
         }

@@ -149,10 +149,14 @@ struct MCPServerConfig: Codable, Sendable {
     let url: String?
     let headers: [String: String]?
     let enabled: Bool?
+    let ollamaEnabled: Bool?
 
     /// Whether this is a stdio-based server (has command)
     var isStdio: Bool { command != nil }
 
     /// Resolved enabled state (defaults to true when nil)
     var isEnabled: Bool { enabled ?? true }
+
+    /// Whether this server's tools are sent to Ollama (defaults to true when nil)
+    var isOllamaEnabled: Bool { ollamaEnabled ?? true }
 }

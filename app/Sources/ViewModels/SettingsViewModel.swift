@@ -1,6 +1,30 @@
 import Foundation
 import Observation
 
+struct OllamaModelInfo: Identifiable {
+    let id: String  // model name
+    let name: String
+    let sizeGB: Double?
+
+    var displayName: String {
+        // Strip ":latest" suffix for cleaner display
+        if name.hasSuffix(":latest") {
+            return String(name.dropLast(7))
+        }
+        return name
+    }
+
+    var sizeLabel: String? {
+        guard let gb = sizeGB else { return nil }
+        if gb >= 1 {
+            return String(format: "%.1f GB", gb)
+        } else {
+            let mb = gb * 1024
+            return String(format: "%.0f MB", mb)
+        }
+    }
+}
+
 struct ProviderInfo: Identifiable {
     let id: String
     let displayName: String
@@ -28,9 +52,13 @@ final class SettingsViewModel {
 
     // Ollama config fields (editable)
     var ollamaEndpoint: String = "http://localhost:11434/v1/chat/completions"
-    var ollamaModel: String = "llama3"
+    var ollamaModel: String = "qwen3"
     var isTestingOllama = false
     var ollamaTestResult: OllamaTestResult?
+
+    // Ollama installed models
+    var ollamaModels: [OllamaModelInfo] = []
+    var isLoadingOllamaModels = false
 
     // OpenAI config fields (editable)
     var openaiModel: String = "gpt-4o"
@@ -56,11 +84,17 @@ final class SettingsViewModel {
         case WSMessageType.mcpServerToggleResult:
             handleMCPServerToggleResult(msg)
 
+        case WSMessageType.ollamaServerToggleResult:
+            handleOllamaServerToggleResult(msg)
+
         case WSMessageType.providersStatus:
             handleProvidersStatus(msg)
 
         case WSMessageType.providerUpdated:
             handleProviderUpdated(msg)
+
+        case WSMessageType.ollamaModelsList:
+            handleOllamaModelsList(msg)
 
         default:
             break
@@ -94,6 +128,11 @@ final class SettingsViewModel {
         ))
     }
 
+    func requestOllamaModels() {
+        isLoadingOllamaModels = true
+        webSocket.send(WSMessage(type: WSMessageType.getOllamaModels))
+    }
+
     func testOllamaConnection() {
         isTestingOllama = true
         ollamaTestResult = nil
@@ -115,6 +154,20 @@ final class SettingsViewModel {
 
         webSocket.send(WSMessage(
             type: WSMessageType.mcpServerToggle,
+            metadata: [
+                "serverName": .string(name),
+                "enabled": .bool(enabled)
+            ]
+        ))
+    }
+
+    func toggleOllamaServer(name: String, enabled: Bool) {
+        if let index = mcpServers.firstIndex(where: { $0.name == name }) {
+            mcpServers[index].ollamaEnabled = enabled
+        }
+
+        webSocket.send(WSMessage(
+            type: WSMessageType.ollamaServerToggle,
             metadata: [
                 "serverName": .string(name),
                 "enabled": .bool(enabled)
@@ -198,6 +251,25 @@ final class SettingsViewModel {
         }
     }
 
+    private func handleOllamaModelsList(_ msg: WSMessage) {
+        isLoadingOllamaModels = false
+        guard case .array(let items) = msg.metadata?["models"] else { return }
+
+        var loaded: [OllamaModelInfo] = []
+        for item in items {
+            guard case .object(let dict) = item else { continue }
+            guard let name = dict["name"]?.stringValue else { continue }
+
+            loaded.append(OllamaModelInfo(
+                id: name,
+                name: name,
+                sizeGB: dict["sizeGB"]?.doubleValue
+            ))
+        }
+
+        ollamaModels = loaded
+    }
+
     private func handleMCPServersListResult(_ msg: WSMessage) {
         isLoadingServers = false
         guard case .array(let items) = msg.metadata?["servers"] else { return }
@@ -211,6 +283,7 @@ final class SettingsViewModel {
                 name: name,
                 type: dict["type"]?.stringValue ?? "stdio",
                 enabled: dict["enabled"]?.boolValue ?? true,
+                ollamaEnabled: dict["ollamaEnabled"]?.boolValue ?? true,
                 toolCount: dict["toolCount"]?.intValue ?? 0
             ))
         }
@@ -231,8 +304,22 @@ final class SettingsViewModel {
                     name: mcpServers[index].name,
                     type: mcpServers[index].type,
                     enabled: mcpServers[index].enabled,
+                    ollamaEnabled: mcpServers[index].ollamaEnabled,
                     toolCount: toolCount
                 )
+            }
+        }
+
+        HapticManager.toolCompleted()
+    }
+
+    private func handleOllamaServerToggleResult(_ msg: WSMessage) {
+        guard let meta = msg.metadata,
+              let name = meta["serverName"]?.stringValue else { return }
+
+        if let index = mcpServers.firstIndex(where: { $0.name == name }) {
+            if let enabled = meta["enabled"]?.boolValue {
+                mcpServers[index].ollamaEnabled = enabled
             }
         }
 

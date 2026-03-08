@@ -25,6 +25,9 @@ struct SettingsView: View {
                 connectionSection
                 aiProviderSection
                 mcpServersSection
+                if settingsVM.activeProvider == "ollama" {
+                    ollamaToolsSection
+                }
                 ambientListeningSection
                 aboutSection
                 dataSection
@@ -244,6 +247,9 @@ struct SettingsView: View {
                         if newValue == "claude" {
                             settingsVM.setProvider("claude")
                         }
+                        if newValue == "ollama" && settingsVM.ollamaModels.isEmpty {
+                            settingsVM.requestOllamaModels()
+                        }
                     }
                 }
                 .listRowBackground(Color.surface)
@@ -326,20 +332,63 @@ struct SettingsView: View {
                             .font(.system(size: 13))
                     }
                     .listRowBackground(Color.surface)
+                    .onAppear {
+                        if settingsVM.ollamaModels.isEmpty && !settingsVM.isLoadingOllamaModels {
+                            settingsVM.requestOllamaModels()
+                        }
+                    }
 
+                    // Model picker with installed models
                     HStack {
                         Text("Model")
                             .foregroundStyle(.textPrimary)
                         Spacer()
-                        TextField("llama3",
-                                  text: Binding(
-                                    get: { settingsVM.ollamaModel },
-                                    set: { settingsVM.ollamaModel = $0 }
-                                  ))
-                            .multilineTextAlignment(.trailing)
-                            .foregroundStyle(.textPrimary)
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                        if settingsVM.isLoadingOllamaModels {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                                .tint(.trust)
+                        } else if settingsVM.ollamaModels.isEmpty {
+                            TextField("qwen3",
+                                      text: Binding(
+                                        get: { settingsVM.ollamaModel },
+                                        set: { settingsVM.ollamaModel = $0 }
+                                      ))
+                                .multilineTextAlignment(.trailing)
+                                .foregroundStyle(.textPrimary)
+                                .autocorrectionDisabled()
+                                .textInputAutocapitalization(.never)
+                        } else {
+                            Menu {
+                                ForEach(settingsVM.ollamaModels) { model in
+                                    Button {
+                                        settingsVM.ollamaModel = model.displayName
+                                    } label: {
+                                        HStack {
+                                            Text(model.displayName)
+                                            if let size = model.sizeLabel {
+                                                Text(size)
+                                            }
+                                        }
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: SolaceTheme.xs) {
+                                    Text(settingsVM.ollamaModel.isEmpty ? "Select model" : settingsVM.ollamaModel)
+                                        .foregroundStyle(settingsVM.ollamaModel.isEmpty ? .trust : .textPrimary)
+                                    Image(systemName: "chevron.up.chevron.down")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.trust)
+                                }
+                            }
+                        }
+                        Button {
+                            settingsVM.requestOllamaModels()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 14))
+                                .foregroundStyle(.trust)
+                        }
+                        .buttonStyle(.plain)
                     }
                     .listRowBackground(Color.surface)
 
@@ -445,6 +494,54 @@ struct SettingsView: View {
         }
         .onAppear {
             settingsVM.requestMCPServersList()
+        }
+    }
+
+    private var ollamaToolsSection: some View {
+        Section {
+            if settingsVM.mcpServers.isEmpty {
+                Text("No MCP servers available")
+                    .foregroundStyle(.trust)
+                    .listRowBackground(Color.surface)
+            } else {
+                ForEach(settingsVM.mcpServers.filter { $0.enabled }) { server in
+                    let brand = ServerBrandConfig.brand(for: server.name)
+                    HStack(spacing: SolaceTheme.md) {
+                        Image(systemName: brand.icon)
+                            .font(.system(size: 16))
+                            .foregroundStyle(brand.color)
+                            .frame(width: 24)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(brand.displayName)
+                                .foregroundStyle(.textPrimary)
+                            Text("\(server.toolCount) tool\(server.toolCount == 1 ? "" : "s")")
+                                .font(.toolDetail)
+                                .foregroundStyle(.trust)
+                        }
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { server.ollamaEnabled },
+                            set: { newValue in
+                                settingsVM.toggleOllamaServer(name: server.name, enabled: newValue)
+                            }
+                        ))
+                        .tint(.sageGreen)
+                        .labelsHidden()
+                    }
+                    .listRowBackground(Color.surface)
+                }
+            }
+        } header: {
+            Text("OLLAMA TOOLS")
+                .font(.sectionHeader)
+                .foregroundStyle(.trust)
+                .tracking(1.2)
+        } footer: {
+            let ollamaToolCount = settingsVM.mcpServers
+                .filter { $0.enabled && $0.ollamaEnabled }
+                .reduce(0) { $0 + $1.toolCount }
+            Text("\(ollamaToolCount) tool\(ollamaToolCount == 1 ? "" : "s") sent to Ollama. Disable servers with tools your local model doesn't need.")
+                .foregroundStyle(.trust.opacity(0.6))
         }
     }
 

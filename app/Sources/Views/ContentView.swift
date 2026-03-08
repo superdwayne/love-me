@@ -6,6 +6,7 @@ struct ContentView: View {
     @Environment(WorkflowViewModel.self) private var workflowVM
     @Environment(EmailViewModel.self) private var emailVM
     @Environment(AmbientListeningViewModel.self) private var ambientVM
+    @Environment(AgentPlanViewModel.self) private var agentPlanVM
     @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
     @State private var selectedConversation: String?
     @State private var selectedTab: AppTab = .chat
@@ -76,6 +77,20 @@ struct ContentView: View {
             selectedConversation = conversationId
             chatVM.loadConversation(conversationId)
             emailVM.navigateToConversationId = nil
+        }
+        .sheet(isPresented: Binding(
+            get: { agentPlanVM.showPlanReview },
+            set: { agentPlanVM.showPlanReview = $0 }
+        )) {
+            PlanReviewSheet()
+        }
+        .fullScreenCover(isPresented: Binding(
+            get: { agentPlanVM.isExecuting },
+            set: { newValue in
+                if !newValue { agentPlanVM.dismissExecution() }
+            }
+        )) {
+            AgentDashboardView()
         }
         } // else
     }

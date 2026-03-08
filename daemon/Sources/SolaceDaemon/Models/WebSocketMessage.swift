@@ -89,8 +89,10 @@ enum WSMessageType {
     static let thinkingDone = "thinking_done"
     static let toolCallStart = "tool_call_start"
     static let toolCallDone = "tool_call_done"
+    static let toolCallFailed = "tool_call_failed"
     static let error = "error"
     static let status = "status"
+    static let modelLoading = "model_loading"
     static let pong = "pong"
     static let conversationList = "conversation_list"
     static let conversationLoaded = "conversation_loaded"
@@ -139,6 +141,12 @@ enum WSMessageType {
     // Server -> Client (MCP Server Management)
     static let mcpServersListResult = "mcp_servers_list_result"
     static let mcpServerToggleResult = "mcp_server_toggle_result"
+
+    // Client -> Server (Ollama Tool Server Management)
+    static let ollamaServerToggle = "ollama_server_toggle"
+
+    // Server -> Client (Ollama Tool Server Management)
+    static let ollamaServerToggleResult = "ollama_server_toggle_result"
 
     // Client -> Server (Email / Agent Mail)
     static let emailStatus = "email_status"
@@ -190,10 +198,12 @@ enum WSMessageType {
     // Client -> Server (Provider Management)
     static let getProviders = "get_providers"
     static let setProvider = "set_provider"
+    static let getOllamaModels = "get_ollama_models"
 
     // Server -> Client (Provider Management)
     static let providersStatus = "providers_status"
     static let providerUpdated = "provider_updated"
+    static let ollamaModelsList = "ollama_models_list"
 
     // Client -> Server (Health)
     static let getHealth = "get_health"
@@ -209,4 +219,28 @@ enum WSMessageType {
     static let ambientAnalyzing = "ambient_analyzing"
     static let ambientSuggestions = "ambient_suggestions"
     static let ambientActionResult = "ambient_action_result"
+
+    // Client -> Server (Agent Plans)
+    static let planApprove = "plan_approve"
+    static let planReject = "plan_reject"
+    static let planEdit = "plan_edit"
+    static let planCancel = "plan_cancel"
+    static let planList = "plan_list"
+    static let planGetExecution = "plan_get_execution"
+
+    // Server -> Client (Agent Plans)
+    static let planGenerated = "plan_generated"
+    static let planExecutionStarted = "plan_execution_started"
+    static let agentStarted = "agent_started"
+    static let agentProgress = "agent_progress"
+    static let agentThinking = "agent_thinking"
+    static let agentToolStart = "agent_tool_start"
+    static let agentToolDone = "agent_tool_done"
+    static let agentCompleted = "agent_completed"
+    static let agentFailed = "agent_failed"
+    static let agentSpawning = "agent_spawning"
+    static let providerFallback = "provider_fallback"
+    static let planExecutionDone = "plan_execution_done"
+    static let planListResult = "plan_list_result"
+    static let planExecutionDetail = "plan_execution_detail"
 }

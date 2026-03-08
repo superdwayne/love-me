@@ -294,7 +294,13 @@ final class ChatViewModel {
             content: text.isEmpty ? " " : text,
             metadata: metadata
         )
-        webSocket.send(wsMsg)
+
+        guard webSocket.send(wsMsg) else {
+            // Send failed — mark the user message as failed so they can retry
+            userMessage.sendFailed = true
+            HapticManager.toolError()
+            return
+        }
 
         // Prepare for streaming response
         isStreaming = true
@@ -309,15 +315,18 @@ final class ChatViewModel {
     func retryMessage(_ message: Message) {
         guard message.role == .user, message.sendFailed else { return }
 
-        message.sendFailed = false
-
         let wsMsg = WSMessage(
             type: WSMessageType.userMessage,
             conversationId: currentConversationId,
             content: message.content
         )
-        webSocket.send(wsMsg)
 
+        guard webSocket.send(wsMsg) else {
+            HapticManager.toolError()
+            return
+        }
+
+        message.sendFailed = false
         isStreaming = true
         let assistantMessage = Message(
             role: .assistant,
@@ -378,6 +387,19 @@ final class ChatViewModel {
         UIPasteboard.general.string = message.content
     }
 
+    /// Called when WebSocket connection drops. Resets streaming state so UI isn't stuck.
+    func handleConnectionLost() {
+        guard isStreaming else { return }
+        isStreaming = false
+        // Mark the last assistant message as failed
+        if let lastAssistant = messages.last(where: { $0.role == .assistant && $0.isStreaming }) {
+            lastAssistant.isStreaming = false
+            if lastAssistant.content.isEmpty {
+                lastAssistant.content = "Connection lost — tap to retry"
+            }
+        }
+    }
+
     // MARK: - Message Handling
 
     func handleMessage(_ msg: WSMessage) {
@@ -399,6 +421,12 @@ final class ChatViewModel {
 
         case WSMessageType.toolCallDone:
             handleToolCallDone(msg)
+
+        case WSMessageType.toolCallFailed:
+            handleToolCallFailed(msg)
+
+        case WSMessageType.modelLoading:
+            handleModelLoading(msg)
 
         case WSMessageType.error:
             handleError(msg)
@@ -429,9 +457,19 @@ final class ChatViewModel {
         messages.last { $0.role == .assistant }
     }
 
+    private func handleModelLoading(_ msg: WSMessage) {
+        if let assistant = currentAssistantMessage {
+            assistant.loadingStatus = msg.content ?? "Loading model…"
+        }
+    }
+
     private func handleAssistantChunk(_ msg: WSMessage) {
         guard let content = msg.content else { return }
         if let assistant = currentAssistantMessage {
+            // Clear loading status on first real content
+            if assistant.loadingStatus != nil {
+                assistant.loadingStatus = nil
+            }
             assistant.content += content
         }
     }
@@ -504,6 +542,25 @@ final class ChatViewModel {
                 HapticManager.toolError()
             }
         }
+    }
+
+    private func handleToolCallFailed(_ msg: WSMessage) {
+        let reason = msg.metadata?["reason"]?.stringValue ?? "Unknown error"
+        let toolName = msg.metadata?["toolName"]?.stringValue
+
+        // Display as a system-like warning in the current assistant message
+        let failureText: String
+        if let toolName = toolName {
+            failureText = "\n\n⚠ Tool call failed (\(toolName)): \(reason)"
+        } else {
+            failureText = "\n\n⚠ Tool call failed: \(reason)"
+        }
+
+        if let assistant = currentAssistantMessage {
+            assistant.content += failureText
+        }
+
+        HapticManager.toolError()
     }
 
     private func handleError(_ msg: WSMessage) {

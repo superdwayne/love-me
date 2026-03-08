@@ -43,6 +43,7 @@ final class Message: Identifiable, @unchecked Sendable {
     var attachments: [MessageAttachment]
     var sendFailed: Bool
     var isEdited: Bool
+    var loadingStatus: String?
     let timestamp: Date
 
     init(

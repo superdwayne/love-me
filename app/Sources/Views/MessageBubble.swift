@@ -150,7 +150,11 @@ struct MessageBubble: View {
             if chatVM.editingMessageId == message.id {
                 editingView
             } else if message.content.isEmpty && message.isStreaming && audioAttachments.isEmpty {
-                streamingPlaceholder
+                if let loadingStatus = message.loadingStatus {
+                    modelLoadingView(loadingStatus)
+                } else {
+                    streamingPlaceholder
+                }
             } else {
                 VStack(alignment: .leading, spacing: SolaceTheme.sm) {
                     // Voice note players for audio attachments
@@ -255,6 +259,18 @@ struct MessageBubble: View {
     private var streamingPlaceholder: some View {
         StreamingDotsView()
             .padding(.vertical, SolaceTheme.sm)
+    }
+
+    private func modelLoadingView(_ status: String) -> some View {
+        HStack(spacing: SolaceTheme.sm) {
+            ProgressView()
+                .tint(.trust)
+                .scaleEffect(0.8)
+            Text(status)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.trust)
+        }
+        .padding(.vertical, SolaceTheme.xs)
     }
 
     private var bubbleBackground: Color {

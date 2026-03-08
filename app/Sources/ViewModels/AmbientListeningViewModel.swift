@@ -18,6 +18,7 @@ struct AmbientSuggestion: Identifiable {
         case workflow
         case reminder
         case chat
+        case tool
     }
 
     enum SuggestionStatus {
@@ -34,6 +35,7 @@ struct AmbientSuggestion: Identifiable {
         case .workflow: return "arrow.triangle.branch"
         case .reminder: return "bell"
         case .chat: return "bubble.left"
+        case .tool: return "wrench"
         }
     }
 
@@ -44,6 +46,7 @@ struct AmbientSuggestion: Identifiable {
         case .workflow: return "Workflow"
         case .reminder: return "Reminder"
         case .chat: return "Chat"
+        case .tool: return "Tool"
         }
     }
 }

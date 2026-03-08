@@ -122,7 +122,7 @@ struct ConversationListView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 1.5))
             }
 
-            VStack(alignment: .leading, spacing: SolaceTheme.xs) {
+            VStack(alignment: .leading, spacing: SolaceTheme.sm) {
                 HStack(spacing: SolaceTheme.sm) {
                     Text(conversation.title)
                         .font(.chatMessage)
@@ -156,6 +156,7 @@ struct ConversationListView: View {
 
             Spacer()
         }
+        .padding(.vertical, SolaceTheme.sm)
         .contentShape(Rectangle())
         .accessibilityLabel("\(conversation.title), \(conversation.relativeTimestamp)")
     }

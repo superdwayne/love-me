@@ -1,14 +1,10 @@
 import SwiftUI
 import PhotosUI
-import AVFoundation
-import Speech
 
 struct InputBar: View {
     @Environment(ChatViewModel.self) private var chatVM
     @FocusState private var isFocused: Bool
     @State private var selectedPhotos: [PhotosPickerItem] = []
-    @State private var audioRecorder = AudioRecorderManager()
-    @State private var speechManager = SpeechRecognitionManager()
 
     private var canSend: Bool {
         let hasText = !chatVM.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -63,191 +59,90 @@ struct InputBar: View {
                 attachmentPreview
             }
 
-            if speechManager.isListening {
-                // Speech-to-text listening indicator
-                HStack(spacing: SolaceTheme.sm) {
-                    // Cancel listening
-                    Button {
-                        speechManager.stopListening()
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 24))
-                            .foregroundStyle(.trust)
-                    }
-                    .accessibilityLabel("Cancel dictation")
-
-                    // Listening indicator
-                    HStack(spacing: SolaceTheme.sm) {
-                        Image(systemName: "waveform")
-                            .font(.system(size: 14))
-                            .foregroundStyle(.heart)
-                            .symbolEffect(.variableColor.iterative, isActive: true)
-
-                        Text(speechManager.transcribedText.isEmpty ? "Listening..." : speechManager.transcribedText)
-                            .font(.system(size: 14))
-                            .foregroundStyle(speechManager.transcribedText.isEmpty ? .trust : .textPrimary)
-                            .lineLimit(2)
-
-                        Spacer()
-                    }
-                    .padding(.horizontal, SolaceTheme.md)
-                    .padding(.vertical, SolaceTheme.sm)
-                    .background(.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.inputFieldRadius))
-
-                    // Done — accept transcription
-                    Button {
-                        acceptTranscription()
-                    } label: {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 32))
-                            .foregroundStyle(.sageGreen)
-                    }
-                    .accessibilityLabel("Accept transcription")
+            HStack(alignment: .bottom, spacing: SolaceTheme.sm) {
+                // Attachment button
+                PhotosPicker(
+                    selection: $selectedPhotos,
+                    maxSelectionCount: 5,
+                    matching: .images
+                ) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 24))
+                        .foregroundStyle(.trust)
                 }
-                .padding(.horizontal, SolaceTheme.md)
-                .padding(.vertical, SolaceTheme.xs)
-                .transition(.opacity)
-            } else if audioRecorder.isRecording {
-                // Voice note recording indicator bar
-                HStack(spacing: SolaceTheme.sm) {
-                    Button {
-                        audioRecorder.cancelRecording()
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 24))
-                            .foregroundStyle(.trust)
+                .accessibilityLabel("Attach images")
+                .onChange(of: selectedPhotos) { _, items in
+                    Task {
+                        await loadPhotos(items)
+                        selectedPhotos = []
                     }
-                    .accessibilityLabel("Cancel recording")
-
-                    HStack(spacing: SolaceTheme.sm) {
-                        Circle()
-                            .fill(Color.softRed)
-                            .frame(width: 10, height: 10)
-
-                        Text("Recording")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(.textPrimary)
-
-                        Text(audioRecorder.formattedDuration)
-                            .font(.system(size: 14, design: .monospaced))
-                            .foregroundStyle(.trust)
-
-                        Spacer()
-                    }
-                    .padding(.horizontal, SolaceTheme.md)
-                    .padding(.vertical, SolaceTheme.md)
-                    .background(.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.inputFieldRadius))
-
-                    Button {
-                        stopRecordingAndAttach()
-                    } label: {
-                        Image(systemName: "stop.circle.fill")
-                            .font(.system(size: 32))
-                            .foregroundStyle(.softRed)
-                    }
-                    .accessibilityLabel("Stop recording")
                 }
-                .padding(.horizontal, SolaceTheme.md)
-                .padding(.vertical, SolaceTheme.xs)
-                .transition(.opacity)
-            } else {
-                HStack(alignment: .bottom, spacing: SolaceTheme.sm) {
-                    // Attachment button
-                    PhotosPicker(
-                        selection: $selectedPhotos,
-                        maxSelectionCount: 5,
-                        matching: .images
-                    ) {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 24))
-                            .foregroundStyle(.trust)
-                    }
-                    .accessibilityLabel("Attach images")
-                    .onChange(of: selectedPhotos) { _, items in
-                        Task {
-                            await loadPhotos(items)
-                            selectedPhotos = []
-                        }
-                    }
 
-                    // Text input
-                    ChatTextInput(
-                        text: $vm.inputText,
-                        onReturn: {
-                            if canSend {
-                                chatVM.sendMessage()
-                            }
-                        }
-                    )
-                    .frame(minHeight: 32, maxHeight: 100)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .background(.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.inputFieldRadius))
-                    .onChange(of: chatVM.inputText) { _, newValue in
-                        detectAndFetchImageURL(in: newValue)
-                    }
-
-                    if chatVM.isStreaming {
-                        // Stop button (while streaming/executing)
-                        Button {
-                            chatVM.cancelGeneration()
-                        } label: {
-                            Image(systemName: "stop.fill")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .frame(width: SolaceTheme.sendButtonSize,
-                                       height: SolaceTheme.sendButtonSize)
-                                .background(.softRed)
-                                .clipShape(Circle())
-                        }
-                        .accessibilityLabel("Stop generation")
-                        .transition(.scale.combined(with: .opacity))
-                    } else if canSend {
-                        // Send button
-                        Button {
+                // Text input
+                ChatTextInput(
+                    text: $vm.inputText,
+                    onReturn: {
+                        if canSend {
                             chatVM.sendMessage()
-                        } label: {
-                            Image(systemName: "arrow.up")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .frame(width: SolaceTheme.sendButtonSize,
-                                       height: SolaceTheme.sendButtonSize)
-                                .background(.heart)
-                                .clipShape(Circle())
                         }
-                        .accessibilityLabel("Send message")
-                        .transition(.scale.combined(with: .opacity))
-                    } else {
-                        // Mic button — tap for speech-to-text, long-press for voice recording
-                        Image(systemName: "mic.fill")
+                    }
+                )
+                .frame(minHeight: SolaceTheme.minTouchTarget, maxHeight: 120)
+                .fixedSize(horizontal: false, vertical: true)
+                .background(.surface)
+                .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.inputFieldRadius))
+                .contentShape(RoundedRectangle(cornerRadius: SolaceTheme.inputFieldRadius))
+                .onChange(of: chatVM.inputText) { _, newValue in
+                    detectAndFetchImageURL(in: newValue)
+                }
+
+                if chatVM.isStreaming {
+                    // Stop button (while streaming/executing)
+                    Button {
+                        chatVM.cancelGeneration()
+                    } label: {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: SolaceTheme.sendButtonSize,
+                                   height: SolaceTheme.sendButtonSize)
+                            .background(.softRed)
+                            .clipShape(Circle())
+                    }
+                    .accessibilityLabel("Stop generation")
+                    .transition(.scale.combined(with: .opacity))
+                } else if canSend {
+                    // Send button
+                    Button {
+                        chatVM.sendMessage()
+                    } label: {
+                        Image(systemName: "arrow.up")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(.white)
                             .frame(width: SolaceTheme.sendButtonSize,
                                    height: SolaceTheme.sendButtonSize)
-                            .background(.trust)
+                            .background(.heart)
                             .clipShape(Circle())
-                            .onTapGesture {
-                                startSpeechToText()
-                            }
-                            .onLongPressGesture(minimumDuration: 0.5) {
-                                requestMicAndRecord()
-                            }
-                            .accessibilityLabel("Tap to dictate, hold to record voice note")
-                            .transition(.scale.combined(with: .opacity))
                     }
+                    .accessibilityLabel("Send message")
+                    .transition(.scale.combined(with: .opacity))
                 }
-                .padding(.horizontal, SolaceTheme.md)
-                .padding(.top, SolaceTheme.sm)
-                .padding(.bottom, SolaceTheme.md)
             }
+            .padding(.horizontal, SolaceTheme.md)
+            .padding(.top, SolaceTheme.sm)
+            .padding(.bottom, SolaceTheme.lg)
         }
         .background(.inputBg)
         .animation(.snappy(duration: 0.15), value: canSend)
-        .animation(.snappy(duration: 0.2), value: audioRecorder.isRecording)
-        .animation(.snappy(duration: 0.2), value: speechManager.isListening)
         .animation(.snappy(duration: 0.15), value: chatVM.inputText.isEmpty)
+    }
+
+    // MARK: - Helpers
+
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        return "\(minutes):\(String(format: "%02d", seconds))"
     }
 
     // MARK: - Attachment Preview
@@ -312,69 +207,6 @@ struct InputBar: View {
             .padding(.horizontal, SolaceTheme.lg)
             .padding(.vertical, SolaceTheme.sm)
         }
-    }
-
-    // MARK: - Speech-to-Text
-
-    private func startSpeechToText() {
-        switch AVAudioApplication.shared.recordPermission {
-        case .granted:
-            speechManager.startListening()
-        case .denied:
-            break
-        case .undetermined:
-            AVAudioApplication.requestRecordPermission { granted in
-                if granted {
-                    Task { @MainActor in
-                        speechManager.startListening()
-                    }
-                }
-            }
-        @unknown default:
-            break
-        }
-    }
-
-    private func acceptTranscription() {
-        let text = speechManager.transcribedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        speechManager.stopListening()
-        if !text.isEmpty {
-            chatVM.inputText = text
-        }
-    }
-
-    // MARK: - Voice Recording
-
-    private func requestMicAndRecord() {
-        switch AVAudioApplication.shared.recordPermission {
-        case .granted:
-            audioRecorder.startRecording()
-        case .denied:
-            break
-        case .undetermined:
-            AVAudioApplication.requestRecordPermission { granted in
-                if granted {
-                    Task { @MainActor in
-                        audioRecorder.startRecording()
-                    }
-                }
-            }
-        @unknown default:
-            break
-        }
-    }
-
-    private func stopRecordingAndAttach() {
-        guard let result = audioRecorder.stopRecording() else { return }
-        chatVM.addVoiceNote(data: result.data, duration: result.duration)
-        // Auto-send the voice note immediately
-        chatVM.sendMessage()
-    }
-
-    private func formatDuration(_ duration: TimeInterval) -> String {
-        let minutes = Int(duration) / 60
-        let seconds = Int(duration) % 60
-        return "\(minutes):\(String(format: "%02d", seconds))"
     }
 
     // MARK: - Photo Loading
@@ -567,7 +399,7 @@ struct ChatTextInput: UIViewRepresentable {
         tv.textColor = UIColor.label
         tv.backgroundColor = .clear
         tv.isScrollEnabled = false
-        tv.textContainerInset = UIEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
+        tv.textContainerInset = UIEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
         tv.textContainer.lineFragmentPadding = 0
         tv.returnKeyType = .send
         tv.allowsEditingTextAttributes = false
@@ -584,8 +416,8 @@ struct ChatTextInput: UIViewRepresentable {
         placeholder.translatesAutoresizingMaskIntoConstraints = false
         tv.addSubview(placeholder)
         NSLayoutConstraint.activate([
-            placeholder.leadingAnchor.constraint(equalTo: tv.leadingAnchor, constant: 10),
-            placeholder.topAnchor.constraint(equalTo: tv.topAnchor, constant: 6),
+            placeholder.leadingAnchor.constraint(equalTo: tv.leadingAnchor, constant: 12),
+            placeholder.topAnchor.constraint(equalTo: tv.topAnchor, constant: 12),
         ])
 
         return tv
@@ -599,7 +431,7 @@ struct ChatTextInput: UIViewRepresentable {
             tv.text = text
             tv.invalidateIntrinsicContentSize()
             let fittingSize = tv.sizeThatFits(CGSize(width: tv.bounds.width, height: .greatestFiniteMagnitude))
-            tv.isScrollEnabled = fittingSize.height > 100
+            tv.isScrollEnabled = fittingSize.height > 120
         }
         // Show/hide placeholder
         if let placeholder = tv.viewWithTag(999) as? UILabel {
@@ -646,7 +478,7 @@ struct ChatTextInput: UIViewRepresentable {
             textView.invalidateIntrinsicContentSize()
             // Enable scrolling only when the text outgrows the max height
             let fittingSize = textView.sizeThatFits(CGSize(width: textView.bounds.width, height: .greatestFiniteMagnitude))
-            textView.isScrollEnabled = fittingSize.height > 100
+            textView.isScrollEnabled = fittingSize.height > 120
         }
 
         func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {

@@ -10,6 +10,7 @@ struct SolaceApp: App {
     @State private var emailVM: EmailViewModel
     @State private var settingsVM: SettingsViewModel
     @State private var ambientVM: AmbientListeningViewModel
+    @State private var agentPlanVM: AgentPlanViewModel
     @State private var bonjourBrowser = BonjourBrowser()
     @State private var linkPreviewService = LinkPreviewService()
     @Environment(\.scenePhase) private var scenePhase
@@ -22,6 +23,7 @@ struct SolaceApp: App {
         let email = EmailViewModel(webSocket: ws)
         let settings = SettingsViewModel(webSocket: ws)
         let ambient = AmbientListeningViewModel(webSocket: ws)
+        let agentPlan = AgentPlanViewModel(webSocket: ws)
 
         // Wire up message routing to all view models
         ws.onMessage = { @MainActor message in
@@ -31,6 +33,7 @@ struct SolaceApp: App {
             email.handleMessage(message)
             settings.handleMessage(message)
             ambient.handleMessage(message)
+            agentPlan.handleMessage(message)
         }
 
         _webSocket = State(initialValue: ws)
@@ -40,6 +43,7 @@ struct SolaceApp: App {
         _emailVM = State(initialValue: email)
         _settingsVM = State(initialValue: settings)
         _ambientVM = State(initialValue: ambient)
+        _agentPlanVM = State(initialValue: agentPlan)
 
         // Request notification permission
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
@@ -59,11 +63,17 @@ struct SolaceApp: App {
                 .environment(emailVM)
                 .environment(settingsVM)
                 .environment(ambientVM)
+                .environment(agentPlanVM)
                 .environment(bonjourBrowser)
                 .environment(linkPreviewService)
                 .preferredColorScheme(.light)
                 .task {
                     await autoConnect()
+                }
+                .onChange(of: webSocket.connectionState) { _, newState in
+                    if newState == .disconnected {
+                        chatVM.handleConnectionLost()
+                    }
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     let musicEnabled = UserDefaults.standard.bool(forKey: "ambient_music_enabled")
