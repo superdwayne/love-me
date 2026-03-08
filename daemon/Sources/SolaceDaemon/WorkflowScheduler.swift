@@ -128,7 +128,9 @@ actor WorkflowScheduler {
         }
         candidate = startCandidate
 
-        let maxDate = calendar.date(byAdding: .day, value: 366, to: after)!
+        guard let maxDate = calendar.date(byAdding: .day, value: 366, to: after) else {
+            return nil
+        }
 
         while candidate <= maxDate {
             let comps = calendar.dateComponents([.minute, .hour, .day, .month, .weekday], from: candidate)

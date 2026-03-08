@@ -64,6 +64,10 @@
 		BB11223344556677AABB0005 /* Inter-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = BB11223344556677AABB0006 /* Inter-Regular.ttf */; };
 		BB11223344556677AABB0007 /* Inter-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = BB11223344556677AABB0008 /* Inter-Medium.ttf */; };
 		BB11223344556677AABB0009 /* Inter-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = BB11223344556677AABB000A /* Inter-Bold.ttf */; };
+		BB11223344556677AABB0020 /* PlayfairDisplay-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = BB11223344556677AABB0021 /* PlayfairDisplay-Regular.ttf */; };
+		BB11223344556677AABB0022 /* PlayfairDisplay-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = BB11223344556677AABB0023 /* PlayfairDisplay-Medium.ttf */; };
+		BB11223344556677AABB0024 /* PlayfairDisplay-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = BB11223344556677AABB0025 /* PlayfairDisplay-SemiBold.ttf */; };
+		BB11223344556677AABB0026 /* PlayfairDisplay-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = BB11223344556677AABB0027 /* PlayfairDisplay-Bold.ttf */; };
 		CC22334455667788AABB0002 /* ServerBrandConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC22334455667788AABB0001 /* ServerBrandConfig.swift */; };
 		CC22334455667788AABB0006 /* WorkflowBuilderWrapperView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC22334455667788AABB0005 /* WorkflowBuilderWrapperView.swift */; };
 		DD11223344556677AABB0001 /* AmbientMusicManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD11223344556677AABB0002 /* AmbientMusicManager.swift */; };
@@ -76,6 +80,12 @@
 		AA1B2C3D4E5F6A09B2C3D4E5 /* VoiceTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1B2C3D4E5F6A09B2C3D4E6 /* VoiceTabView.swift */; };
 		BB1B2C3D4E5F6A10B2C3D4E5 /* EmailDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1B2C3D4E5F6A10B2C3D4E6 /* EmailDetailView.swift */; };
 		CC1B2C3D4E5F6A11B2C3D4E5 /* EmailReplyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC1B2C3D4E5F6A11B2C3D4E6 /* EmailReplyView.swift */; };
+		FF11223344556677AABB0002 /* AgentPlanTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF11223344556677AABB0001 /* AgentPlanTypes.swift */; };
+		FF11223344556677AABB0004 /* AgentPlanViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF11223344556677AABB0003 /* AgentPlanViewModel.swift */; };
+		FF11223344556677AABB0006 /* AgentDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF11223344556677AABB0005 /* AgentDashboardView.swift */; };
+		FF11223344556677AABB0008 /* AgentDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF11223344556677AABB0007 /* AgentDetailView.swift */; };
+		FF11223344556677AABB000A /* PlanEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF11223344556677AABB0009 /* PlanEditView.swift */; };
+		FF11223344556677AABB000C /* PlanReviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF11223344556677AABB000B /* PlanReviewSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -138,6 +148,10 @@
 		BB11223344556677AABB0006 /* Inter-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Inter-Regular.ttf"; sourceTree = "<group>"; };
 		BB11223344556677AABB0008 /* Inter-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Inter-Medium.ttf"; sourceTree = "<group>"; };
 		BB11223344556677AABB000A /* Inter-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Inter-Bold.ttf"; sourceTree = "<group>"; };
+		BB11223344556677AABB0021 /* PlayfairDisplay-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "PlayfairDisplay-Regular.ttf"; sourceTree = "<group>"; };
+		BB11223344556677AABB0023 /* PlayfairDisplay-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "PlayfairDisplay-Medium.ttf"; sourceTree = "<group>"; };
+		BB11223344556677AABB0025 /* PlayfairDisplay-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "PlayfairDisplay-SemiBold.ttf"; sourceTree = "<group>"; };
+		BB11223344556677AABB0027 /* PlayfairDisplay-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "PlayfairDisplay-Bold.ttf"; sourceTree = "<group>"; };
 		CC22334455667788AABB0001 /* ServerBrandConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerBrandConfig.swift; sourceTree = "<group>"; };
 		CC22334455667788AABB0005 /* WorkflowBuilderWrapperView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowBuilderWrapperView.swift; sourceTree = "<group>"; };
 		DD11223344556677AABB0002 /* AmbientMusicManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmbientMusicManager.swift; sourceTree = "<group>"; };
@@ -150,6 +164,12 @@
 		AA1B2C3D4E5F6A09B2C3D4E6 /* VoiceTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTabView.swift; sourceTree = "<group>"; };
 		BB1B2C3D4E5F6A10B2C3D4E6 /* EmailDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailDetailView.swift; sourceTree = "<group>"; };
 		CC1B2C3D4E5F6A11B2C3D4E6 /* EmailReplyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailReplyView.swift; sourceTree = "<group>"; };
+		FF11223344556677AABB0001 /* AgentPlanTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPlanTypes.swift; sourceTree = "<group>"; };
+		FF11223344556677AABB0003 /* AgentPlanViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPlanViewModel.swift; sourceTree = "<group>"; };
+		FF11223344556677AABB0005 /* AgentDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDashboardView.swift; sourceTree = "<group>"; };
+		FF11223344556677AABB0007 /* AgentDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDetailView.swift; sourceTree = "<group>"; };
+		FF11223344556677AABB0009 /* PlanEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanEditView.swift; sourceTree = "<group>"; };
+		FF11223344556677AABB000B /* PlanReviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanReviewSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -172,6 +192,7 @@
 		6DE0E69F8977FF120EE0C5FD /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				FF11223344556677AABB0001 /* AgentPlanTypes.swift */,
 				FF610C4AEFAC2266E2E2CDBE /* Conversation.swift */,
 				0A1B2C3D4E5F6A04B2C3D4E6 /* LinkPreview.swift */,
 				A1C2D3E4F5A60001B2C3D4E6 /* MCPServerInfo.swift */,
@@ -195,6 +216,7 @@
 		8E7AC94A36A626A64811B315 /* ViewModels */ = {
 			isa = PBXGroup;
 			children = (
+				FF11223344556677AABB0003 /* AgentPlanViewModel.swift */,
 				EE11223344556677AABB0004 /* AmbientListeningViewModel.swift */,
 				A8394523FAC9063A0EFD32DB /* ChatViewModel.swift */,
 				8B743237B7D6998033A5C46A /* ConversationListViewModel.swift */,
@@ -241,6 +263,10 @@
 				BB11223344556677AABB000A /* Inter-Bold.ttf */,
 				BB11223344556677AABB0002 /* SpaceGrotesk-Medium.ttf */,
 				BB11223344556677AABB0004 /* SpaceGrotesk-Bold.ttf */,
+				BB11223344556677AABB0021 /* PlayfairDisplay-Regular.ttf */,
+				BB11223344556677AABB0023 /* PlayfairDisplay-Medium.ttf */,
+				BB11223344556677AABB0025 /* PlayfairDisplay-SemiBold.ttf */,
+				BB11223344556677AABB0027 /* PlayfairDisplay-Bold.ttf */,
 			);
 			path = Fonts;
 			sourceTree = "<group>";
@@ -270,6 +296,8 @@
 		D65427A6A770EE0AD8192EFB /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				FF11223344556677AABB0005 /* AgentDashboardView.swift */,
+				FF11223344556677AABB0007 /* AgentDetailView.swift */,
 				AA11223344556677AABB0006 /* AmbientBackgroundView.swift */,
 				EE11223344556677AABB0006 /* AmbientListeningOverlay.swift */,
 				0A1B2C3D4E5F6A08B2C3D4E6 /* CardWorkflowBuilderView.swift */,
@@ -289,6 +317,8 @@
 				B108799742FC44169DE33DA4 /* InputBar.swift */,
 				0A1B2C3D4E5F6A06B2C3D4E6 /* LinkPreviewCard.swift */,
 				842D7A428DCA9812A2D6EAA6 /* MessageBubble.swift */,
+				FF11223344556677AABB0009 /* PlanEditView.swift */,
+				FF11223344556677AABB000B /* PlanReviewSheet.swift */,
 				4D6DF452C51A884B99D83E4E /* SettingsView.swift */,
 				AA11223344556677AABB0002 /* SpiritGuideView.swift */,
 				0A1B2C3D4E5F6A03B2C3D4E6 /* StepTemplatePicker.swift */,
@@ -372,6 +402,10 @@
 				BB11223344556677AABB0005 /* Inter-Regular.ttf in Resources */,
 				BB11223344556677AABB0007 /* Inter-Medium.ttf in Resources */,
 				BB11223344556677AABB0009 /* Inter-Bold.ttf in Resources */,
+				BB11223344556677AABB0020 /* PlayfairDisplay-Regular.ttf in Resources */,
+				BB11223344556677AABB0022 /* PlayfairDisplay-Medium.ttf in Resources */,
+				BB11223344556677AABB0024 /* PlayfairDisplay-SemiBold.ttf in Resources */,
+				BB11223344556677AABB0026 /* PlayfairDisplay-Bold.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -442,6 +476,12 @@
 				AA1B2C3D4E5F6A09B2C3D4E5 /* VoiceTabView.swift in Sources */,
 				BB1B2C3D4E5F6A10B2C3D4E5 /* EmailDetailView.swift in Sources */,
 				CC1B2C3D4E5F6A11B2C3D4E5 /* EmailReplyView.swift in Sources */,
+				FF11223344556677AABB0002 /* AgentPlanTypes.swift in Sources */,
+				FF11223344556677AABB0004 /* AgentPlanViewModel.swift in Sources */,
+				FF11223344556677AABB0006 /* AgentDashboardView.swift in Sources */,
+				FF11223344556677AABB0008 /* AgentDetailView.swift in Sources */,
+				FF11223344556677AABB000A /* PlanEditView.swift in Sources */,
+				FF11223344556677AABB000C /* PlanReviewSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

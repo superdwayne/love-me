@@ -142,7 +142,12 @@ actor AttachmentProcessor {
             process.standardError = FileHandle.nullDevice
 
             try process.run()
-            process.waitUntilExit()
+            // Use async-safe waiting instead of blocking the cooperative thread pool
+            await withCheckedContinuation { continuation in
+                process.terminationHandler = { _ in
+                    continuation.resume()
+                }
+            }
 
             guard process.terminationStatus == 0 else {
                 Logger.info("AttachmentProcessor: pdftotext failed with status \(process.terminationStatus) for \(filename), storing file instead")

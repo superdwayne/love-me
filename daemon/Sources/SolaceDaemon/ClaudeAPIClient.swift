@@ -18,16 +18,20 @@ actor ClaudeAPIClient: LLMProvider {
     private let config: DaemonConfig
     private let session: URLSession
     private let apiURL = URL(string: "https://api.anthropic.com/v1/messages")!
+    nonisolated let modelOverride: String?
+    nonisolated let thinkingBudgetOverride: Int?
 
     // MARK: - LLMProvider Properties
 
     nonisolated let providerName = "Claude"
-    nonisolated var modelName: String { config.claudeModel }
+    nonisolated var modelName: String { modelOverride ?? config.claudeModel }
     nonisolated let supportsThinking = true
     nonisolated let supportsTools = true
 
-    init(config: DaemonConfig) {
+    init(config: DaemonConfig, modelOverride: String? = nil, thinkingBudgetOverride: Int? = nil) {
         self.config = config
+        self.modelOverride = modelOverride
+        self.thinkingBudgetOverride = thinkingBudgetOverride
         let sessionConfig = URLSessionConfiguration.default
         sessionConfig.timeoutIntervalForRequest = 300
         sessionConfig.timeoutIntervalForResource = 600
@@ -49,13 +53,13 @@ actor ClaudeAPIClient: LLMProvider {
         }
 
         let request = ClaudeRequest(
-            model: config.claudeModel,
+            model: modelName,
             max_tokens: 16384,
             messages: messages,
             system: systemPrompt ?? config.systemPrompt,
             stream: true,
             tools: tools.isEmpty ? nil : tools,
-            thinking: ThinkingConfig(budget_tokens: 10000)
+            thinking: ThinkingConfig(budget_tokens: thinkingBudgetOverride ?? 10000)
         )
 
         return AsyncThrowingStream { continuation in
@@ -86,7 +90,7 @@ actor ClaudeAPIClient: LLMProvider {
         }
 
         let request = ClaudeRequest(
-            model: config.claudeModel,
+            model: modelName,
             max_tokens: 8192,
             messages: messages,
             system: systemPrompt,
@@ -145,7 +149,7 @@ actor ClaudeAPIClient: LLMProvider {
         urlRequest.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         urlRequest.setValue("application/json", forHTTPHeaderField: "content-type")
         urlRequest.httpBody = bodyData
-        urlRequest.timeoutInterval = 60  // 60s per-chunk timeout for streaming
+        urlRequest.timeoutInterval = 180  // 180s per-chunk timeout for streaming (extended thinking may take >60s)
 
         Logger.info("API request: \(bodyData.count) bytes to \(apiURL)")
 

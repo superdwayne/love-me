@@ -8,6 +8,7 @@ actor MCPManager {
     private var allTools: [MCPToolInfo] = []
     private var toolToServer: [String: String] = [:]
     private var enabledState: [String: Bool] = [:]
+    private var ollamaEnabledState: [String: Bool] = [:]
     private var externalHandlers: [String: @Sendable (String, JSONValue) async throws -> MCPToolCallResult] = [:]
 
     init(config: DaemonConfig) {
@@ -31,6 +32,7 @@ actor MCPManager {
             for (name, serverConfig) in mcpConfig.mcpServers {
                 // Initialize enabled state from config (default true)
                 enabledState[name] = serverConfig.isEnabled
+                ollamaEnabledState[name] = serverConfig.ollamaEnabled
 
                 if serverConfig.isStdio {
                     await startStdioServer(name: name, config: serverConfig)
@@ -93,6 +95,22 @@ actor MCPManager {
         } catch {
             Logger.error("Failed to start MCP HTTP server '\(name)': \(error)")
         }
+    }
+
+    /// Get tool definitions filtered for Ollama (excludes tools from globally disabled OR Ollama-disabled servers)
+    func getToolDefinitionsForOllama() -> [ToolDefinition] {
+        var seen = Set<String>()
+        var defs: [ToolDefinition] = []
+        for tool in allTools where isServerEnabled(tool.serverName) && isOllamaServerEnabled(tool.serverName) {
+            if seen.insert(tool.name).inserted {
+                defs.append(ToolDefinition(
+                    name: tool.name,
+                    description: tool.description,
+                    input_schema: tool.inputSchema
+                ))
+            }
+        }
+        return defs
     }
 
     /// Get all discovered tools as Claude API ToolDefinitions (excludes tools from disabled servers, deduplicates by name)
@@ -178,15 +196,28 @@ actor MCPManager {
         enabledState[name] = enabled
     }
 
+    // MARK: - Ollama Server Enabled State
+
+    /// Check if a server is enabled for Ollama (defaults to true for unknown servers)
+    func isOllamaServerEnabled(_ name: String) -> Bool {
+        ollamaEnabledState[name] ?? true
+    }
+
+    /// Set the Ollama-enabled state for a server
+    func setOllamaServerEnabled(_ name: String, _ enabled: Bool) {
+        ollamaEnabledState[name] = enabled
+    }
+
     /// Get info about all servers (name, type, enabled state, tool count)
-    func getServerInfoList() -> [(name: String, isStdio: Bool, enabled: Bool, toolCount: Int)] {
+    func getServerInfoList() -> [(name: String, isStdio: Bool, enabled: Bool, ollamaEnabled: Bool, toolCount: Int)] {
         return Set(servers.keys).sorted().map { name in
             let transport = servers[name]
             // Determine type by checking if it's a stdio transport (MCPServerProcess) vs HTTP
             let isStdio = transport is MCPServerProcess
             let enabled = isServerEnabled(name)
+            let ollamaEnabled = isOllamaServerEnabled(name)
             let count = allTools.filter { $0.serverName == name }.count
-            return (name: name, isStdio: isStdio, enabled: enabled, toolCount: count)
+            return (name: name, isStdio: isStdio, enabled: enabled, ollamaEnabled: ollamaEnabled, toolCount: count)
         }
     }
 
@@ -224,5 +255,6 @@ actor MCPManager {
         allTools.removeAll()
         toolToServer.removeAll()
         enabledState.removeAll()
+        ollamaEnabledState.removeAll()
     }
 }

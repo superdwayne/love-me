@@ -1,37 +1,74 @@
 import Foundation
 
-// MARK: - OpenAI-Compatible Request/Response Types (for Ollama)
+// MARK: - Native API Request Types
 
-private struct OllamaRequest: Codable, Sendable {
+private struct OllamaNativeRequest: Encodable, Sendable {
     let model: String
-    let messages: [OllamaChatMessage]
+    let messages: [OllamaNativeChatMessage]
     let stream: Bool
     let tools: [OllamaToolDef]?
-    let max_tokens: Int?
+    let options: OllamaRequestOptions?
 
-    init(model: String, messages: [OllamaChatMessage], stream: Bool = true,
-         tools: [OllamaToolDef]? = nil, max_tokens: Int? = 16384) {
+    init(model: String, messages: [OllamaNativeChatMessage], stream: Bool = true,
+         tools: [OllamaToolDef]? = nil, options: OllamaRequestOptions? = nil) {
         self.model = model
         self.messages = messages
         self.stream = stream
         self.tools = tools
-        self.max_tokens = max_tokens
+        self.options = options
     }
 }
 
-private struct OllamaChatMessage: Codable, Sendable {
+private struct OllamaRequestOptions: Encodable, Sendable {
+    let num_predict: Int?
+}
+
+private struct OllamaNativeChatMessage: Encodable, Sendable {
     let role: String
     let content: String?
-    let tool_calls: [OllamaToolCallResult]?
-    let tool_call_id: String?
+    let tool_calls: [OllamaNativeToolCallEntry]?
 
-    init(role: String, content: String? = nil, tool_calls: [OllamaToolCallResult]? = nil, tool_call_id: String? = nil) {
+    init(role: String, content: String? = nil, tool_calls: [OllamaNativeToolCallEntry]? = nil) {
         self.role = role
         self.content = content
         self.tool_calls = tool_calls
-        self.tool_call_id = tool_call_id
     }
 }
+
+private struct OllamaNativeToolCallEntry: Encodable, Sendable {
+    let function: OllamaNativeFunctionEntry
+}
+
+private struct OllamaNativeFunctionEntry: Encodable, Sendable {
+    let name: String
+    let arguments: JSONValue
+}
+
+// MARK: - Native API Response Types (NDJSON streaming + non-streaming)
+
+private struct OllamaNativeChunk: Decodable, Sendable {
+    let model: String?
+    let message: OllamaNativeResponseMessage?
+    let done: Bool?
+    let done_reason: String?
+}
+
+private struct OllamaNativeResponseMessage: Decodable, Sendable {
+    let role: String?
+    let content: String?
+    let tool_calls: [OllamaNativeResponseToolCall]?
+}
+
+private struct OllamaNativeResponseToolCall: Decodable, Sendable {
+    let function: OllamaNativeResponseFunction?
+}
+
+private struct OllamaNativeResponseFunction: Decodable, Sendable {
+    let name: String?
+    let arguments: JSONValue?
+}
+
+// MARK: - Tool Definition Types (same format across both APIs)
 
 private struct OllamaToolDef: Codable, Sendable {
     let type: String
@@ -49,132 +86,7 @@ private struct OllamaFunctionDef: Codable, Sendable {
     let parameters: JSONValue
 }
 
-private struct OllamaToolCallResult: Codable, Sendable {
-    let id: String
-    let type: String
-    let function: OllamaFunctionCall
-
-    init(id: String, function: OllamaFunctionCall) {
-        self.id = id
-        self.type = "function"
-        self.function = function
-    }
-}
-
-private struct OllamaFunctionCall: Codable, Sendable {
-    let name: String
-    let arguments: String
-}
-
-// MARK: - SSE Chunk Types (OpenAI format)
-
-private struct OllamaSSEChunk: Codable, Sendable {
-    let choices: [OllamaSSEChoice]?
-}
-
-private struct OllamaSSEChoice: Codable, Sendable {
-    let index: Int?
-    let delta: OllamaSSEDelta?
-    let finish_reason: String?
-}
-
-private struct OllamaSSEDelta: Codable, Sendable {
-    let role: String?
-    let content: String?
-    let tool_calls: [OllamaSSEToolCall]?
-}
-
-private struct OllamaSSEToolCall: Codable, Sendable {
-    let index: Int?
-    let id: String?
-    let type: String?
-    let function: OllamaSSEFunctionCall?
-}
-
-private struct OllamaSSEFunctionCall: Codable, Sendable {
-    let name: String?
-    let arguments: String?
-}
-
-// MARK: - Non-streaming response
-
-private struct OllamaNonStreamResponse: Codable, Sendable {
-    let choices: [OllamaNonStreamChoice]?
-}
-
-private struct OllamaNonStreamChoice: Codable, Sendable {
-    let message: OllamaNonStreamMessage?
-}
-
-private struct OllamaNonStreamMessage: Codable, Sendable {
-    let content: String?
-}
-
-// MARK: - Pending Tool Call Accumulator
-
-private struct OllamaPendingToolCall: Sendable {
-    var id: String
-    var name: String
-    var argumentsJSON: String
-}
-
-// MARK: - Text-based Tool Call Parsing (fallback for models without native function calling)
-
-private struct TextToolCall: Codable {
-    let name: String
-    let arguments: [String: AnyCodableValue]?
-}
-
-/// Flexible JSON value type for parsing arbitrary tool call arguments
-private enum AnyCodableValue: Codable {
-    case string(String)
-    case int(Int)
-    case double(Double)
-    case bool(Bool)
-    case null
-    case array([AnyCodableValue])
-    case object([String: AnyCodableValue])
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if let v = try? container.decode(String.self) { self = .string(v) }
-        else if let v = try? container.decode(Int.self) { self = .int(v) }
-        else if let v = try? container.decode(Double.self) { self = .double(v) }
-        else if let v = try? container.decode(Bool.self) { self = .bool(v) }
-        else if container.decodeNil() { self = .null }
-        else if let v = try? container.decode([AnyCodableValue].self) { self = .array(v) }
-        else if let v = try? container.decode([String: AnyCodableValue].self) { self = .object(v) }
-        else { throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unsupported value") }
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        switch self {
-        case .string(let v): try container.encode(v)
-        case .int(let v): try container.encode(v)
-        case .double(let v): try container.encode(v)
-        case .bool(let v): try container.encode(v)
-        case .null: try container.encodeNil()
-        case .array(let v): try container.encode(v)
-        case .object(let v): try container.encode(v)
-        }
-    }
-
-    /// Convert to Any for JSONSerialization
-    var toAny: Any {
-        switch self {
-        case .string(let v): return v
-        case .int(let v): return v
-        case .double(let v): return v
-        case .bool(let v): return v
-        case .null: return NSNull()
-        case .array(let v): return v.map { $0.toAny }
-        case .object(let v): return v.mapValues { $0.toAny }
-        }
-    }
-}
-
-// MARK: - Ollama API Client
+// MARK: - Errors
 
 enum OllamaAPIError: Error, Sendable {
     case unreachable(String)
@@ -182,9 +94,10 @@ enum OllamaAPIError: Error, Sendable {
     case apiError(statusCode: Int, message: String)
 }
 
-/// Ollama API client using OpenAI-compatible /v1/chat/completions endpoint
+// MARK: - Ollama API Client (Native /api/chat endpoint)
+
 actor OllamaAPIClient: LLMProvider {
-    private let endpoint: URL
+    private let baseURL: URL
     private let model: String
     private let apiKey: String?
     private let session: URLSession
@@ -194,10 +107,30 @@ actor OllamaAPIClient: LLMProvider {
     nonisolated let providerName = "Ollama"
     nonisolated var modelName: String { model }
     nonisolated let supportsThinking = false
-    nonisolated var supportsTools: Bool { true }  // Attempt tools; gracefully degrade if model doesn't support
+    nonisolated var supportsTools: Bool { true }
 
     init(endpoint: String, model: String, apiKey: String? = nil) {
-        self.endpoint = URL(string: endpoint)!
+        // Derive base URL from endpoint (handle legacy /v1/chat/completions format)
+        var base = endpoint
+        for suffix in ["/v1/chat/completions", "/v1/chat", "/v1", "/api/chat"] {
+            if base.hasSuffix(suffix) {
+                base = String(base.dropLast(suffix.count))
+                break
+            }
+        }
+        while base.hasSuffix("/") { base = String(base.dropLast()) }
+        guard let parsedBase = URL(string: base), !base.isEmpty else {
+            Logger.error("OllamaAPIClient: Invalid base URL derived from endpoint '\(endpoint)'. Using fallback.")
+            self.baseURL = URL(string: "http://localhost:11434")!
+            self.model = model
+            self.apiKey = apiKey
+            let sessionConfig = URLSessionConfiguration.default
+            sessionConfig.timeoutIntervalForRequest = 300
+            sessionConfig.timeoutIntervalForResource = 600
+            self.session = URLSession(configuration: sessionConfig)
+            return
+        }
+        self.baseURL = parsedBase
         self.model = model
         self.apiKey = apiKey
         let sessionConfig = URLSessionConfiguration.default
@@ -206,15 +139,36 @@ actor OllamaAPIClient: LLMProvider {
         self.session = URLSession(configuration: sessionConfig)
     }
 
+    // MARK: - Model Status
+
+    private struct OllamaPSResponse: Codable {
+        let models: [OllamaPSModel]?
+    }
+    private struct OllamaPSModel: Codable {
+        let name: String
+    }
+
+    func isModelLoaded() async -> Bool {
+        let psURL = baseURL.appendingPathComponent("api/ps")
+        var request = URLRequest(url: psURL)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 3
+
+        do {
+            let (data, _) = try await session.data(for: request)
+            let ps = try JSONDecoder().decode(OllamaPSResponse.self, from: data)
+            let loadedNames = ps.models?.map { $0.name.lowercased() } ?? []
+            let targetModel = model.lowercased()
+            return loadedNames.contains { $0 == targetModel || $0.hasPrefix(targetModel.split(separator: ":").first.map(String.init) ?? targetModel) }
+        } catch {
+            return true // Assume loaded if we can't check
+        }
+    }
+
     // MARK: - Health Check
 
-    /// Check if the Ollama endpoint is reachable
     func healthCheck() async -> Bool {
-        // Try the /v1/models endpoint (standard OpenAI-compat health check)
-        // endpoint is .../v1/chat/completions — go up 3 levels (completions, chat, v1) to reach the base URL
-        let baseURL = endpoint.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let healthURL = baseURL.appendingPathComponent("v1/models")
-
+        let healthURL = baseURL.appendingPathComponent("api/tags")
         var request = URLRequest(url: healthURL)
         request.httpMethod = "GET"
         request.timeoutInterval = 5
@@ -238,14 +192,15 @@ actor OllamaAPIClient: LLMProvider {
         tools: [ToolDefinition],
         systemPrompt: String? = nil
     ) async -> AsyncThrowingStream<LLMStreamEvent, Error> {
-        let ollamaMessages = convertMessages(messages, systemPrompt: systemPrompt)
-        let ollamaTools = tools.isEmpty ? nil : convertTools(tools)
+        let nativeMessages = convertMessages(messages, systemPrompt: systemPrompt)
+        let nativeTools = tools.isEmpty ? nil : convertTools(tools)
 
-        let request = OllamaRequest(
+        let request = OllamaNativeRequest(
             model: model,
-            messages: ollamaMessages,
+            messages: nativeMessages,
             stream: true,
-            tools: ollamaTools
+            tools: nativeTools,
+            options: OllamaRequestOptions(num_predict: 16384)
         )
 
         return AsyncThrowingStream { continuation in
@@ -276,20 +231,20 @@ actor OllamaAPIClient: LLMProvider {
         messages: [MessageParam],
         systemPrompt: String
     ) async throws -> String {
-        let ollamaMessages = convertMessages(messages, systemPrompt: systemPrompt)
+        let nativeMessages = convertMessages(messages, systemPrompt: systemPrompt)
 
-        let request = OllamaRequest(
+        let request = OllamaNativeRequest(
             model: model,
-            messages: ollamaMessages,
+            messages: nativeMessages,
             stream: false,
-            tools: nil,
-            max_tokens: 8192
+            options: OllamaRequestOptions(num_predict: 8192)
         )
 
+        let chatURL = baseURL.appendingPathComponent("api/chat")
         let encoder = JSONEncoder()
         let bodyData = try encoder.encode(request)
 
-        var urlRequest = URLRequest(url: endpoint)
+        var urlRequest = URLRequest(url: chatURL)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "content-type")
         if let apiKey = apiKey {
@@ -315,10 +270,10 @@ actor OllamaAPIClient: LLMProvider {
 
         if httpResponse.statusCode == 404 {
             let body = String(data: data, encoding: .utf8) ?? ""
-            Logger.error("Ollama model not found (singleRequest): \(request.model) — \(body)")
+            Logger.error("Ollama model not found (singleRequest): \(model) — \(body)")
             throw OllamaAPIError.apiError(
                 statusCode: 404,
-                message: "Model '\(request.model)' not available. Run `ollama pull \(request.model)` to install it."
+                message: "Model '\(model)' not available. Run `ollama pull \(model)` to install it."
             )
         }
 
@@ -327,29 +282,31 @@ actor OllamaAPIClient: LLMProvider {
             throw OllamaAPIError.apiError(statusCode: httpResponse.statusCode, message: body)
         }
 
-        let decoded = try JSONDecoder().decode(OllamaNonStreamResponse.self, from: data)
-        return decoded.choices?.first?.message?.content ?? ""
+        let decoded = try JSONDecoder().decode(OllamaNativeChunk.self, from: data)
+        return decoded.message?.content ?? ""
     }
 
-    // MARK: - Private Streaming
+    // MARK: - Private Streaming (NDJSON)
 
     private func executeStream(
-        request: OllamaRequest,
+        request: OllamaNativeRequest,
         continuation: AsyncThrowingStream<LLMStreamEvent, Error>.Continuation
     ) async throws {
+        let chatURL = baseURL.appendingPathComponent("api/chat")
         let encoder = JSONEncoder()
         let bodyData = try encoder.encode(request)
 
-        var urlRequest = URLRequest(url: endpoint)
+        var urlRequest = URLRequest(url: chatURL)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "content-type")
         if let apiKey = apiKey {
             urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
         urlRequest.httpBody = bodyData
-        urlRequest.timeoutInterval = 60  // 60s per-chunk timeout for streaming
+        urlRequest.timeoutInterval = 300
 
-        Logger.info("Ollama request: \(bodyData.count) bytes to \(endpoint)")
+        let toolNames = request.tools?.map { $0.function.name } ?? []
+        Logger.info("Ollama stream request: model=\(model), \(bodyData.count) bytes, \(toolNames.count) tools [\(toolNames.joined(separator: ", "))]")
 
         let (asyncBytes, response) = try await session.bytes(for: urlRequest)
 
@@ -363,280 +320,117 @@ actor OllamaAPIClient: LLMProvider {
 
         if httpResponse.statusCode == 404 {
             var errorBody = ""
-            for try await line in asyncBytes.lines {
-                errorBody += line
-            }
-            Logger.error("Ollama model not found: \(request.model) — \(errorBody)")
-            continuation.yield(.error("Model '\(request.model)' not available. Run `ollama pull \(request.model)` to install it."))
+            for try await line in asyncBytes.lines { errorBody += line }
+            Logger.error("Ollama model not found: \(model) — \(errorBody)")
+            continuation.yield(.error("Model '\(model)' not available. Run `ollama pull \(model)` to install it."))
             continuation.finish()
             return
         }
 
         if httpResponse.statusCode != 200 {
             var errorBody = ""
-            for try await line in asyncBytes.lines {
-                errorBody += line
-            }
+            for try await line in asyncBytes.lines { errorBody += line }
             Logger.error("Ollama error: \(errorBody)")
             continuation.yield(.error("Ollama error \(httpResponse.statusCode): \(errorBody)"))
             continuation.finish()
             return
         }
 
-        // Parse SSE stream (OpenAI format: data: {...}\n\n)
+        // Parse NDJSON stream — each line is a complete JSON object
         var hasEmittedTextStart = false
-        var pendingToolCalls: [Int: OllamaPendingToolCall] = [:]
-        var nativeToolCallsDetected = false
+        var emittedToolCallIDs: Set<String> = []
         let decoder = JSONDecoder()
 
-        // Text buffer for detecting <tool_call> blocks in model output
-        var textBuffer = ""
-        var textToolCallIndex = 100  // Start high to avoid collision with native tool call indices
-
         for try await line in asyncBytes.lines {
-            // Skip empty lines and SSE comments
-            guard !line.isEmpty, !line.hasPrefix(":") else { continue }
+            guard !line.isEmpty else { continue }
 
-            // Extract data payload
-            let payload: String
-            if line.hasPrefix("data: ") {
-                payload = String(line.dropFirst(6))
-            } else {
-                payload = line
-            }
-
-            // [DONE] marker signals end of stream
-            if payload.trimmingCharacters(in: .whitespaces) == "[DONE]" {
-                break
-            }
-
-            guard let jsonData = payload.data(using: .utf8),
-                  let chunk = try? decoder.decode(OllamaSSEChunk.self, from: jsonData) else {
-                Logger.error("Ollama malformed SSE chunk: \(payload)")
+            guard let jsonData = line.data(using: .utf8),
+                  let chunk = try? decoder.decode(OllamaNativeChunk.self, from: jsonData) else {
+                Logger.error("Ollama malformed NDJSON chunk: \(line)")
                 continue
             }
 
-            guard let choice = chunk.choices?.first else { continue }
-            let delta = choice.delta
-
-            // Handle text content — buffer for tool call detection
-            if let content = delta?.content, !content.isEmpty {
-                textBuffer += content
-
-                // Check for complete <tool_call> blocks in buffer
-                while let toolCallRange = textBuffer.range(of: "<tool_call>"),
-                      let endRange = textBuffer.range(of: "</tool_call>") {
-                    // Extract any text before the tool call tag and emit it
-                    let textBefore = String(textBuffer[textBuffer.startIndex..<toolCallRange.lowerBound])
-                    if !textBefore.isEmpty {
-                        if !hasEmittedTextStart {
-                            continuation.yield(.textStart)
-                            hasEmittedTextStart = true
-                        }
-                        continuation.yield(.textDelta(textBefore))
-                    }
-
-                    // Extract the JSON between tags
-                    let jsonStr = String(textBuffer[toolCallRange.upperBound..<endRange.lowerBound])
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-
-                    // Parse and emit tool call events
-                    if let jsonData = jsonStr.data(using: .utf8),
-                       let toolJSON = try? JSONDecoder().decode(TextToolCall.self, from: jsonData) {
-                        let toolId = "ollama_tc_\(UUID().uuidString.prefix(8))"
-                        let argsString: String
-                        let argsAny = (toolJSON.arguments ?? [:]).mapValues { $0.toAny }
-                        if let argsData = try? JSONSerialization.data(withJSONObject: argsAny),
-                           let argsStr = String(data: argsData, encoding: .utf8) {
-                            argsString = argsStr
-                        } else {
-                            argsString = "{}"
-                        }
-
-                        pendingToolCalls[textToolCallIndex] = OllamaPendingToolCall(
-                            id: toolId, name: toolJSON.name, argumentsJSON: argsString
-                        )
-                        continuation.yield(.toolUseStart(id: toolId, name: toolJSON.name))
-                        continuation.yield(.toolUseDone(id: toolId, name: toolJSON.name, input: argsString))
-                        textToolCallIndex += 1
-
-                        Logger.info("Ollama text-based tool call parsed: \(toolJSON.name)")
-                    } else {
-                        Logger.error("Ollama text tool call parse failed: \(jsonStr)")
-                    }
-
-                    // Remove processed portion from buffer
-                    textBuffer = String(textBuffer[endRange.upperBound...])
-                }
-
-                // If no pending <tool_call> tag in buffer, flush safe text
-                if !textBuffer.contains("<tool_call") {
-                    if !textBuffer.isEmpty {
-                        if !hasEmittedTextStart {
-                            continuation.yield(.textStart)
-                            hasEmittedTextStart = true
-                        }
-                        continuation.yield(.textDelta(textBuffer))
-                        textBuffer = ""
-                    }
-                }
-                // Otherwise hold the buffer — might be a partial <tool_call> tag
-            }
-
-            // Handle native tool calls (OpenAI function calling format)
-            if let toolCalls = delta?.tool_calls {
-                nativeToolCallsDetected = true
-                for tc in toolCalls {
-                    let idx = tc.index ?? 0
-
-                    // New tool call starting
-                    if let id = tc.id, let name = tc.function?.name {
-                        pendingToolCalls[idx] = OllamaPendingToolCall(id: id, name: name, argumentsJSON: "")
-                        continuation.yield(.toolUseStart(id: id, name: name))
-                    }
-
-                    // Accumulate argument deltas
-                    if let args = tc.function?.arguments {
-                        pendingToolCalls[idx]?.argumentsJSON += args
-                        continuation.yield(.toolUseInputDelta(args))
-                    }
-                }
-            }
-
-            // Check for finish reason
-            if let finishReason = choice.finish_reason {
-                // Flush any remaining text buffer before finishing
-                if !textBuffer.isEmpty {
-                    // Check one last time for tool calls
-                    if let toolCallRange = textBuffer.range(of: "<tool_call>"),
-                       let endRange = textBuffer.range(of: "</tool_call>") {
-                        let textBefore = String(textBuffer[textBuffer.startIndex..<toolCallRange.lowerBound])
-                        if !textBefore.isEmpty {
-                            if !hasEmittedTextStart {
-                                continuation.yield(.textStart)
-                                hasEmittedTextStart = true
-                            }
-                            continuation.yield(.textDelta(textBefore))
-                        }
-                        let jsonStr = String(textBuffer[toolCallRange.upperBound..<endRange.lowerBound])
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
-                        if let jsonData = jsonStr.data(using: .utf8),
-                           let toolJSON = try? JSONDecoder().decode(TextToolCall.self, from: jsonData) {
-                            let toolId = "ollama_tc_\(UUID().uuidString.prefix(8))"
-                            let argsString: String
-                            let argsAny = (toolJSON.arguments ?? [:]).mapValues { $0.toAny }
-                        if let argsData = try? JSONSerialization.data(withJSONObject: argsAny),
-                               let argsStr = String(data: argsData, encoding: .utf8) {
-                                argsString = argsStr
-                            } else {
-                                argsString = "{}"
-                            }
-                            pendingToolCalls[textToolCallIndex] = OllamaPendingToolCall(
-                                id: toolId, name: toolJSON.name, argumentsJSON: argsString
-                            )
-                            continuation.yield(.toolUseStart(id: toolId, name: toolJSON.name))
-                            continuation.yield(.toolUseDone(id: toolId, name: toolJSON.name, input: argsString))
-                            textToolCallIndex += 1
-                        }
-                        textBuffer = String(textBuffer[endRange.upperBound...])
-                    }
-                    // Emit any remaining non-tool text
-                    let remaining = textBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !remaining.isEmpty {
-                        if !hasEmittedTextStart {
-                            continuation.yield(.textStart)
-                            hasEmittedTextStart = true
-                        }
-                        continuation.yield(.textDelta(remaining))
-                    }
-                    textBuffer = ""
-                }
-
-                if hasEmittedTextStart {
-                    continuation.yield(.textDone)
-                    hasEmittedTextStart = false  // Prevent duplicate textDone
-                }
-
-                // Emit completed native tool calls
-                if (finishReason == "tool_calls" || finishReason == "stop") && nativeToolCallsDetected {
-                    for (_, toolCall) in pendingToolCalls.sorted(by: { $0.key < $1.key }).filter({ $0.key < 100 }) {
-                        continuation.yield(.toolUseDone(
-                            id: toolCall.id,
-                            name: toolCall.name,
-                            input: toolCall.argumentsJSON
-                        ))
-                    }
-                }
-            }
-        }
-
-        // Flush any remaining text buffer at end of stream
-        if !textBuffer.isEmpty {
-            let remaining = textBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !remaining.isEmpty {
+            // Handle text content
+            if let content = chunk.message?.content, !content.isEmpty {
                 if !hasEmittedTextStart {
                     continuation.yield(.textStart)
                     hasEmittedTextStart = true
                 }
-                continuation.yield(.textDelta(remaining))
+                continuation.yield(.textDelta(content))
+            }
+
+            // Handle tool calls (typically arrive in the final chunk)
+            if let toolCalls = chunk.message?.tool_calls {
+                // Close text stream before emitting tool calls
+                if hasEmittedTextStart {
+                    continuation.yield(.textDone)
+                    hasEmittedTextStart = false
+                }
+
+                for tc in toolCalls {
+                    guard let name = tc.function?.name else { continue }
+                    let toolId = "ollama_tc_\(UUID().uuidString.prefix(8))"
+
+                    let argsString: String
+                    if let args = tc.function?.arguments {
+                        argsString = args.toJSONString()
+                    } else {
+                        argsString = "{}"
+                    }
+
+                    continuation.yield(.toolUseStart(id: toolId, name: name))
+                    continuation.yield(.toolUseDone(id: toolId, name: name, input: argsString))
+                    emittedToolCallIDs.insert(toolId)
+                    let argCount = (try? JSONSerialization.jsonObject(with: argsString.data(using: .utf8) ?? Data()) as? [String: Any])?.count ?? 0
+                    Logger.info("Ollama tool call: \(name) with \(argCount) args")
+                }
+            }
+
+            // Stream ends when done is true
+            if chunk.done == true {
+                break
             }
         }
 
-        // If text was started but never explicitly done (some models skip finish_reason)
+        // Close text stream if still open
         if hasEmittedTextStart {
             continuation.yield(.textDone)
         }
 
-        // Emit any remaining native tool calls that didn't get a finish_reason
-        if nativeToolCallsDetected {
-            for (_, toolCall) in pendingToolCalls.sorted(by: { $0.key < $1.key }).filter({ $0.key < 100 }) {
-                if !toolCall.argumentsJSON.isEmpty || !toolCall.name.isEmpty {
-                    continuation.yield(.toolUseDone(
-                        id: toolCall.id,
-                        name: toolCall.name,
-                        input: toolCall.argumentsJSON
-                    ))
-                }
-            }
-        }
-
+        Logger.info("Ollama stream complete: \(emittedToolCallIDs.count) tool call(s)")
         continuation.yield(.messageComplete)
         continuation.finish()
     }
 
-    // MARK: - Message Conversion (Claude -> OpenAI format)
+    // MARK: - Message Conversion (Claude -> Ollama native format)
 
-    private func convertMessages(_ messages: [MessageParam], systemPrompt: String?) -> [OllamaChatMessage] {
-        var result: [OllamaChatMessage] = []
+    private func convertMessages(_ messages: [MessageParam], systemPrompt: String?) -> [OllamaNativeChatMessage] {
+        var result: [OllamaNativeChatMessage] = []
 
-        // Add system prompt as first message
         if let system = systemPrompt, !system.isEmpty {
-            result.append(OllamaChatMessage(role: "system", content: system))
+            result.append(OllamaNativeChatMessage(role: "system", content: system))
         }
 
         for msg in messages {
-            // Flatten content blocks to text
             var textParts: [String] = []
-            var toolUseCalls: [OllamaToolCallResult] = []
-            var toolResults: [(id: String, content: String)] = []
+            var toolUseCalls: [OllamaNativeToolCallEntry] = []
+            var toolResults: [String] = []
 
             for block in msg.content {
                 switch block {
                 case .text(let tc):
                     textParts.append(tc.text)
                 case .thinking:
-                    // Skip thinking blocks — Ollama doesn't support them
-                    break
+                    break // Ollama doesn't support thinking blocks
                 case .toolUse(let tu):
-                    toolUseCalls.append(OllamaToolCallResult(
-                        id: tu.id,
-                        function: OllamaFunctionCall(
+                    toolUseCalls.append(OllamaNativeToolCallEntry(
+                        function: OllamaNativeFunctionEntry(
                             name: tu.name,
-                            arguments: tu.input.toJSONString()
+                            arguments: tu.input  // JSONValue object, not string
                         )
                     ))
                 case .toolResult(let tr):
-                    toolResults.append((id: tr.tool_use_id, content: tr.content))
+                    toolResults.append(tr.content)
                 case .image:
                     textParts.append("[image attached]")
                 case .audio:
@@ -645,24 +439,51 @@ actor OllamaAPIClient: LLMProvider {
             }
 
             if msg.role == "assistant" {
-                // Assistant message with tool calls
                 let content = textParts.isEmpty ? nil : textParts.joined()
                 let calls = toolUseCalls.isEmpty ? nil : toolUseCalls
-                result.append(OllamaChatMessage(role: "assistant", content: content, tool_calls: calls))
+                result.append(OllamaNativeChatMessage(role: "assistant", content: content, tool_calls: calls))
             } else if !toolResults.isEmpty {
-                // Tool results become individual "tool" role messages
                 for tr in toolResults {
-                    result.append(OllamaChatMessage(role: "tool", content: tr.content, tool_call_id: tr.id))
+                    result.append(OllamaNativeChatMessage(role: "tool", content: tr))
                 }
             } else {
-                result.append(OllamaChatMessage(role: msg.role, content: textParts.joined()))
+                result.append(OllamaNativeChatMessage(role: msg.role, content: textParts.joined()))
             }
         }
 
-        return result
+        return sanitizeToolMessages(result)
     }
 
-    // MARK: - Tool Conversion (MCP -> OpenAI function-calling format)
+    /// Remove orphaned tool messages without a preceding assistant message with tool_calls.
+    private func sanitizeToolMessages(_ messages: [OllamaNativeChatMessage]) -> [OllamaNativeChatMessage] {
+        var sanitized: [OllamaNativeChatMessage] = []
+        var expectedToolResults = 0
+
+        for msg in messages {
+            if msg.role == "assistant" {
+                if let calls = msg.tool_calls, !calls.isEmpty {
+                    expectedToolResults = calls.count
+                } else {
+                    expectedToolResults = 0
+                }
+                sanitized.append(msg)
+            } else if msg.role == "tool" {
+                if expectedToolResults > 0 {
+                    sanitized.append(msg)
+                    expectedToolResults -= 1
+                } else {
+                    Logger.error("Ollama: dropping orphaned tool message — no matching assistant tool_calls")
+                }
+            } else {
+                expectedToolResults = 0
+                sanitized.append(msg)
+            }
+        }
+
+        return sanitized
+    }
+
+    // MARK: - Tool Conversion
 
     private func convertTools(_ tools: [ToolDefinition]) -> [OllamaToolDef] {
         tools.map { tool in

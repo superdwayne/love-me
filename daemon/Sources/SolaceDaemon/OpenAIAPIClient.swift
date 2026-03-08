@@ -143,7 +143,18 @@ actor OpenAIAPIClient: LLMProvider {
     nonisolated var supportsTools: Bool { true }
 
     init(model: String, apiKey: String, endpoint: String? = nil) {
-        self.endpoint = URL(string: endpoint ?? Self.defaultEndpoint)!
+        guard let parsedEndpoint = URL(string: endpoint ?? Self.defaultEndpoint) else {
+            Logger.error("OpenAIAPIClient: Invalid endpoint '\(endpoint ?? "nil")'. Using default.")
+            self.endpoint = URL(string: Self.defaultEndpoint)!
+            self.model = model
+            self.apiKey = apiKey
+            let sessionConfig = URLSessionConfiguration.default
+            sessionConfig.timeoutIntervalForRequest = 300
+            sessionConfig.timeoutIntervalForResource = 600
+            self.session = URLSession(configuration: sessionConfig)
+            return
+        }
+        self.endpoint = parsedEndpoint
         self.model = model
         self.apiKey = apiKey
         let sessionConfig = URLSessionConfiguration.default
@@ -335,6 +346,7 @@ actor OpenAIAPIClient: LLMProvider {
                             input: toolCall.argumentsJSON
                         ))
                     }
+                    pendingToolCalls.removeAll()
                 }
             }
         }
@@ -344,7 +356,7 @@ actor OpenAIAPIClient: LLMProvider {
             continuation.yield(.textDone)
         }
 
-        if toolCallsDetected {
+        if toolCallsDetected && !pendingToolCalls.isEmpty {
             for (_, toolCall) in pendingToolCalls.sorted(by: { $0.key < $1.key }) {
                 if !toolCall.argumentsJSON.isEmpty || !toolCall.name.isEmpty {
                     continuation.yield(.toolUseDone(

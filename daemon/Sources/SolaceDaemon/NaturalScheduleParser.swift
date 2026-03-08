@@ -76,7 +76,8 @@ struct NaturalScheduleParser {
         ]
         for (dayName, dayNum) in days {
             // "every monday at 9am"
-            if let match = text.firstMatch(of: try! Regex("(every|weekly\\s+on)\\s+\(dayName)(s)?\\s+at\\s+(\\d{1,2}):?(\\d{2})?\\s*(am|pm)?")) {
+            if let regex = try? Regex("(every|weekly\\s+on)\\s+\(dayName)(s)?\\s+at\\s+(\\d{1,2}):?(\\d{2})?\\s*(am|pm)?"),
+               let match = text.firstMatch(of: regex) {
                 guard let hourStr = match.output[3].substring,
                       var hour = Int(hourStr) else { continue }
                 let minuteStr = match.output[4].substring

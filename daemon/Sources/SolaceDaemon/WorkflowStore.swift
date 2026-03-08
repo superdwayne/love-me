@@ -168,12 +168,18 @@ actor WorkflowStore {
 
     // MARK: - Private
 
+    private func sanitizeId(_ id: String) -> String {
+        id.replacingOccurrences(of: "/", with: "")
+          .replacingOccurrences(of: "\\", with: "")
+          .replacingOccurrences(of: "..", with: "")
+    }
+
     private func workflowFilePath(for id: String) -> String {
-        "\(workflowsDirectory)/\(id).json"
+        "\(workflowsDirectory)/\(sanitizeId(id)).json"
     }
 
     private func executionFilePath(for id: String) -> String {
-        "\(executionsDirectory)/\(id).json"
+        "\(executionsDirectory)/\(sanitizeId(id)).json"
     }
 }
 

@@ -25,5 +25,12 @@ DerivedData/
 *.dSYM.zip
 *.dSYM
 
+# Node.js
+node_modules/
+
+# App build artifacts
+app/build/
+
 # Local scratch files
 progress*.txt
+*.log

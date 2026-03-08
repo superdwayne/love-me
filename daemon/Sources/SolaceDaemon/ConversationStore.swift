@@ -394,7 +394,10 @@ actor ConversationStore {
     // MARK: - Private
 
     private func filePath(for id: String) -> String {
-        "\(directory)/\(id).json"
+        let sanitized = id.replacingOccurrences(of: "/", with: "")
+                          .replacingOccurrences(of: "\\", with: "")
+                          .replacingOccurrences(of: "..", with: "")
+        return "\(directory)/\(sanitized).json"
     }
 }
 

@@ -13,7 +13,10 @@ final class MCPHTTPServerProcess: MCPTransport {
 
     init(name: String, url: String, headers: [String: String]? = nil) {
         self.name = name
-        self.endpointURL = URL(string: url)!
+        guard let parsedURL = URL(string: url) else {
+            fatalError("MCPHTTPServerProcess: Invalid URL '\(url)' for server '\(name)'. Check mcp.json config.")
+        }
+        self.endpointURL = parsedURL
         self.customHeaders = headers ?? [:]
         self.state = MCPHTTPState()
 

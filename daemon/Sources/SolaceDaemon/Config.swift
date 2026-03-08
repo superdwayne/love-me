@@ -28,8 +28,8 @@ struct OllamaProviderConfig: Codable, Sendable {
     let model: String
 
     static let `default` = OllamaProviderConfig(
-        endpoint: "http://localhost:11434/v1/chat/completions",
-        model: "qwen3-coder-next"
+        endpoint: "http://localhost:11434/api/chat",
+        model: "qwen3"
     )
 }
 
@@ -164,6 +164,12 @@ struct DaemonConfig: Sendable {
         if !fm.fileExists(atPath: baseDir) {
             try fm.createDirectory(atPath: baseDir, withIntermediateDirectories: true)
         }
+        // Secure sensitive config files (API keys, tokens)
+        for sensitiveFile in [mcpConfigPath, providersConfigPath, "\(baseDir)/.env", "\(baseDir)/email.json"] {
+            if fm.fileExists(atPath: sensitiveFile) {
+                try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: sensitiveFile)
+            }
+        }
     }
 
     /// Save updated provider config to disk
@@ -171,6 +177,7 @@ struct DaemonConfig: Sendable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(config)
-        try data.write(to: URL(fileURLWithPath: path))
+        try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
     }
 }

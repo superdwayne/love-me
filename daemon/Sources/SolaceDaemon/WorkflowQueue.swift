@@ -81,13 +81,16 @@ actor WorkflowQueue {
 
     /// Cancel a running workflow execution by ID.
     func cancel(executionId: String) async {
-        guard let task = runningExecutions[executionId] else {
+        // Look up the tracking key from the execution ID reverse mapping
+        guard let trackingKey = trackingKeyToExecutionId.first(where: { $0.value == executionId })?.key,
+              let task = runningExecutions[trackingKey] else {
             Logger.info("Cancel requested for execution \(executionId) but it is not running")
             return
         }
-        Logger.info("Cancelling execution \(executionId)")
+        Logger.info("Cancelling execution \(executionId) (tracking key: \(trackingKey))")
         task.cancel()
-        runningExecutions.removeValue(forKey: executionId)
+        runningExecutions.removeValue(forKey: trackingKey)
+        trackingKeyToExecutionId.removeValue(forKey: trackingKey)
     }
 
     /// Get current queue status: running count and breakdown by priority.
