@@ -402,6 +402,9 @@ enum MCPError: Error, Sendable {
     case invalidResponse
     case toolNotFound(String)
     case timeout
+    case serverAlreadyExists(String)
+    case serverStartFailed(String)
+    case invalidConfig(String)
 }
 
 func withTimeout<T: Sendable>(seconds: Double, operation: @escaping @Sendable () async throws -> T) async throws -> T {

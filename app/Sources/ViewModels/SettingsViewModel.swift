@@ -25,6 +25,14 @@ struct OllamaModelInfo: Identifiable {
     }
 }
 
+struct OllamaToolInfo: Identifiable {
+    let id: String  // tool name
+    let name: String
+    let serverName: String
+    let description: String
+    var pinned: Bool
+}
+
 struct ProviderInfo: Identifiable {
     let id: String
     let displayName: String
@@ -52,13 +60,25 @@ final class SettingsViewModel {
 
     // Ollama config fields (editable)
     var ollamaEndpoint: String = "http://localhost:11434/v1/chat/completions"
-    var ollamaModel: String = "qwen3"
+    var ollamaModel: String = "qwen3.5"
     var isTestingOllama = false
     var ollamaTestResult: OllamaTestResult?
 
     // Ollama installed models
     var ollamaModels: [OllamaModelInfo] = []
     var isLoadingOllamaModels = false
+
+    // MCP server add/delete state
+    var isAddingServer = false
+    var addServerError: String?
+    var isDeletingServer = false
+    var deleteServerError: String?
+
+    // Pinned tools for small Ollama models
+    var ollamaTools: [OllamaToolInfo] = []
+    var isLoadingOllamaTools = false
+    var pinnedToolsCount: Int = 0
+    let maxPinnedTools: Int = 5
 
     // OpenAI config fields (editable)
     var openaiModel: String = "gpt-4o"
@@ -69,6 +89,7 @@ final class SettingsViewModel {
     }
 
     private let webSocket: WebSocketClient
+    private var pinnedToolsDebounceTask: Task<Void, Never>?
 
     init(webSocket: WebSocketClient) {
         self.webSocket = webSocket
@@ -87,6 +108,12 @@ final class SettingsViewModel {
         case WSMessageType.ollamaServerToggleResult:
             handleOllamaServerToggleResult(msg)
 
+        case WSMessageType.mcpServerAddResult:
+            handleMCPServerAddResult(msg)
+
+        case WSMessageType.mcpServerDeleteResult:
+            handleMCPServerDeleteResult(msg)
+
         case WSMessageType.providersStatus:
             handleProvidersStatus(msg)
 
@@ -95,6 +122,12 @@ final class SettingsViewModel {
 
         case WSMessageType.ollamaModelsList:
             handleOllamaModelsList(msg)
+
+        case WSMessageType.ollamaToolsListResult:
+            handleOllamaToolsListResult(msg)
+
+        case WSMessageType.ollamaPinnedToolsResult:
+            handleOllamaPinnedToolsResult(msg)
 
         default:
             break
@@ -161,6 +194,45 @@ final class SettingsViewModel {
         ))
     }
 
+    func addMCPServer(name: String, type: String, command: String?, args: [String]?, url: String?, headers: [String: String]?) {
+        isAddingServer = true
+        addServerError = nil
+
+        var metadata: [String: MetadataValue] = [
+            "name": .string(name),
+            "type": .string(type)
+        ]
+        if let command = command {
+            metadata["command"] = .string(command)
+        }
+        if let args = args, !args.isEmpty {
+            metadata["args"] = .array(args.map { .string($0) })
+        }
+        if let url = url {
+            metadata["url"] = .string(url)
+        }
+        if let headers = headers, !headers.isEmpty {
+            var obj: [String: MetadataValue] = [:]
+            for (k, v) in headers { obj[k] = .string(v) }
+            metadata["headers"] = .object(obj)
+        }
+
+        webSocket.send(WSMessage(
+            type: WSMessageType.mcpServerAdd,
+            metadata: metadata
+        ))
+    }
+
+    func deleteMCPServer(name: String) {
+        isDeletingServer = true
+        deleteServerError = nil
+
+        webSocket.send(WSMessage(
+            type: WSMessageType.mcpServerDelete,
+            metadata: ["name": .string(name)]
+        ))
+    }
+
     func toggleOllamaServer(name: String, enabled: Bool) {
         if let index = mcpServers.firstIndex(where: { $0.name == name }) {
             mcpServers[index].ollamaEnabled = enabled
@@ -171,6 +243,50 @@ final class SettingsViewModel {
             metadata: [
                 "serverName": .string(name),
                 "enabled": .bool(enabled)
+            ]
+        ))
+    }
+
+    // MARK: - Pinned Tools Actions
+
+    func requestOllamaToolsList() {
+        isLoadingOllamaTools = true
+        webSocket.send(WSMessage(type: WSMessageType.ollamaToolsList))
+    }
+
+    func togglePinnedTool(name: String, pinned: Bool) {
+        // Update local state immediately for responsive UI
+        if let index = ollamaTools.firstIndex(where: { $0.name == name }) {
+            ollamaTools[index].pinned = pinned
+        }
+        pinnedToolsCount = ollamaTools.filter(\.pinned).count
+
+        // Debounce WebSocket send — only the final state after 500ms of inactivity
+        pinnedToolsDebounceTask?.cancel()
+        pinnedToolsDebounceTask = Task {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled else { return }
+
+            let currentPinned = ollamaTools.filter(\.pinned).map { $0.name }
+            webSocket.send(WSMessage(
+                type: WSMessageType.ollamaPinnedToolsSet,
+                metadata: [
+                    "tools": .array(currentPinned.map { .string($0) })
+                ]
+            ))
+        }
+    }
+
+    func clearAllPinnedTools() {
+        for i in ollamaTools.indices {
+            ollamaTools[i].pinned = false
+        }
+        pinnedToolsCount = 0
+
+        webSocket.send(WSMessage(
+            type: WSMessageType.ollamaPinnedToolsSet,
+            metadata: [
+                "tools": .array([])
             ]
         ))
     }
@@ -323,6 +439,67 @@ final class SettingsViewModel {
             }
         }
 
+        HapticManager.toolCompleted()
+    }
+
+    private func handleMCPServerAddResult(_ msg: WSMessage) {
+        isAddingServer = false
+        guard let meta = msg.metadata else { return }
+
+        let success = meta["success"]?.boolValue ?? false
+        if success {
+            addServerError = nil
+            // Refresh the server list
+            requestMCPServersList()
+            HapticManager.toolCompleted()
+        } else {
+            addServerError = meta["error"]?.stringValue ?? "Failed to add server"
+            HapticManager.toolError()
+        }
+    }
+
+    private func handleMCPServerDeleteResult(_ msg: WSMessage) {
+        isDeletingServer = false
+        guard let meta = msg.metadata else { return }
+
+        let success = meta["success"]?.boolValue ?? false
+        if success {
+            if let name = meta["name"]?.stringValue {
+                mcpServers.removeAll { $0.name == name }
+            }
+            deleteServerError = nil
+            HapticManager.toolCompleted()
+        } else {
+            deleteServerError = meta["error"]?.stringValue ?? "Failed to delete server"
+            HapticManager.toolError()
+        }
+    }
+
+    private func handleOllamaToolsListResult(_ msg: WSMessage) {
+        isLoadingOllamaTools = false
+        guard case .array(let items) = msg.metadata?["tools"] else { return }
+
+        var loaded: [OllamaToolInfo] = []
+        for item in items {
+            guard case .object(let dict) = item else { continue }
+            guard let name = dict["name"]?.stringValue else { continue }
+
+            loaded.append(OllamaToolInfo(
+                id: name,
+                name: name,
+                serverName: dict["serverName"]?.stringValue ?? "",
+                description: dict["description"]?.stringValue ?? "",
+                pinned: dict["pinned"]?.boolValue ?? false
+            ))
+        }
+
+        ollamaTools = loaded
+        pinnedToolsCount = msg.metadata?["pinnedCount"]?.intValue ?? loaded.filter(\.pinned).count
+    }
+
+    private func handleOllamaPinnedToolsResult(_ msg: WSMessage) {
+        guard let meta = msg.metadata else { return }
+        pinnedToolsCount = meta["pinnedCount"]?.intValue ?? 0
         HapticManager.toolCompleted()
     }
 }

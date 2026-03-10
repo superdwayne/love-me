@@ -113,10 +113,31 @@ struct ChatView: View {
     }
 
     private var providerLabel: String {
-        if webSocket.activeProvider == "ollama" {
-            return webSocket.activeModel.isEmpty ? "Ollama" : "Ollama: \(webSocket.activeModel)"
+        let provider = webSocket.activeProvider.lowercased()
+        let model = webSocket.activeModel
+
+        if model.isEmpty {
+            return provider.capitalized
         }
-        return "Claude"
+
+        // Show a short, readable model name instead of the full ID
+        let shortModel = Self.shortenModelName(model)
+        return "\(provider.capitalized): \(shortModel)"
+    }
+
+    /// Convert full model IDs to readable short names
+    private static func shortenModelName(_ model: String) -> String {
+        let m = model.lowercased()
+        if m.contains("opus") { return "Opus" }
+        if m.contains("sonnet") { return "Sonnet" }
+        if m.contains("haiku") { return "Haiku" }
+        if m.contains("gpt-4o-mini") { return "GPT-4o Mini" }
+        if m.contains("gpt-4o") { return "GPT-4o" }
+        if m.contains("gpt-4") { return "GPT-4" }
+        if m.contains("o3") { return "o3" }
+        if m.contains("o1") { return "o1" }
+        // For Ollama or unknown models, show as-is
+        return model
     }
 
     private var connectionDotColor: Color {

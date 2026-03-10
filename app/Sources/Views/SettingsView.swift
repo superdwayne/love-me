@@ -10,6 +10,9 @@ struct SettingsView: View {
     @AppStorage("ws_port") private var port = 9200
     @State private var testState: TestState = .idle
     @State private var showDeleteAlert = false
+    @State private var showAddServerSheet = false
+    @State private var showDeleteServerAlert = false
+    @State private var serverToDelete: String?
 
     enum TestState {
         case idle
@@ -27,6 +30,7 @@ struct SettingsView: View {
                 mcpServersSection
                 if settingsVM.activeProvider == "ollama" {
                     ollamaToolsSection
+                    pinnedToolsSection
                 }
                 ambientListeningSection
                 aboutSection
@@ -348,7 +352,7 @@ struct SettingsView: View {
                                 .scaleEffect(0.8)
                                 .tint(.trust)
                         } else if settingsVM.ollamaModels.isEmpty {
-                            TextField("qwen3",
+                            TextField("e.g. qwen3.5",
                                       text: Binding(
                                         get: { settingsVM.ollamaModel },
                                         set: { settingsVM.ollamaModel = $0 }
@@ -391,6 +395,17 @@ struct SettingsView: View {
                         .buttonStyle(.plain)
                     }
                     .listRowBackground(Color.surface)
+                    .onChange(of: settingsVM.ollamaModels.map(\.id)) { _, modelIds in
+                        guard !modelIds.isEmpty else { return }
+                        let current = settingsVM.ollamaModel
+                        let models = settingsVM.ollamaModels
+                        let found = models.contains { $0.displayName == current || $0.name == current }
+                        if current.isEmpty || !found {
+                            if let first = models.first {
+                                settingsVM.ollamaModel = first.displayName
+                            }
+                        }
+                    }
 
                     // Connect / Test button
                     Button {
@@ -484,8 +499,28 @@ struct SettingsView: View {
                         .labelsHidden()
                     }
                     .listRowBackground(Color.surface)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) {
+                            serverToDelete = server.name
+                            showDeleteServerAlert = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
                 }
             }
+
+            Button {
+                showAddServerSheet = true
+            } label: {
+                HStack {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundStyle(.sageGreen)
+                    Text("Add Server")
+                        .foregroundStyle(.sageGreen)
+                }
+            }
+            .listRowBackground(Color.surface)
         } header: {
             Text("MCP SERVERS")
                 .font(.sectionHeader)
@@ -494,6 +529,24 @@ struct SettingsView: View {
         }
         .onAppear {
             settingsVM.requestMCPServersList()
+        }
+        .sheet(isPresented: $showAddServerSheet) {
+            AddMCPServerSheet(settingsVM: settingsVM, isPresented: $showAddServerSheet)
+        }
+        .alert("Delete Server", isPresented: $showDeleteServerAlert) {
+            Button("Cancel", role: .cancel) {
+                serverToDelete = nil
+            }
+            Button("Delete", role: .destructive) {
+                if let name = serverToDelete {
+                    settingsVM.deleteMCPServer(name: name)
+                    serverToDelete = nil
+                }
+            }
+        } message: {
+            if let name = serverToDelete {
+                Text("Are you sure you want to remove \"\(name)\"? The server will be stopped and removed from your configuration.")
+            }
         }
     }
 
@@ -542,6 +595,84 @@ struct SettingsView: View {
                 .reduce(0) { $0 + $1.toolCount }
             Text("\(ollamaToolCount) tool\(ollamaToolCount == 1 ? "" : "s") sent to Ollama. Disable servers with tools your local model doesn't need.")
                 .foregroundStyle(.trust.opacity(0.6))
+        }
+    }
+
+    private var pinnedToolsSection: some View {
+        Section {
+            if settingsVM.isLoadingOllamaTools {
+                HStack {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .tint(.trust)
+                    Text("Loading tools...")
+                        .foregroundStyle(.trust)
+                        .padding(.leading, SolaceTheme.sm)
+                    Spacer()
+                }
+                .listRowBackground(Color.surface)
+            } else if settingsVM.ollamaTools.isEmpty {
+                Text("No tools available")
+                    .foregroundStyle(.trust)
+                    .listRowBackground(Color.surface)
+            } else {
+                ForEach(settingsVM.ollamaTools) { tool in
+                    let atMax = settingsVM.pinnedToolsCount >= settingsVM.maxPinnedTools && !tool.pinned
+                    HStack(spacing: SolaceTheme.md) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(tool.name)
+                                .foregroundStyle(.textPrimary)
+                                .font(.system(size: 14, weight: .medium))
+                            Text(tool.serverName)
+                                .font(.toolDetail)
+                                .foregroundStyle(.trust)
+                        }
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { tool.pinned },
+                            set: { newValue in
+                                settingsVM.togglePinnedTool(name: tool.name, pinned: newValue)
+                            }
+                        ))
+                        .tint(.sageGreen)
+                        .labelsHidden()
+                        .disabled(atMax)
+                    }
+                    .opacity(atMax ? 0.5 : 1.0)
+                    .listRowBackground(Color.surface)
+                }
+
+                if settingsVM.pinnedToolsCount > 0 {
+                    Button {
+                        settingsVM.clearAllPinnedTools()
+                    } label: {
+                        HStack {
+                            Spacer()
+                            Text("Clear All Pins")
+                                .foregroundStyle(.softRed)
+                            Spacer()
+                        }
+                    }
+                    .listRowBackground(Color.surface)
+                }
+            }
+        } header: {
+            HStack {
+                Text("PINNED TOOLS")
+                    .font(.sectionHeader)
+                    .foregroundStyle(.trust)
+                    .tracking(1.2)
+                Spacer()
+                Text("\(settingsVM.pinnedToolsCount)/\(settingsVM.maxPinnedTools)")
+                    .font(.toolDetail)
+                    .foregroundStyle(.trust.opacity(0.7))
+            }
+        } footer: {
+            Text("Pin specific tools for small models. Pinned tools override automatic relevance-based selection.")
+                .foregroundStyle(.trust.opacity(0.6))
+        }
+        .onAppear {
+            settingsVM.requestOllamaToolsList()
         }
     }
 

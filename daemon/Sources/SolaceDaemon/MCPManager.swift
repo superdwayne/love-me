@@ -245,6 +245,125 @@ actor MCPManager {
         Logger.info("MCP Manager: registered \(tools.count) external tool(s) from '\(serverName)'")
     }
 
+    /// Add a new server at runtime, start it, discover tools, return tool count
+    func addServer(name: String, config: MCPServerConfig) async throws -> Int {
+        guard servers[name] == nil else {
+            throw MCPError.serverAlreadyExists(name)
+        }
+
+        if config.isStdio {
+            guard config.command != nil else {
+                throw MCPError.invalidConfig("Stdio server requires a command")
+            }
+            let transport: MCPTransport = MCPServerProcess(name: name, config: config)
+            do {
+                try await transport.start()
+                servers[name] = transport
+                let tools = try await transport.discoverTools()
+                var registered = 0
+                for tool in tools {
+                    if let existingServer = toolToServer[tool.name] {
+                        Logger.info("MCP Manager: tool '\(tool.name)' from server '\(name)' conflicts with existing tool from server '\(existingServer)' — skipping duplicate")
+                    } else {
+                        allTools.append(tool)
+                        toolToServer[tool.name] = name
+                        registered += 1
+                    }
+                }
+                enabledState[name] = true
+                ollamaEnabledState[name] = true
+                return registered
+            } catch {
+                transport.stop()
+                throw MCPError.serverStartFailed(error.localizedDescription)
+            }
+        } else if config.url != nil {
+            let transport: MCPTransport = MCPHTTPServerProcess(name: name, url: config.url!, headers: config.headers)
+            do {
+                try await withTimeout(seconds: 30) {
+                    try await transport.start()
+                }
+                servers[name] = transport
+                let tools = try await withTimeout(seconds: 15) {
+                    try await transport.discoverTools()
+                }
+                var registered = 0
+                for tool in tools {
+                    if let existingServer = toolToServer[tool.name] {
+                        Logger.info("MCP Manager: tool '\(tool.name)' from server '\(name)' conflicts with existing tool from server '\(existingServer)' — skipping duplicate")
+                    } else {
+                        allTools.append(tool)
+                        toolToServer[tool.name] = name
+                        registered += 1
+                    }
+                }
+                enabledState[name] = true
+                ollamaEnabledState[name] = true
+                return registered
+            } catch {
+                transport.stop()
+                throw MCPError.serverStartFailed(error.localizedDescription)
+            }
+        } else {
+            throw MCPError.invalidConfig("Server must have either a command (stdio) or url (http)")
+        }
+    }
+
+    /// Remove a server: stop transport, clean up all state
+    func removeServer(name: String) async {
+        if let transport = servers.removeValue(forKey: name) {
+            transport.stop()
+        }
+        let toolNames = allTools.filter { $0.serverName == name }.map(\.name)
+        allTools.removeAll { $0.serverName == name }
+        for toolName in toolNames {
+            toolToServer.removeValue(forKey: toolName)
+        }
+        enabledState.removeValue(forKey: name)
+        ollamaEnabledState.removeValue(forKey: name)
+        Logger.info("MCP Manager: removed server '\(name)'")
+    }
+
+    /// Get the server name for each tool (for relevance scoring)
+    func getToolServerMap() -> [String: String] {
+        return toolToServer
+    }
+
+    // MARK: - Pinned Tools Support
+
+    /// Get Ollama-eligible tools with their pinned state for the settings UI
+    func getOllamaToolsWithPinnedState(pinnedNames: Set<String>) -> [(name: String, serverName: String, description: String, pinned: Bool)] {
+        var seen = Set<String>()
+        var results: [(name: String, serverName: String, description: String, pinned: Bool)] = []
+        for tool in allTools where isServerEnabled(tool.serverName) && isOllamaServerEnabled(tool.serverName) {
+            if seen.insert(tool.name).inserted {
+                results.append((
+                    name: tool.name,
+                    serverName: tool.serverName,
+                    description: tool.description,
+                    pinned: pinnedNames.contains(tool.name)
+                ))
+            }
+        }
+        return results
+    }
+
+    /// Get ToolDefinitions for only the specified pinned tool names (skips missing/disabled)
+    func getPinnedToolDefinitions(names: Set<String>) -> [ToolDefinition] {
+        var seen = Set<String>()
+        var defs: [ToolDefinition] = []
+        for tool in allTools where names.contains(tool.name) && isServerEnabled(tool.serverName) && isOllamaServerEnabled(tool.serverName) {
+            if seen.insert(tool.name).inserted {
+                defs.append(ToolDefinition(
+                    name: tool.name,
+                    description: tool.description,
+                    input_schema: tool.inputSchema
+                ))
+            }
+        }
+        return defs
+    }
+
     /// Stop all MCP servers
     func stopAll() async {
         for (name, transport) in servers {

@@ -26,10 +26,17 @@ struct ProviderConfig: Codable, Sendable {
 struct OllamaProviderConfig: Codable, Sendable {
     let endpoint: String
     let model: String
+    let pinnedTools: [String]?
+
+    init(endpoint: String, model: String, pinnedTools: [String]? = nil) {
+        self.endpoint = endpoint
+        self.model = model
+        self.pinnedTools = pinnedTools
+    }
 
     static let `default` = OllamaProviderConfig(
         endpoint: "http://localhost:11434/api/chat",
-        model: "qwen3"
+        model: "qwen3.5"
     )
 }
 

@@ -6,7 +6,7 @@ struct ClaudeRequest: Codable, Sendable {
     let model: String
     let max_tokens: Int
     let messages: [MessageParam]
-    let system: String?
+    let system: [SystemBlock]?
     let stream: Bool
     let tools: [ToolDefinition]?
     let thinking: ThinkingConfig?
@@ -15,7 +15,7 @@ struct ClaudeRequest: Codable, Sendable {
         model: String,
         max_tokens: Int,
         messages: [MessageParam],
-        system: String? = nil,
+        system: [SystemBlock]? = nil,
         stream: Bool = true,
         tools: [ToolDefinition]? = nil,
         thinking: ThinkingConfig? = nil
@@ -27,6 +27,28 @@ struct ClaudeRequest: Codable, Sendable {
         self.stream = stream
         self.tools = tools
         self.thinking = thinking
+    }
+}
+
+// MARK: - System Prompt Blocks (for prompt caching)
+
+struct SystemBlock: Codable, Sendable {
+    let type: String
+    let text: String
+    let cache_control: CacheControl?
+
+    init(text: String, cacheControl: CacheControl? = nil) {
+        self.type = "text"
+        self.text = text
+        self.cache_control = cacheControl
+    }
+}
+
+struct CacheControl: Codable, Sendable {
+    let type: String
+
+    init() {
+        self.type = "ephemeral"
     }
 }
 
@@ -274,6 +296,14 @@ struct ToolDefinition: Codable, Sendable {
     let name: String
     let description: String
     let input_schema: JSONValue
+    let cache_control: CacheControl?
+
+    init(name: String, description: String, input_schema: JSONValue, cache_control: CacheControl? = nil) {
+        self.name = name
+        self.description = description
+        self.input_schema = input_schema
+        self.cache_control = cache_control
+    }
 }
 
 // MARK: - SSE Stream Event Types
@@ -307,6 +337,8 @@ struct SSEMessage: Codable, Sendable {
 struct SSEUsage: Codable, Sendable {
     let input_tokens: Int?
     let output_tokens: Int?
+    let cache_creation_input_tokens: Int?
+    let cache_read_input_tokens: Int?
 }
 
 struct SSEContentBlockStart: Codable, Sendable {

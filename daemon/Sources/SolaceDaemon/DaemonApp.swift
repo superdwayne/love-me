@@ -46,6 +46,12 @@ actor DaemonApp {
     private let agentOrchestrator: AgentOrchestrator
     private var activeExecutionTasks: [String: Task<Void, Never>] = [:]
 
+    // Pinned tools for small Ollama models
+    private var pinnedOllamaTools: Set<String>
+
+    // API usage tracking
+    private let usageTracker = UsageTracker()
+
     // Startup time for health endpoint uptime calculation
     private let startedAt = Date()
 
@@ -91,6 +97,9 @@ actor DaemonApp {
             mcpManager: mcpManager,
             planStore: self.agentPlanStore
         )
+
+        // Initialize pinned tools from config
+        self.pinnedOllamaTools = Set(config.ollamaConfig?.pinnedTools ?? [])
 
         // Executor needs mcpManager, store, and eventBus for decoupling
         self.workflowExecutor = WorkflowExecutor(mcpManager: mcpManager, store: workflowStore, eventBus: eventBus, llmProvider: claudeClient)
@@ -365,8 +374,20 @@ actor DaemonApp {
         case WSMessageType.mcpServerToggle:
             await handleMCPServerToggle(message, client: client)
 
+        case WSMessageType.mcpServerAdd:
+            await handleMCPServerAdd(message, client: client)
+
+        case WSMessageType.mcpServerDelete:
+            await handleMCPServerDelete(message, client: client)
+
         case WSMessageType.ollamaServerToggle:
             await handleOllamaServerToggle(message, client: client)
+
+        case WSMessageType.ollamaToolsList:
+            await handleOllamaToolsList(client: client)
+
+        case WSMessageType.ollamaPinnedToolsSet:
+            await handleOllamaPinnedToolsSet(message, client: client)
 
         // Provider Management messages
         case WSMessageType.getProviders:
@@ -381,6 +402,10 @@ actor DaemonApp {
         // Health
         case WSMessageType.getHealth:
             await handleGetHealth(client: client)
+
+        // Usage
+        case WSMessageType.usageStatus:
+            await handleUsageStatus(client: client)
 
         // Ambient Listening
         case WSMessageType.ambientAnalyze:
@@ -582,6 +607,23 @@ actor DaemonApp {
         - Include required MCP tool names so each agent only sees tools it needs
         """
 
+        // Pencil design tool — instruct Claude to show visual results
+        if activeServers.contains("pencil") {
+            prompt += """
+
+            \n\n# Pencil Design Tool
+
+            After calling `batch_design` to create or modify design elements, ALWAYS call `get_screenshot` on the created/modified node so the user can see the visual result inline in chat.
+
+            Example workflow:
+            1. Call `batch_design` with your design operations → note the returned node IDs
+            2. Call `get_screenshot` with the `filePath` and `nodeId` of the top-level created node
+            3. The screenshot will be displayed inline in chat automatically
+
+            This ensures the user always sees what was designed rather than just JSON node data.
+            """
+        }
+
         return prompt
     }
 
@@ -654,6 +696,150 @@ actor DaemonApp {
         return (.object(dict), didFlatten)
     }
 
+    // MARK: - Smart Tool Filtering
+
+    /// Filter tools by relevance to the user message to reduce token costs.
+    /// Keeps top 40 tools max, always includes built-in tools, and any tools already used in conversation.
+    private func filterToolsByRelevance(
+        tools: [ToolDefinition],
+        messages: [MessageParam],
+        maxTools: Int = 40,
+        builtInNames: Set<String> = ["create_workflow", "create_plan"],
+        toolServerMap: [String: String] = [:]
+    ) -> [ToolDefinition] {
+        // Extract text from ALL user messages (recent messages weighted more)
+        var allUserText = ""
+        var lastUserMessage = ""
+        for msg in messages where msg.role == "user" {
+            let text = msg.content.compactMap { block -> String? in
+                if case .text(let t) = block { return t.text }
+                return nil
+            }.joined(separator: " ")
+            allUserText += " " + text
+            // Only update lastUserMessage when there's actual text (skip tool_result-only messages)
+            if !text.trimmingCharacters(in: .whitespaces).isEmpty {
+                lastUserMessage = text
+            }
+        }
+        allUserText = allUserText.lowercased()
+        lastUserMessage = lastUserMessage.lowercased()
+
+        if lastUserMessage.isEmpty {
+            return tools
+        }
+
+        // Find tool names already referenced in conversation (tool_use blocks)
+        var referencedTools = Set<String>()
+        for msg in messages {
+            for block in msg.content {
+                if case .toolUse(let t) = block {
+                    referencedTools.insert(t.name)
+                }
+            }
+        }
+
+        // Tokenize into keywords (3+ chars, excluding stopwords)
+        let stopwords: Set<String> = [
+            "the", "and", "can", "use", "for", "with", "this", "that",
+            "are", "was", "has", "not", "but", "from", "have", "will",
+            "been", "its", "all", "any", "how", "get", "set", "let"
+        ]
+        let lastKeywords = Set(
+            lastUserMessage
+                .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .filter { $0.count >= 3 && !stopwords.contains($0) }
+        )
+        let allKeywords = Set(
+            allUserText
+                .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .filter { $0.count >= 3 && !stopwords.contains($0) }
+        )
+
+        // Identify which MCP server names appear in the conversation
+        let serverNames = Set(toolServerMap.values)
+        var matchedServers = Set<String>()
+        for server in serverNames {
+            let serverLower = server.lowercased()
+            if allKeywords.contains(serverLower) || allUserText.contains(serverLower) {
+                matchedServers.insert(server)
+            }
+        }
+
+        // Score each tool
+        struct ScoredTool {
+            let tool: ToolDefinition
+            let score: Int
+            let isBuiltIn: Bool
+            let isReferenced: Bool
+        }
+
+        let scored: [ScoredTool] = tools.map { tool in
+            let isBuiltIn = builtInNames.contains(tool.name)
+            let isReferenced = referencedTools.contains(tool.name)
+
+            let toolText = (tool.name + " " + tool.description).lowercased()
+            var score = 0
+
+            // Keyword match against last message (strongest signal)
+            for keyword in lastKeywords {
+                if toolText.contains(keyword) {
+                    score += 2
+                }
+            }
+
+            // Keyword match against full conversation (weaker signal)
+            for keyword in allKeywords where !lastKeywords.contains(keyword) {
+                if toolText.contains(keyword) {
+                    score += 1
+                }
+            }
+
+            // Strong boost: tool belongs to a server mentioned in conversation
+            if let server = toolServerMap[tool.name], matchedServers.contains(server) {
+                score += 10
+            }
+
+            // Boost tools whose name prefix matches keywords (e.g. "mcp__pencil__batch_design")
+            let nameParts = tool.name.components(separatedBy: "__")
+            if nameParts.count >= 2 {
+                let serverPrefix = nameParts[1].lowercased()
+                if lastKeywords.contains(serverPrefix) || allUserText.contains(serverPrefix) {
+                    score += 5
+                }
+            }
+
+            // Boost referenced tools (user already used them this conversation)
+            if isReferenced {
+                score += 8
+            }
+
+            return ScoredTool(tool: tool, score: score, isBuiltIn: isBuiltIn, isReferenced: isReferenced)
+        }
+
+        // Always include: built-in tools + already-referenced tools
+        var result: [ToolDefinition] = []
+        var included = Set<String>()
+
+        for s in scored where s.isBuiltIn || s.isReferenced {
+            result.append(s.tool)
+            included.insert(s.tool.name)
+        }
+
+        // Fill remaining slots with highest-scoring tools
+        let remaining = scored
+            .filter { !included.contains($0.tool.name) }
+            .sorted { $0.score > $1.score }
+
+        for s in remaining {
+            if result.count >= maxTools { break }
+            result.append(s.tool)
+        }
+
+        Logger.info("[Cost] Filtered tools: \(tools.count) → \(result.count) (keywords: \(lastKeywords.prefix(10).joined(separator: ", ")), matched servers: \(matchedServers.isEmpty ? "none" : matchedServers.joined(separator: ", ")))")
+
+        return result
+    }
+
     private func streamLLMResponse(conversationId: String, client: WebSocketClient) async {
         var toolLoopCount = 0
         let maxToolLoops = 50
@@ -724,6 +910,43 @@ actor DaemonApp {
                         "required": .array([.string("name"), .string("description"), .string("agents")])
                     ])
                 ))
+            }
+
+            // Smart tool filtering — reduce tool count by relevance
+            let serverMap = await mcpManager.getToolServerMap()
+            if llmProvider.providerName == "Ollama" {
+                // Small Ollama models (≤ 4B params based on model name) can't handle many tools
+                let modelLower = llmProvider.modelName.lowercased()
+                let isSmallModel = modelLower.contains("0.8b") || modelLower.contains("0.5b")
+                    || modelLower.contains("1b") || modelLower.contains("2b")
+                    || modelLower.contains("3b") || modelLower.contains("4b")
+                if isSmallModel {
+                    // Small models can't use meta-tools — remove them to free slots for real tools
+                    tools.removeAll { $0.name == "create_workflow" || $0.name == "create_plan" }
+
+                    if !pinnedOllamaTools.isEmpty {
+                        // Use manually pinned tools
+                        let pinned = await mcpManager.getPinnedToolDefinitions(names: pinnedOllamaTools)
+                        if !pinned.isEmpty {
+                            tools = pinned
+                            Logger.info("Small Ollama model \(llmProvider.modelName): using \(pinned.count) pinned tools")
+                        } else {
+                            // All pinned tools gone (servers disabled) — fall back to relevance
+                            if tools.count > 5 {
+                                tools = filterToolsByRelevance(tools: tools, messages: apiMessages, maxTools: 5, builtInNames: [], toolServerMap: serverMap)
+                            }
+                            Logger.info("Small Ollama model \(llmProvider.modelName): pinned tools unavailable, filtered to \(tools.count) tools by relevance")
+                        }
+                    } else if tools.count > 5 {
+                        tools = filterToolsByRelevance(tools: tools, messages: apiMessages, maxTools: 5, builtInNames: [], toolServerMap: serverMap)
+                        Logger.info("Small Ollama model \(llmProvider.modelName): filtered to \(tools.count) tools by relevance")
+                    }
+                } else if tools.count > 15 {
+                    // Larger Ollama models: cap at 15 most relevant tools
+                    tools = filterToolsByRelevance(tools: tools, messages: apiMessages, maxTools: 15, toolServerMap: serverMap)
+                }
+            } else if (llmProvider.providerName == "Claude" || llmProvider.providerName == "OpenAI") && tools.count > 40 {
+                tools = filterToolsByRelevance(tools: tools, messages: apiMessages, toolServerMap: serverMap)
             }
 
             let systemPrompt = await buildSystemPrompt()
@@ -835,6 +1058,12 @@ actor DaemonApp {
 
                 case .toolUseDone(let id, let name, let input):
                     pendingToolCalls.append((id: id, name: name, input: input))
+
+                case .usage(let input, let output, let cacheRead, let cacheCreation):
+                    await usageTracker.recordUsage(
+                        input: input, output: output,
+                        cacheCreation: cacheCreation, cacheRead: cacheRead
+                    )
 
                 case .messageComplete:
                     break
@@ -1100,6 +1329,119 @@ actor DaemonApp {
                             metadata: doneMeta
                         )
                         try? await client.send(doneMsg)
+
+                        // Auto-screenshot after Pencil batch_design operations
+                        if serverName == "pencil" && toolCall.name == "batch_design" && !result.isError {
+                            do {
+                                // Extract filePath from original tool arguments
+                                var filePath: String?
+                                if case .object(let args) = inputValue,
+                                   case .string(let fp) = args["filePath"] {
+                                    filePath = fp
+                                }
+
+                                // Extract first node ID from result — batch_design returns lines like "foo=abc123"
+                                var nodeId: String?
+                                let isValidIdChar: (Character) -> Bool = { c in
+                                    c.isLetter || c.isNumber || c == "_" || c == "-" || c == "." || c == ":"
+                                }
+
+                                // Try JSON extraction first if result looks like JSON
+                                let trimmedContent = result.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                                if trimmedContent.hasPrefix("{") || trimmedContent.hasPrefix("[") {
+                                    if let jsonData = trimmedContent.data(using: .utf8),
+                                       let json = try? JSONSerialization.jsonObject(with: jsonData) {
+                                        // Extract node IDs from JSON values (look for "id" keys or string values that look like IDs)
+                                        func extractIdFromJSON(_ obj: Any) -> String? {
+                                            if let dict = obj as? [String: Any] {
+                                                // Check "id" or "nodeId" keys first
+                                                for key in ["id", "nodeId", "node_id"] {
+                                                    if let val = dict[key] as? String, !val.isEmpty, val.allSatisfy(isValidIdChar) {
+                                                        return val
+                                                    }
+                                                }
+                                                // Check all string values
+                                                for (_, val) in dict {
+                                                    if let found = extractIdFromJSON(val) { return found }
+                                                }
+                                            } else if let arr = obj as? [Any] {
+                                                for item in arr {
+                                                    if let found = extractIdFromJSON(item) { return found }
+                                                }
+                                            }
+                                            return nil
+                                        }
+                                        nodeId = extractIdFromJSON(json)
+                                    }
+                                }
+
+                                // Fall back to line-by-line parsing
+                                if nodeId == nil {
+                                    let lines = result.content.components(separatedBy: "\n")
+                                    for line in lines {
+                                        // Match binding results like "nodeId=XYZ123" or just bare IDs
+                                        if let eqIdx = line.firstIndex(of: "=") {
+                                            let idPart = String(line[line.index(after: eqIdx)...]).trimmingCharacters(in: .whitespaces)
+                                            if !idPart.isEmpty && idPart.allSatisfy(isValidIdChar) {
+                                                nodeId = idPart
+                                                break
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if let nodeId = nodeId {
+                                    var screenshotArgs: [String: JSONValue] = ["nodeId": .string(nodeId)]
+                                    if let filePath = filePath {
+                                        screenshotArgs["filePath"] = .string(filePath)
+                                    }
+
+                                    let screenshotResult = try await mcpManager.callTool(
+                                        name: "get_screenshot",
+                                        arguments: .object(screenshotArgs)
+                                    )
+
+                                    if !screenshotResult.isError, let imageURL = Self.extractImageURL(from: screenshotResult.content) {
+                                        // Send synthetic tool_call_done with the screenshot
+                                        let screenshotMsg = WSMessage(
+                                            type: WSMessageType.toolCallDone,
+                                            id: toolCall.id + "_screenshot",
+                                            conversationId: conversationId,
+                                            metadata: [
+                                                "toolName": .string("get_screenshot"),
+                                                "serverName": .string("pencil"),
+                                                "success": .bool(true),
+                                                "result": .string("Design screenshot"),
+                                                "imageURL": .string(imageURL),
+                                                "duration": .double(0),
+                                                "autoScreenshot": .bool(true)
+                                            ]
+                                        )
+                                        try? await client.send(screenshotMsg)
+
+                                        // Save screenshot as tool_result so Claude can see what was rendered
+                                        let screenshotToolResult = StoredMessage(
+                                            role: "tool_result",
+                                            content: screenshotResult.content,
+                                            metadata: [
+                                                "toolId": toolCall.id + "_screenshot",
+                                                "toolName": "get_screenshot",
+                                                "isError": "false",
+                                                "autoScreenshot": "true"
+                                            ]
+                                        )
+                                        _ = try? await conversationStore.addMessage(to: conversationId, message: screenshotToolResult)
+
+                                        Logger.info("Auto-screenshot captured for Pencil batch_design (node: \(nodeId))")
+                                    }
+                                } else {
+                                    let preview = String(result.content.prefix(200))
+                                    Logger.info("[WARN] Auto-screenshot skipped: could not extract node ID from batch_design result: \(preview)")
+                                }
+                            } catch {
+                                Logger.error("Auto-screenshot failed for Pencil batch_design: \(error.localizedDescription)")
+                            }
+                        }
                     } catch {
                         let duration = Date().timeIntervalSince(startTime)
 
@@ -3160,33 +3502,7 @@ actor DaemonApp {
         try? await client.send(confirmMsg)
 
         // Broadcast updated status to all clients (toolCount reflects new enabled state)
-        let toolCount = await mcpManager.toolCount
-        let workflowCount: Int
-        do {
-            workflowCount = try await workflowStore.listAll().count
-        } catch {
-            workflowCount = 0
-        }
-
-        let emailConfig = await emailConfigStore.load()
-
-        var statusMetadata: [String: MetadataValue] = [
-            "connected": .bool(true),
-            "hasApiKey": .bool(config.apiKey != nil),
-            "toolCount": .int(toolCount),
-            "workflowCount": .int(workflowCount),
-            "daemonVersion": .string(config.daemonVersion),
-            "emailConfigured": .bool(emailConfig != nil)
-        ]
-        if let emailConfig = emailConfig {
-            statusMetadata["emailAddress"] = .string(emailConfig.emailAddress)
-        }
-
-        let statusMsg = WSMessage(
-            type: WSMessageType.status,
-            metadata: statusMetadata
-        )
-        await server.broadcast(statusMsg)
+        await broadcastStatus()
     }
 
     private func handleOllamaServerToggle(_ message: WSMessage, client: WebSocketClient) async {
@@ -3233,6 +3549,264 @@ actor DaemonApp {
             ]
         )
         try? await client.send(confirmMsg)
+    }
+
+    private func handleOllamaToolsList(client: WebSocketClient) async {
+        let toolsWithState = await mcpManager.getOllamaToolsWithPinnedState(pinnedNames: pinnedOllamaTools)
+
+        let toolItems: [MetadataValue] = toolsWithState.map { tool in
+            .object([
+                "name": .string(tool.name),
+                "serverName": .string(tool.serverName),
+                "description": .string(tool.description),
+                "pinned": .bool(tool.pinned)
+            ])
+        }
+
+        let msg = WSMessage(
+            type: WSMessageType.ollamaToolsListResult,
+            metadata: [
+                "tools": .array(toolItems),
+                "pinnedCount": .int(pinnedOllamaTools.count),
+                "maxPinned": .int(5)
+            ]
+        )
+        try? await client.send(msg)
+    }
+
+    private func handleOllamaPinnedToolsSet(_ message: WSMessage, client: WebSocketClient) async {
+        guard case .array(let items) = message.metadata?["tools"] else {
+            await sendError(to: client, message: "Missing tools array", code: "MISSING_FIELD")
+            return
+        }
+
+        let toolNames = items.compactMap { $0.stringValue }
+        let capped = Array(toolNames.prefix(5))
+        pinnedOllamaTools = Set(capped)
+
+        // Persist to providers.json
+        let existingOllama = config.providerConfig.ollama
+        let updatedOllama = OllamaProviderConfig(
+            endpoint: existingOllama?.endpoint ?? OllamaProviderConfig.default.endpoint,
+            model: existingOllama?.model ?? OllamaProviderConfig.default.model,
+            pinnedTools: capped.isEmpty ? nil : capped
+        )
+        let newConfig = ProviderConfig(
+            defaultProvider: config.providerConfig.defaultProvider,
+            ollama: updatedOllama,
+            claude: config.providerConfig.claude,
+            openai: config.providerConfig.openai
+        )
+        try? DaemonConfig.saveProviderConfig(newConfig, path: config.providersConfigPath)
+
+        Logger.info("Pinned Ollama tools updated: \(capped.isEmpty ? "cleared" : capped.joined(separator: ", "))")
+
+        let msg = WSMessage(
+            type: WSMessageType.ollamaPinnedToolsResult,
+            metadata: [
+                "success": .bool(true),
+                "pinnedTools": .array(capped.map { .string($0) }),
+                "pinnedCount": .int(capped.count)
+            ]
+        )
+        try? await client.send(msg)
+    }
+
+    private func handleMCPServerAdd(_ message: WSMessage, client: WebSocketClient) async {
+        guard let meta = message.metadata else {
+            await sendError(to: client, message: "Missing metadata", code: "MISSING_FIELD")
+            return
+        }
+        guard let name = meta["name"]?.stringValue, !name.isEmpty else {
+            await sendError(to: client, message: "Missing server name", code: "MISSING_FIELD")
+            return
+        }
+        guard let serverType = meta["type"]?.stringValue else {
+            await sendError(to: client, message: "Missing server type", code: "MISSING_FIELD")
+            return
+        }
+
+        // Build MCPServerConfig from metadata
+        let serverConfig: MCPServerConfig
+        var configDict: [String: Any] = [:]
+
+        if serverType == "stdio" {
+            guard let command = meta["command"]?.stringValue, !command.isEmpty else {
+                let result = WSMessage(
+                    type: WSMessageType.mcpServerAddResult,
+                    metadata: ["success": .bool(false), "error": .string("Command is required for stdio servers")]
+                )
+                try? await client.send(result)
+                return
+            }
+            var args: [String] = []
+            if case .array(let argsArray) = meta["args"] {
+                args = argsArray.compactMap(\.stringValue)
+            }
+            serverConfig = MCPServerConfig(command: command, args: args.isEmpty ? nil : args, env: nil, url: nil, headers: nil, enabled: true, ollamaEnabled: true)
+            configDict["command"] = command
+            if !args.isEmpty { configDict["args"] = args }
+            configDict["enabled"] = true
+            configDict["ollamaEnabled"] = true
+        } else {
+            guard let url = meta["url"]?.stringValue, !url.isEmpty else {
+                let result = WSMessage(
+                    type: WSMessageType.mcpServerAddResult,
+                    metadata: ["success": .bool(false), "error": .string("URL is required for HTTP servers")]
+                )
+                try? await client.send(result)
+                return
+            }
+            var headers: [String: String]? = nil
+            if case .object(let headersObj) = meta["headers"] {
+                headers = [:]
+                for (k, v) in headersObj {
+                    if let s = v.stringValue { headers?[k] = s }
+                }
+            }
+            serverConfig = MCPServerConfig(command: nil, args: nil, env: nil, url: url, headers: headers, enabled: true, ollamaEnabled: true)
+            configDict["url"] = url
+            if let headers = headers { configDict["headers"] = headers }
+            configDict["enabled"] = true
+            configDict["ollamaEnabled"] = true
+        }
+
+        // Attempt to add and start the server
+        do {
+            let toolCount = try await mcpManager.addServer(name: name, config: serverConfig)
+
+            // Persist to mcp.json
+            persistNewServer(name: name, configDict: configDict)
+
+            // Send success result
+            let result = WSMessage(
+                type: WSMessageType.mcpServerAddResult,
+                metadata: [
+                    "success": .bool(true),
+                    "name": .string(name),
+                    "toolCount": .int(toolCount)
+                ]
+            )
+            try? await client.send(result)
+
+            // Broadcast updated server list
+            await handleMCPServersList(client: client)
+            await broadcastStatus()
+        } catch {
+            let errorMsg: String
+            switch error {
+            case MCPError.serverAlreadyExists(let n):
+                errorMsg = "Server '\(n)' already exists"
+            case MCPError.serverStartFailed(let reason):
+                errorMsg = "Failed to start server: \(reason)"
+            case MCPError.invalidConfig(let reason):
+                errorMsg = "Invalid config: \(reason)"
+            default:
+                errorMsg = error.localizedDescription
+            }
+
+            let result = WSMessage(
+                type: WSMessageType.mcpServerAddResult,
+                metadata: ["success": .bool(false), "error": .string(errorMsg)]
+            )
+            try? await client.send(result)
+        }
+    }
+
+    private func handleMCPServerDelete(_ message: WSMessage, client: WebSocketClient) async {
+        guard let name = message.metadata?["name"]?.stringValue, !name.isEmpty else {
+            await sendError(to: client, message: "Missing server name", code: "MISSING_FIELD")
+            return
+        }
+
+        // Remove from MCPManager
+        await mcpManager.removeServer(name: name)
+
+        // Remove from mcp.json
+        let configPath = config.mcpConfigPath
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
+            if var root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               var servers = root["mcpServers"] as? [String: Any] {
+                servers.removeValue(forKey: name)
+                root["mcpServers"] = servers
+                let updatedData = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
+                try updatedData.write(to: URL(fileURLWithPath: configPath))
+                Logger.info("Removed MCP server '\(name)' from mcp.json")
+            }
+        } catch {
+            Logger.error("Failed to remove MCP server from config: \(error)")
+        }
+
+        // Send confirmation
+        let result = WSMessage(
+            type: WSMessageType.mcpServerDeleteResult,
+            metadata: [
+                "success": .bool(true),
+                "name": .string(name)
+            ]
+        )
+        try? await client.send(result)
+
+        // Broadcast updated status
+        await broadcastStatus()
+    }
+
+    private func persistNewServer(name: String, configDict: [String: Any]) {
+        let configPath = config.mcpConfigPath
+        do {
+            var root: [String: Any] = [:]
+            let fm = FileManager.default
+            if fm.fileExists(atPath: configPath) {
+                let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
+                root = (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+            }
+            var servers = (root["mcpServers"] as? [String: Any]) ?? [:]
+            servers[name] = configDict
+            root["mcpServers"] = servers
+            let updatedData = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
+            try updatedData.write(to: URL(fileURLWithPath: configPath))
+            Logger.info("Persisted new MCP server '\(name)' to mcp.json")
+        } catch {
+            Logger.error("Failed to persist new MCP server to config: \(error)")
+        }
+    }
+
+    /// Builds the canonical status metadata dictionary used by all status messages.
+    private func buildStatusMetadata() async -> [String: MetadataValue] {
+        let toolCount = await mcpManager.toolCount
+        let workflowCount: Int
+        do {
+            workflowCount = try await workflowStore.listAll().count
+        } catch {
+            workflowCount = 0
+        }
+
+        let emailConfig = await emailConfigStore.load()
+
+        var metadata: [String: MetadataValue] = [
+            "connected": .bool(true),
+            "hasApiKey": .bool(config.apiKey != nil),
+            "toolCount": .int(toolCount),
+            "workflowCount": .int(workflowCount),
+            "daemonVersion": .string(config.daemonVersion),
+            "emailConfigured": .bool(emailConfig != nil),
+            "activeProvider": .string(llmProvider.providerName.lowercased()),
+            "activeModel": .string(llmProvider.modelName)
+        ]
+        if let emailConfig = emailConfig {
+            metadata["emailAddress"] = .string(emailConfig.emailAddress)
+        }
+
+        return metadata
+    }
+
+    private func broadcastStatus() async {
+        let statusMsg = WSMessage(
+            type: WSMessageType.status,
+            metadata: await buildStatusMetadata()
+        )
+        await server.broadcast(statusMsg)
     }
 
     // MARK: - Shared Workflow Builder
@@ -3497,34 +4071,9 @@ actor DaemonApp {
     // MARK: - Status
 
     func sendStatus(to client: WebSocketClient) async {
-        let toolCount = await mcpManager.toolCount
-        let workflowCount: Int
-        do {
-            workflowCount = try await workflowStore.listAll().count
-        } catch {
-            workflowCount = 0
-        }
-
-        let emailConfig = await emailConfigStore.load()
-
-        var metadata: [String: MetadataValue] = [
-            "connected": .bool(true),
-            "hasApiKey": .bool(config.apiKey != nil),
-            "toolCount": .int(toolCount),
-            "workflowCount": .int(workflowCount),
-            "daemonVersion": .string(config.daemonVersion),
-            "emailConfigured": .bool(emailConfig != nil),
-            "activeProvider": .string(llmProvider.providerName.lowercased()),
-            "activeModel": .string(llmProvider.modelName)
-        ]
-
-        if let emailConfig = emailConfig {
-            metadata["emailAddress"] = .string(emailConfig.emailAddress)
-        }
-
         let msg = WSMessage(
             type: WSMessageType.status,
-            metadata: metadata
+            metadata: await buildStatusMetadata()
         )
         try? await client.send(msg)
     }
@@ -3567,6 +4116,24 @@ actor DaemonApp {
                 "memoryRSSBytes": .int(rssBytes),
                 "version": .string(DaemonConfig.version),
                 "mcpServers": .array(mcpStatusArray)
+            ]
+        )
+        try? await client.send(msg)
+    }
+
+    // MARK: - Usage Tracking
+
+    private func handleUsageStatus(client: WebSocketClient) async {
+        let summary = await usageTracker.getSummary()
+        let msg = WSMessage(
+            type: WSMessageType.usageStatusResult,
+            metadata: [
+                "totalInput": .int(summary.totalInput),
+                "totalOutput": .int(summary.totalOutput),
+                "totalCacheCreation": .int(summary.totalCacheCreation),
+                "totalCacheRead": .int(summary.totalCacheRead),
+                "requestCount": .int(summary.requestCount),
+                "cacheRatio": .double(summary.cacheRatio)
             ]
         )
         try? await client.send(msg)
@@ -4433,10 +5000,11 @@ actor DaemonApp {
             if reachable {
                 switchProvider(to: ollamaClient)
 
-                // Update config
+                // Update config (preserve runtime pinnedTools)
+                let currentPinned = pinnedOllamaTools.isEmpty ? nil : Array(pinnedOllamaTools)
                 let newConfig = ProviderConfig(
                     defaultProvider: "ollama",
-                    ollama: OllamaProviderConfig(endpoint: ollamaEndpoint, model: ollamaModel),
+                    ollama: OllamaProviderConfig(endpoint: ollamaEndpoint, model: ollamaModel, pinnedTools: currentPinned),
                     claude: config.providerConfig.claude,
                     openai: config.providerConfig.openai
                 )

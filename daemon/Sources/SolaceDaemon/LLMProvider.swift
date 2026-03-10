@@ -13,6 +13,7 @@ enum LLMStreamEvent: Sendable {
     case toolUseStart(id: String, name: String)
     case toolUseInputDelta(String)
     case toolUseDone(id: String, name: String, input: String)
+    case usage(input: Int, output: Int, cacheRead: Int, cacheCreation: Int)
     case messageComplete
     case error(String)
 }

@@ -8,6 +8,7 @@ private struct OpenAIRequest: Codable, Sendable {
     let stream: Bool
     let tools: [OpenAIToolDef]?
     let max_tokens: Int?
+    let stream_options: StreamOptions?
 
     init(model: String, messages: [OpenAIChatMessage], stream: Bool = true,
          tools: [OpenAIToolDef]? = nil, max_tokens: Int? = 16384) {
@@ -16,7 +17,12 @@ private struct OpenAIRequest: Codable, Sendable {
         self.stream = stream
         self.tools = tools
         self.max_tokens = max_tokens
+        self.stream_options = stream ? StreamOptions(include_usage: true) : nil
     }
+}
+
+private struct StreamOptions: Codable, Sendable {
+    let include_usage: Bool
 }
 
 private struct OpenAIChatMessage: Codable, Sendable {
@@ -70,6 +76,13 @@ private struct OpenAIFunctionCall: Codable, Sendable {
 
 private struct OpenAISSEChunk: Codable, Sendable {
     let choices: [OpenAISSEChoice]?
+    let usage: OpenAIUsage?
+}
+
+private struct OpenAIUsage: Codable, Sendable {
+    let prompt_tokens: Int?
+    let completion_tokens: Int?
+    let total_tokens: Int?
 }
 
 private struct OpenAISSEChoice: Codable, Sendable {
@@ -171,7 +184,7 @@ actor OpenAIAPIClient: LLMProvider {
         systemPrompt: String? = nil
     ) async -> AsyncThrowingStream<LLMStreamEvent, Error> {
         let openaiMessages = convertMessages(messages, systemPrompt: systemPrompt)
-        // OpenAI enforces a 128 tool limit per request
+        // OpenAI enforces a 128 tool limit; smart filtering in DaemonApp caps at 40
         let cappedTools = tools.count > 128 ? Array(tools.prefix(128)) : tools
         let openaiTools = cappedTools.isEmpty ? nil : convertTools(cappedTools)
 
@@ -298,6 +311,16 @@ actor OpenAIAPIClient: LLMProvider {
             guard let jsonData = payload.data(using: .utf8),
                   let chunk = try? decoder.decode(OpenAISSEChunk.self, from: jsonData) else {
                 continue
+            }
+
+            // Emit usage from final chunk (when stream_options.include_usage is true)
+            if let usage = chunk.usage {
+                continuation.yield(.usage(
+                    input: usage.prompt_tokens ?? 0,
+                    output: usage.completion_tokens ?? 0,
+                    cacheRead: 0,
+                    cacheCreation: 0
+                ))
             }
 
             guard let choice = chunk.choices?.first else { continue }

@@ -86,6 +86,7 @@
 		FF11223344556677AABB0008 /* AgentDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF11223344556677AABB0007 /* AgentDetailView.swift */; };
 		FF11223344556677AABB000A /* PlanEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF11223344556677AABB0009 /* PlanEditView.swift */; };
 		FF11223344556677AABB000C /* PlanReviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF11223344556677AABB000B /* PlanReviewSheet.swift */; };
+		GG11223344556677AABB0002 /* AddMCPServerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = GG11223344556677AABB0001 /* AddMCPServerSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -170,6 +171,7 @@
 		FF11223344556677AABB0007 /* AgentDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDetailView.swift; sourceTree = "<group>"; };
 		FF11223344556677AABB0009 /* PlanEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanEditView.swift; sourceTree = "<group>"; };
 		FF11223344556677AABB000B /* PlanReviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanReviewSheet.swift; sourceTree = "<group>"; };
+		GG11223344556677AABB0001 /* AddMCPServerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddMCPServerSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -296,6 +298,7 @@
 		D65427A6A770EE0AD8192EFB /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				GG11223344556677AABB0001 /* AddMCPServerSheet.swift */,
 				FF11223344556677AABB0005 /* AgentDashboardView.swift */,
 				FF11223344556677AABB0007 /* AgentDetailView.swift */,
 				AA11223344556677AABB0006 /* AmbientBackgroundView.swift */,
@@ -482,6 +485,7 @@
 				FF11223344556677AABB0008 /* AgentDetailView.swift in Sources */,
 				FF11223344556677AABB000A /* PlanEditView.swift in Sources */,
 				FF11223344556677AABB000C /* PlanReviewSheet.swift in Sources */,
+				GG11223344556677AABB0002 /* AddMCPServerSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

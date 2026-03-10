@@ -137,16 +137,24 @@ enum WSMessageType {
     // Client -> Server (MCP Server Management)
     static let mcpServersList = "mcp_servers_list"
     static let mcpServerToggle = "mcp_server_toggle"
+    static let mcpServerAdd = "mcp_server_add"
+    static let mcpServerDelete = "mcp_server_delete"
 
     // Server -> Client (MCP Server Management)
     static let mcpServersListResult = "mcp_servers_list_result"
     static let mcpServerToggleResult = "mcp_server_toggle_result"
+    static let mcpServerAddResult = "mcp_server_add_result"
+    static let mcpServerDeleteResult = "mcp_server_delete_result"
 
     // Client -> Server (Ollama Tool Server Management)
     static let ollamaServerToggle = "ollama_server_toggle"
+    static let ollamaToolsList = "ollama_tools_list"
+    static let ollamaPinnedToolsSet = "ollama_pinned_tools_set"
 
     // Server -> Client (Ollama Tool Server Management)
     static let ollamaServerToggleResult = "ollama_server_toggle_result"
+    static let ollamaToolsListResult = "ollama_tools_list_result"
+    static let ollamaPinnedToolsResult = "ollama_pinned_tools_result"
 
     // Client -> Server (Email / Agent Mail)
     static let emailStatus = "email_status"
@@ -210,6 +218,12 @@ enum WSMessageType {
 
     // Server -> Client (Health)
     static let healthResult = "health_result"
+
+    // Client -> Server (Usage)
+    static let usageStatus = "usage_status"
+
+    // Server -> Client (Usage)
+    static let usageStatusResult = "usage_status_result"
 
     // Client -> Server (Ambient Listening)
     static let ambientAnalyze = "ambient_analyze"
