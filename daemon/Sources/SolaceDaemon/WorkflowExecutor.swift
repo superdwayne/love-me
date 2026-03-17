@@ -13,6 +13,7 @@ actor WorkflowExecutor {
     private let mcpManager: MCPManager
     private let store: WorkflowStore
     private let llmProvider: (any LLMProvider)?
+    private let providerPool: ProviderPool?
     private let eventBus: EventBus
     private var runningExecutions: [String: Task<Void, Never>] = [:]
 
@@ -24,11 +25,12 @@ actor WorkflowExecutor {
     /// Deprecated: Use EventBus to subscribe to "workflow:execution_update" events instead
     private var onExecutionUpdate: (@Sendable (WorkflowExecution) async -> Void)?
 
-    init(mcpManager: MCPManager, store: WorkflowStore, eventBus: EventBus, llmProvider: (any LLMProvider)? = nil) {
+    init(mcpManager: MCPManager, store: WorkflowStore, eventBus: EventBus, llmProvider: (any LLMProvider)? = nil, providerPool: ProviderPool? = nil) {
         self.mcpManager = mcpManager
         self.store = store
         self.eventBus = eventBus
         self.llmProvider = llmProvider
+        self.providerPool = providerPool
     }
 
     /// Set callbacks for broadcasting updates (legacy API, kept for backwards compatibility)
@@ -310,8 +312,29 @@ actor WorkflowExecutor {
         }
         await saveAndBroadcastStep(&execution, stepId: step.id)
 
-        // 2. Guard LLM provider exists
-        guard let llm = llmProvider else {
+        // 2. Resolve LLM provider — prefer per-step routing, fall back to default
+        let llm: any LLMProvider
+        if let preferredProvider = step.preferredProvider, let pool = providerPool {
+            let spec = AgentProviderSpec.from(providerString: preferredProvider)
+            if let resolved = try? await pool.provider(for: spec) {
+                llm = resolved
+                Logger.info("Auto-fix using per-step provider '\(preferredProvider)' for step '\(step.name)'")
+            } else if let fallback = llmProvider {
+                llm = fallback
+                Logger.info("Auto-fix: per-step provider '\(preferredProvider)' unavailable, using default for step '\(step.name)'")
+            } else {
+                Logger.error("Auto-fix unavailable: no LLM provider configured")
+                updateStepResult(&execution, stepId: step.id) { stepResult in
+                    stepResult.status = .error
+                    stepResult.completedAt = Date()
+                    stepResult.error = "Auto-fix unavailable (no LLM configured). Original error: \(errorMessage)"
+                }
+                await saveAndBroadcastStep(&execution, stepId: step.id)
+                return false
+            }
+        } else if let defaultLLM = llmProvider {
+            llm = defaultLLM
+        } else {
             Logger.error("Auto-fix unavailable: no LLM provider configured")
             updateStepResult(&execution, stepId: step.id) { stepResult in
                 stepResult.status = .error

@@ -34,7 +34,6 @@ struct AmbientListeningOverlay: View {
                 .padding(.bottom, 140) // Above tab bar + input bar
             }
         }
-        .allowsHitTesting(vm.isListening || !vm.suggestions.isEmpty || vm.showTranscriptPanel)
         .animation(.spring(duration: 0.35), value: vm.showTranscriptPanel)
         .animation(.spring(duration: 0.35), value: vm.suggestions.count)
     }
@@ -103,7 +102,7 @@ private struct AmbientTranscriptPanel: View {
                 } else {
                     Text("Paused")
                         .font(.captionMedium)
-                        .foregroundStyle(.dusk)
+                        .foregroundStyle(.textSecondary)
                 }
 
                 Spacer()
@@ -115,7 +114,7 @@ private struct AmbientTranscriptPanel: View {
                             .tint(.coral)
                         Text("Analyzing...")
                             .font(.captionSmall)
-                            .foregroundStyle(.dusk)
+                            .foregroundStyle(.textSecondary)
                     }
                 }
 
@@ -124,14 +123,14 @@ private struct AmbientTranscriptPanel: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.dusk)
+                        .foregroundStyle(.textSecondary)
                 }
             }
 
             if vm.currentTranscript.isEmpty {
                 Text("Speak and your words will appear here...")
                     .font(.bodySmall)
-                    .foregroundStyle(.dusk.opacity(0.5))
+                    .foregroundStyle(.textSecondary.opacity(0.5))
                     .italic()
             } else {
                 ScrollView {
@@ -163,7 +162,7 @@ private struct AmbientSuggestionsStack: View {
             if vm.suggestions.count > 3 {
                 Text("+\(vm.suggestions.count - 3) more")
                     .font(.captionSmall)
-                    .foregroundStyle(.dusk)
+                    .foregroundStyle(.textSecondary)
             }
         }
     }
@@ -188,7 +187,7 @@ private struct AmbientSuggestionCard: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(suggestion.typeLabel)
                         .font(.tiny)
-                        .foregroundStyle(.dusk)
+                        .foregroundStyle(.textSecondary)
                         .textCase(.uppercase)
                     Text(suggestion.title)
                         .font(.bodySmallMedium)
@@ -202,7 +201,7 @@ private struct AmbientSuggestionCard: View {
             if !suggestion.description.isEmpty {
                 Text(suggestion.description)
                     .font(.captionSmall)
-                    .foregroundStyle(.dusk)
+                    .foregroundStyle(.textSecondary)
                     .lineLimit(2)
             }
 
@@ -216,7 +215,7 @@ private struct AmbientSuggestionCard: View {
                     } label: {
                         Text("Dismiss")
                             .font(.captionMedium)
-                            .foregroundStyle(.dusk)
+                            .foregroundStyle(.textSecondary)
                             .padding(.horizontal, SolaceTheme.md)
                             .padding(.vertical, SolaceTheme.xs)
                     }
@@ -240,7 +239,7 @@ private struct AmbientSuggestionCard: View {
                             .tint(.coral)
                         Text("Running...")
                             .font(.captionMedium)
-                            .foregroundStyle(.dusk)
+                            .foregroundStyle(.textSecondary)
                     }
 
                 case .completed:

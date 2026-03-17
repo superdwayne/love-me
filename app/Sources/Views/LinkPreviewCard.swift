@@ -42,7 +42,7 @@ struct LinkPreviewCard: View {
                     if let description = preview.description {
                         Text(description)
                             .font(.system(size: 11))
-                            .foregroundStyle(.trust)
+                            .foregroundStyle(.textSecondary)
                             .lineLimit(2)
                     }
                 }

@@ -35,7 +35,7 @@ struct PlanEditView: View {
                             HStack {
                                 Text("Model")
                                     .font(.system(size: 13))
-                                    .foregroundStyle(.trust)
+                                    .foregroundStyle(.textSecondary)
                                 Spacer()
                                 Picker("Model", selection: $agent.provider) {
                                     Text("Claude Haiku").tag("claude:haiku")
@@ -50,14 +50,14 @@ struct PlanEditView: View {
                             // Max turns
                             Stepper("Max turns: \(agent.maxTurns)", value: $agent.maxTurns, in: 1...50)
                                 .font(.system(size: 13))
-                                .foregroundStyle(.trust)
+                                .foregroundStyle(.textSecondary)
 
                             // Dependencies
                             if editableAgents.count > 1 {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("Depends on:")
                                         .font(.system(size: 12))
-                                        .foregroundStyle(.trust)
+                                        .foregroundStyle(.textSecondary)
 
                                     let otherAgents = editableAgents.filter { $0.id != agent.id }
                                     FlowLayout(spacing: 6) {
@@ -72,10 +72,10 @@ struct PlanEditView: View {
                                             } label: {
                                                 Text(other.name)
                                                     .font(.system(size: 11))
-                                                    .foregroundStyle(isSelected ? .white : .trust)
+                                                    .foregroundStyle(isSelected ? .white : .textSecondary)
                                                     .padding(.horizontal, 8)
                                                     .padding(.vertical, 4)
-                                                    .background(isSelected ? Color.heart : Color.trust.opacity(0.1))
+                                                    .background(isSelected ? Color.heart : Color.textSecondary.opacity(0.1))
                                                     .clipShape(Capsule())
                                             }
                                         }
@@ -88,7 +88,7 @@ struct PlanEditView: View {
                         HStack {
                             Text("AGENT \(editableAgents.firstIndex(where: { $0.id == agent.id }).map { $0 + 1 } ?? 0)")
                                 .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(.trust)
+                                .foregroundStyle(.textSecondary)
                                 .tracking(1.2)
                         }
                     }
@@ -120,7 +120,7 @@ struct PlanEditView: View {
                     Button("Cancel") {
                         dismiss()
                     }
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Save & Approve") {

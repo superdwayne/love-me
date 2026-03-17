@@ -106,16 +106,22 @@ final class MCPHTTPServerProcess: MCPTransport {
 
         let rpc = response.rpcResponse
         if let error = rpc.error {
+            Logger.error("MCP HTTP[\(name)] tools/call '\(toolName)' JSON-RPC error: code=\(error.code) message=\(error.message)")
             return MCPToolCallResult(content: "Error: \(error.message)", isError: true)
         }
 
         guard case .object(let resultObj) = rpc.result else {
+            Logger.error("MCP HTTP[\(name)] tools/call '\(toolName)' returned no result object")
             return MCPToolCallResult(content: "No result", isError: true)
         }
 
         var resultText = ""
         let isError: Bool
         if case .bool(let err) = resultObj["isError"] { isError = err } else { isError = false }
+
+        if isError {
+            Logger.error("MCP HTTP[\(name)] tools/call '\(toolName)' returned isError=true, result: \((rpc.result ?? .null).toJSONString().prefix(500))")
+        }
 
         if case .array(let contentArray) = resultObj["content"] {
             for item in contentArray {
@@ -208,23 +214,27 @@ final class MCPHTTPServerProcess: MCPTransport {
             request.setValue(sessionId, forHTTPHeaderField: "Mcp-Session-Id")
         }
 
+        let startTime = Date()
         Logger.info("MCP HTTP[\(name)] sending \(method) id=\(requestId)")
 
         let (data, urlResponse) = try await session.data(for: request)
+        let elapsed = Date().timeIntervalSince(startTime)
 
         guard let httpResponse = urlResponse as? HTTPURLResponse else {
+            Logger.error("MCP HTTP[\(name)] \(method): not an HTTP response after \(String(format: "%.1f", elapsed))s")
             throw MCPError.invalidResponse
         }
 
         let sessionId = httpResponse.value(forHTTPHeaderField: "Mcp-Session-Id")
 
         guard (200...299).contains(httpResponse.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? "no body"
-            Logger.error("MCP HTTP[\(name)] error \(httpResponse.statusCode): \(body)")
+            let body = String(data: data, encoding: .utf8)?.prefix(500) ?? "no body"
+            Logger.error("MCP HTTP[\(name)] \(method) error \(httpResponse.statusCode) after \(String(format: "%.1f", elapsed))s: \(body)")
             throw MCPError.invalidResponse
         }
 
         let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? ""
+        Logger.info("MCP HTTP[\(name)] \(method) id=\(requestId) → \(httpResponse.statusCode) \(contentType.prefix(30)) \(data.count) bytes in \(String(format: "%.1f", elapsed))s")
 
         if contentType.contains("text/event-stream") {
             let rpc = try parseSSEResponse(data: data, requestId: requestId)
@@ -264,26 +274,33 @@ final class MCPHTTPServerProcess: MCPTransport {
     /// Parse an SSE response body to extract the JSON-RPC response for our request ID
     private func parseSSEResponse(data: Data, requestId: Int) throws -> JSONRPCResponse {
         guard let text = String(data: data, encoding: .utf8) else {
+            Logger.error("MCP HTTP[\(name)] SSE: failed to decode response as UTF-8 (\(data.count) bytes)")
             throw MCPError.invalidResponse
         }
 
-        // SSE format: lines starting with "data: " contain JSON
+        // SSE format: lines starting with "data:" contain JSON
+        // Handle both \n and \r\n line endings (Vercel/HTTP2 may use \r\n)
         var lastRPCResponse: JSONRPCResponse?
+        var dataLineCount = 0
 
-        for line in text.components(separatedBy: "\n") {
+        for line in text.components(separatedBy: CharacterSet.newlines) {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             guard trimmed.hasPrefix("data:") else { continue }
+            dataLineCount += 1
 
             let jsonStr = String(trimmed.dropFirst(5)).trimmingCharacters(in: .whitespaces)
             guard !jsonStr.isEmpty, jsonStr != "[DONE]" else { continue }
 
             guard let jsonData = jsonStr.data(using: .utf8) else { continue }
 
-            if let rpc = try? JSONDecoder().decode(JSONRPCResponse.self, from: jsonData) {
+            do {
+                let rpc = try JSONDecoder().decode(JSONRPCResponse.self, from: jsonData)
                 if rpc.id == requestId {
                     return rpc
                 }
                 lastRPCResponse = rpc
+            } catch {
+                Logger.error("MCP HTTP[\(name)] SSE: JSON decode failed for data line (\(jsonData.count) bytes): \(error.localizedDescription)")
             }
         }
 
@@ -291,6 +308,7 @@ final class MCPHTTPServerProcess: MCPTransport {
             return last
         }
 
+        Logger.error("MCP HTTP[\(name)] SSE: no valid JSON-RPC response found (\(dataLineCount) data line(s), \(text.count) chars total)")
         throw MCPError.invalidResponse
     }
 }

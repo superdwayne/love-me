@@ -93,7 +93,7 @@ private struct MessageBubbleInline: View {
             if !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text(renderedContent)
                     .font(.chatMessage)
-                    .foregroundStyle(message.role == .user ? .dusk : .textPrimary)
+                    .foregroundStyle(.textPrimary)
                     .onChange(of: message.content) { _, newContent in
                         throttleRender(newContent)
                     }
@@ -112,7 +112,7 @@ private struct MessageBubbleInline: View {
                 HStack(spacing: SolaceTheme.xs) {
                     ForEach(0..<3, id: \.self) { _ in
                         Circle()
-                            .fill(Color.trust)
+                            .fill(Color.textSecondary)
                             .frame(width: 6, height: 6)
                     }
                 }
@@ -239,12 +239,12 @@ struct ConversationBlockView: View {
                     if message.isEdited {
                         Text("edited")
                             .font(.system(size: 10))
-                            .foregroundStyle(.dusk.opacity(0.5))
+                            .foregroundStyle(.textSecondary.opacity(0.5))
                     }
 
                     Text(formattedTimestamp(message.timestamp))
                         .font(.timestamp)
-                        .foregroundStyle(.dusk.opacity(0.5))
+                        .foregroundStyle(.textSecondary.opacity(0.5))
                 }
             }
         }
@@ -297,7 +297,7 @@ struct ConversationBlockView: View {
 
                 Text("Solace")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.dusk)
+                    .foregroundStyle(.textSecondary)
 
                 // Status pill
                 if message.isStreaming || message.isThinkingStreaming || !message.toolCalls.filter({ $0.status == .running }).isEmpty {
@@ -325,7 +325,7 @@ struct ConversationBlockView: View {
                                 .frame(height: 200)
                                 .overlay {
                                     ProgressView()
-                                        .tint(.dusk)
+                                        .tint(.textSecondary)
                                 }
                         case .success(let image):
                             image
@@ -347,13 +347,12 @@ struct ConversationBlockView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
                 .background(Color.surface)
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .shadow(color: .black.opacity(0.03), radius: 8, y: 2)
+                .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.bubbleRadius, style: .continuous))
 
             // Timestamp
             Text(formattedTimestamp(message.timestamp))
                 .font(.timestamp)
-                .foregroundStyle(.dusk.opacity(0.5))
+                .foregroundStyle(.textPrimary.opacity(0.5))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contextMenu {
@@ -421,7 +420,7 @@ struct ConversationBlockView: View {
                             RoundedRectangle(cornerRadius: 16)
                                 .fill(Color.surfaceElevated)
                                 .frame(width: 150, height: 150)
-                                .overlay { ProgressView().tint(.dusk) }
+                                .overlay { ProgressView().tint(.textSecondary) }
                         case .success(let image):
                             image
                                 .resizable()

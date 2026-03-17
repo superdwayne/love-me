@@ -4,6 +4,14 @@ struct ServerBrand {
     let icon: String
     let color: Color
     let displayName: String
+    let isCLI: Bool
+
+    init(icon: String, color: Color, displayName: String, isCLI: Bool = false) {
+        self.icon = icon
+        self.color = color
+        self.displayName = displayName
+        self.isCLI = isCLI
+    }
 }
 
 enum ServerBrandConfig {
@@ -18,16 +26,17 @@ enum ServerBrandConfig {
     }
 
     private static let knownBrands: [String: ServerBrand] = [
-        "blender": ServerBrand(icon: "cube.transparent", color: Color(hex: "E87D0D"), displayName: "Blender"),
-        "figma": ServerBrand(icon: "paintbrush.pointed", color: Color(hex: "A259FF"), displayName: "Figma"),
+        "blender": ServerBrand(icon: "cube.transparent", color: Color(hex: "E87D0D"), displayName: "Blender", isCLI: true),
+        "figma": ServerBrand(icon: "paintbrush.pointed", color: Color(hex: "A259FF"), displayName: "Figma", isCLI: true),
         "unity": ServerBrand(icon: "gamecontroller", color: Color(hex: "6B6B6B"), displayName: "Unity"),
         "unreal": ServerBrand(icon: "film", color: Color(hex: "0D47A1"), displayName: "Unreal"),
         "xcode": ServerBrand(icon: "hammer", color: Color(hex: "147EFB"), displayName: "Xcode"),
-        "touchdesigner": ServerBrand(icon: "waveform.path", color: Color(hex: "FF6B35"), displayName: "TouchDesigner"),
+        "touchdesigner": ServerBrand(icon: "waveform.path", color: Color(hex: "FF6B35"), displayName: "TouchDesigner", isCLI: true),
         "leonardo": ServerBrand(icon: "photo.artframe", color: Color(hex: "8B5CF6"), displayName: "Leonardo"),
         "lumadream": ServerBrand(icon: "sparkles", color: Color(hex: "6366F1"), displayName: "Luma Dream"),
         "filesystem": ServerBrand(icon: "folder", color: .warning, displayName: "File System"),
-        "lens_studio": ServerBrand(icon: "camera.filters", color: Color(hex: "FFFC00"), displayName: "Lens Studio"),
+        "lens_studio": ServerBrand(icon: "camera.filters", color: Color(hex: "FFFC00"), displayName: "Lens Studio", isCLI: true),
+        "lens-studio": ServerBrand(icon: "camera.filters", color: Color(hex: "FFFC00"), displayName: "Lens Studio", isCLI: true),
         "spline": ServerBrand(icon: "cube", color: Color(hex: "6C5CE7"), displayName: "Spline"),
         "github": ServerBrand(icon: "chevron.left.forwardslash.chevron.right", color: Color(hex: "6E5494"), displayName: "GitHub"),
         "slack": ServerBrand(icon: "number", color: Color(hex: "4A154B"), displayName: "Slack"),

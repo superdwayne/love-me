@@ -19,16 +19,16 @@ struct ConversationListView: View {
                     Spacer().frame(height: 60)
 
                     Image(systemName: "bubble.left.and.bubble.right")
-                        .font(.system(size: 36))
-                        .foregroundStyle(.trust.opacity(0.4))
+                        .font(.system(size: 32, weight: .light))
+                        .foregroundStyle(.textSecondary.opacity(0.4))
 
                     Text("No conversations yet")
                         .font(.displaySubtitle)
                         .foregroundStyle(.textPrimary)
 
-                    Text("Start chatting with your AI agent.")
+                    Text("Start one and I'll remember it.")
                         .font(.chatMessage)
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
 
                     Button {
                         chatVM.newConversation()
@@ -117,9 +117,9 @@ struct ConversationListView: View {
             // Active indicator
             if chatVM.currentConversationId == conversation.id {
                 Rectangle()
-                    .fill(Color.heart)
-                    .frame(width: 3)
-                    .clipShape(RoundedRectangle(cornerRadius: 1.5))
+                    .fill(Color.coral)
+                    .frame(width: 2)
+                    .clipShape(RoundedRectangle(cornerRadius: 1))
             }
 
             VStack(alignment: .leading, spacing: SolaceTheme.sm) {
@@ -145,13 +145,13 @@ struct ConversationListView: View {
                 if let preview = conversation.lastMessagePreview, !preview.isEmpty {
                     Text(preview)
                         .font(.system(size: 13))
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                         .lineLimit(1)
                 }
 
                 Text(conversation.relativeTimestamp)
                     .font(.timestamp)
-                    .foregroundStyle(.trust.opacity(0.7))
+                    .foregroundStyle(.textSecondary.opacity(0.7))
             }
 
             Spacer()

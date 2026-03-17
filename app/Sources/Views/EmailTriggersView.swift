@@ -93,14 +93,14 @@ struct EmailTriggersView: View {
         HStack(spacing: SolaceTheme.lg) {
             // Left accent indicator
             RoundedRectangle(cornerRadius: 1.5)
-                .fill(rule.enabled ? Color.sageGreen : Color.trust.opacity(0.3))
+                .fill(rule.enabled ? Color.sageGreen : Color.textSecondary.opacity(0.3))
                 .frame(width: SolaceTheme.toolCardLeftBorderWidth)
 
             VStack(alignment: .leading, spacing: SolaceTheme.xs) {
                 HStack(spacing: SolaceTheme.sm) {
                     Image(systemName: "envelope.badge.fill")
                         .font(.toolTitle)
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
 
                     Text(rule.workflowName.isEmpty ? "No workflow" : rule.workflowName)
                         .font(.chatMessage)
@@ -111,7 +111,7 @@ struct EmailTriggersView: View {
 
                 Text(rule.conditionsSummary)
                     .font(.toolDetail)
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
                     .lineLimit(2)
             }
 
@@ -140,7 +140,7 @@ struct EmailTriggersView: View {
 
             Image(systemName: "envelope.open")
                 .font(.system(size: 48, weight: .light))
-                .foregroundStyle(.trust.opacity(0.4))
+                .foregroundStyle(.textSecondary.opacity(0.4))
 
             VStack(spacing: SolaceTheme.sm) {
                 Text("No email rules yet")
@@ -149,7 +149,7 @@ struct EmailTriggersView: View {
 
                 Text("Create a rule to automatically run workflows\nwhen specific emails arrive.")
                     .font(.chatMessage)
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
                     .multilineTextAlignment(.center)
                     .lineSpacing(4)
             }
@@ -167,7 +167,7 @@ struct EmailTriggersView: View {
                 .padding(.vertical, SolaceTheme.md)
                 .background(
                     RoundedRectangle(cornerRadius: SolaceTheme.inputFieldRadius)
-                        .stroke(Color.trust.opacity(0.3), lineWidth: 1)
+                        .stroke(Color.textSecondary.opacity(0.3), lineWidth: 1)
                 )
             }
             .padding(.top, SolaceTheme.sm)
@@ -236,7 +236,7 @@ struct TriggerRuleFormView: View {
                     dismiss()
                 }
                 .font(.chatMessage)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.textSecondary)
                 .accessibilityLabel("Cancel editing rule")
             }
 
@@ -285,12 +285,12 @@ struct TriggerRuleFormView: View {
         } header: {
             Text("CONDITIONS")
                 .font(.sectionHeader)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.textSecondary)
                 .tracking(1.2)
         } footer: {
             Text("Leave a field empty to match all values. Multiple conditions are combined with AND.")
                 .font(.toolDetail)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.textSecondary)
                 .padding(.top, SolaceTheme.xs)
         }
     }
@@ -305,7 +305,7 @@ struct TriggerRuleFormView: View {
         HStack(spacing: SolaceTheme.md) {
             Image(systemName: icon)
                 .font(.toolTitle)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.textSecondary)
                 .frame(width: 20)
             Text(label)
                 .font(.chatMessage)
@@ -329,7 +329,7 @@ struct TriggerRuleFormView: View {
                 HStack(spacing: SolaceTheme.md) {
                     Image(systemName: "paperclip")
                         .font(.toolTitle)
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                         .frame(width: 20)
                     Text("Has Attachment")
                         .font(.chatMessage)
@@ -344,7 +344,7 @@ struct TriggerRuleFormView: View {
         } header: {
             Text("ATTACHMENT")
                 .font(.sectionHeader)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.textSecondary)
                 .tracking(1.2)
         }
     }
@@ -358,7 +358,7 @@ struct TriggerRuleFormView: View {
                         .foregroundStyle(.amberGlow)
                     Text("No workflows available")
                         .font(.chatMessage)
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                 }
                 .frame(minHeight: SolaceTheme.minTouchTarget)
                 .listRowBackground(Color.surface)
@@ -375,14 +375,14 @@ struct TriggerRuleFormView: View {
                     HStack(spacing: SolaceTheme.md) {
                         Image(systemName: "bolt.fill")
                             .font(.toolTitle)
-                            .foregroundStyle(.trust)
+                            .foregroundStyle(.textSecondary)
                             .frame(width: 20)
                         Text("Workflow")
                             .font(.chatMessage)
                             .foregroundStyle(.textPrimary)
                     }
                 }
-                .tint(.trust)
+                .tint(.textSecondary)
                 .frame(minHeight: SolaceTheme.minTouchTarget)
                 .listRowBackground(Color.surface)
                 .accessibilityLabel("Select workflow")
@@ -395,12 +395,12 @@ struct TriggerRuleFormView: View {
         } header: {
             Text("WORKFLOW")
                 .font(.sectionHeader)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.textSecondary)
                 .tracking(1.2)
         } footer: {
             Text("The workflow to run when an email matches these conditions.")
                 .font(.toolDetail)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.textSecondary)
                 .padding(.top, SolaceTheme.xs)
         }
     }

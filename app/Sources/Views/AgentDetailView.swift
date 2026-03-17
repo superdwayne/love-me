@@ -62,7 +62,7 @@ struct AgentDetailView: View {
                         .foregroundStyle(.textPrimary)
                     Text(agent.objective)
                         .font(.system(size: 14))
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                 }
                 Spacer()
                 ProviderBadge(spec: agent.providerSpec)
@@ -77,7 +77,7 @@ struct AgentDetailView: View {
                 }
             }
             .font(.system(size: 12))
-            .foregroundStyle(.trust)
+            .foregroundStyle(.textSecondary)
         }
         .padding(SolaceTheme.md)
         .background(Color.surface)
@@ -89,7 +89,7 @@ struct AgentDetailView: View {
         DisclosureGroup {
             Text(thinking)
                 .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(.trust.opacity(0.7))
+                .foregroundStyle(.textSecondary.opacity(0.7))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(SolaceTheme.sm)
         } label: {
@@ -111,7 +111,7 @@ struct AgentDetailView: View {
         VStack(alignment: .leading, spacing: SolaceTheme.sm) {
             Text("OUTPUT")
                 .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(.trust)
+                .foregroundStyle(.textSecondary)
                 .tracking(1.2)
 
             Text(text)
@@ -141,7 +141,7 @@ struct AgentDetailView: View {
                 } label: {
                     Image(systemName: "doc.on.doc")
                         .font(.system(size: 14))
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                 }
             }
 
@@ -172,7 +172,7 @@ struct AgentDetailView: View {
                     .foregroundStyle(.orange)
                 Text("Switched from \(fallback.from) to \(fallback.to): \(fallback.reason)")
                     .font(.system(size: 12))
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
             }
         }
         .padding(SolaceTheme.md)

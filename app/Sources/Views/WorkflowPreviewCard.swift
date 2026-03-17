@@ -29,7 +29,7 @@ struct WorkflowPreviewCard: View {
                             .foregroundStyle(.electricBlue)
                         Text(scheduleDescription)
                             .font(.toolDetail)
-                            .foregroundStyle(.trust)
+                            .foregroundStyle(.textSecondary)
                     }
                 }
 
@@ -38,7 +38,7 @@ struct WorkflowPreviewCard: View {
                 // Step count badge
                 Text("\(steps.count) step\(steps.count == 1 ? "" : "s")")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
                     .padding(.horizontal, SolaceTheme.sm)
                     .padding(.vertical, SolaceTheme.xs)
                     .background(Color.surfaceElevated)
@@ -61,7 +61,7 @@ struct WorkflowPreviewCard: View {
                         if index < steps.count - 1 {
                             HStack {
                                 Rectangle()
-                                    .fill(Color.trust.opacity(0.3))
+                                    .fill(Color.textSecondary.opacity(0.3))
                                     .frame(width: 2, height: 20)
                                     .padding(.leading, 18)
                                 Spacer()
@@ -86,7 +86,11 @@ struct WorkflowPreviewCard: View {
         }
         .padding(SolaceTheme.lg)
         .background(Color.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.cardRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: SolaceTheme.cardRadius)
+                .strokeBorder(Color.divider, lineWidth: 1)
+        )
         .opacity(isEnabled ? 1.0 : 0.6)
     }
 }

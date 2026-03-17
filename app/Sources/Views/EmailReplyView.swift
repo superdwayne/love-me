@@ -34,15 +34,15 @@ struct EmailReplyView: View {
                     Divider()
                     HStack(spacing: SolaceTheme.xs) {
                         Rectangle()
-                            .fill(Color.dusk.opacity(0.3))
+                            .fill(Color.textSecondary.opacity(0.3))
                             .frame(width: 3)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("On \(formatDate(email.receivedAt)), \(email.from) wrote:")
                                 .font(.captionSmall)
-                                .foregroundStyle(.dusk)
+                                .foregroundStyle(.textSecondary)
                             Text(email.bodyText.prefix(200))
                                 .font(.captionSmall)
-                                .foregroundStyle(.dusk.opacity(0.7))
+                                .foregroundStyle(.textSecondary.opacity(0.7))
                                 .lineLimit(4)
                         }
                     }
@@ -61,7 +61,7 @@ struct EmailReplyView: View {
                     Button("Cancel") {
                         dismiss()
                     }
-                    .foregroundStyle(.dusk)
+                    .foregroundStyle(.textSecondary)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
@@ -87,7 +87,7 @@ struct EmailReplyView: View {
         HStack(spacing: SolaceTheme.sm) {
             Text(label)
                 .font(.toolDetail)
-                .foregroundStyle(.dusk)
+                .foregroundStyle(.textSecondary)
                 .frame(width: 55, alignment: .trailing)
             Text(value)
                 .font(.chatMessage)

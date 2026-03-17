@@ -14,7 +14,7 @@ struct EmailDetailView: View {
                         .tint(.coral)
                     Text("Loading email...")
                         .font(.chatMessage)
-                        .foregroundStyle(.dusk)
+                        .foregroundStyle(.textSecondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(.appBackground)
@@ -65,10 +65,10 @@ struct EmailDetailView: View {
                 VStack(spacing: SolaceTheme.md) {
                     Image(systemName: "envelope.open")
                         .font(.system(size: 40, weight: .light))
-                        .foregroundStyle(.dusk.opacity(0.4))
+                        .foregroundStyle(.textSecondary.opacity(0.4))
                     Text("Could not load email")
                         .font(.chatMessage)
-                        .foregroundStyle(.dusk)
+                        .foregroundStyle(.textSecondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(.appBackground)
@@ -113,7 +113,7 @@ struct EmailDetailView: View {
                 HStack(spacing: SolaceTheme.xs) {
                     Text("Labels")
                         .font(.toolDetail)
-                        .foregroundStyle(.dusk)
+                        .foregroundStyle(.textSecondary)
                         .frame(width: 50, alignment: .leading)
 
                     ForEach(email.labels, id: \.self) { label in
@@ -137,7 +137,7 @@ struct EmailDetailView: View {
         HStack(alignment: .top, spacing: SolaceTheme.sm) {
             Text(label)
                 .font(.toolDetail)
-                .foregroundStyle(.dusk)
+                .foregroundStyle(.textSecondary)
                 .frame(width: 50, alignment: .leading)
             Text(value)
                 .font(.toolDetail)
@@ -152,7 +152,7 @@ struct EmailDetailView: View {
         VStack(alignment: .leading, spacing: SolaceTheme.sm) {
             Text("MESSAGE")
                 .font(.sectionHeaderSerif)
-                .foregroundStyle(.dusk)
+                .foregroundStyle(.textSecondary)
                 .tracking(1.2)
                 .padding(.bottom, SolaceTheme.xs)
 
@@ -173,7 +173,7 @@ struct EmailDetailView: View {
         VStack(alignment: .leading, spacing: SolaceTheme.sm) {
             Text("ATTACHMENTS")
                 .font(.sectionHeaderSerif)
-                .foregroundStyle(.dusk)
+                .foregroundStyle(.textSecondary)
                 .tracking(1.2)
 
             ForEach(email.attachments) { attachment in
@@ -190,7 +190,7 @@ struct EmailDetailView: View {
                             .lineLimit(1)
                         Text(formatFileSize(attachment.size))
                             .font(.captionSmall)
-                            .foregroundStyle(.dusk)
+                            .foregroundStyle(.textSecondary)
                     }
 
                     Spacer()

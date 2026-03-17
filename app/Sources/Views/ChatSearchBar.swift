@@ -12,7 +12,7 @@ struct ChatSearchBar: View {
             HStack(spacing: SolaceTheme.xs) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 14))
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
 
                 TextField("Search messages...", text: $vm.searchQuery)
                     .font(.system(size: 14))
@@ -31,7 +31,7 @@ struct ChatSearchBar: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 14))
-                            .foregroundStyle(.trust)
+                            .foregroundStyle(.textSecondary)
                     }
                 }
             }
@@ -44,7 +44,7 @@ struct ChatSearchBar: View {
             if !chatVM.searchMatches.isEmpty {
                 Text("\(chatVM.currentMatchIndex + 1) of \(chatVM.searchMatches.count)")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
                     .monospacedDigit()
                     .frame(minWidth: 50)
 
@@ -54,7 +54,7 @@ struct ChatSearchBar: View {
                     } label: {
                         Image(systemName: "chevron.up")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.trust)
+                            .foregroundStyle(.textSecondary)
                             .frame(width: 28, height: 28)
                             .background(Color.surfaceElevated)
                             .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -65,7 +65,7 @@ struct ChatSearchBar: View {
                     } label: {
                         Image(systemName: "chevron.down")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.trust)
+                            .foregroundStyle(.textSecondary)
                             .frame(width: 28, height: 28)
                             .background(Color.surfaceElevated)
                             .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -74,7 +74,7 @@ struct ChatSearchBar: View {
             } else if !chatVM.searchQuery.isEmpty {
                 Text("No results")
                     .font(.system(size: 12))
-                    .foregroundStyle(.trust.opacity(0.6))
+                    .foregroundStyle(.textSecondary.opacity(0.6))
             }
 
             // Done button

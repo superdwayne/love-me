@@ -27,6 +27,7 @@ struct SettingsView: View {
                 discoveredDaemonsSection
                 connectionSection
                 aiProviderSection
+                cliToolsSection
                 mcpServersSection
                 if settingsVM.activeProvider == "ollama" {
                     ollamaToolsSection
@@ -40,13 +41,17 @@ struct SettingsView: View {
             .scrollContentBackground(.hidden)
             .background(.appBackground)
             .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
+                    Button {
                         dismiss()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 24))
+                            .foregroundStyle(.textSecondary)
+                            .symbolRenderingMode(.hierarchical)
                     }
-                    .foregroundStyle(.textPrimary)
                 }
             }
             .toolbarBackground(.appBackground, for: .navigationBar)
@@ -65,7 +70,7 @@ struct SettingsView: View {
                             .foregroundStyle(.softRed)
                         Text("Enable in Settings > Privacy > Local Network")
                             .font(.toolDetail)
-                            .foregroundStyle(.trust)
+                            .foregroundStyle(.textSecondary)
                     }
                     .listRowBackground(Color.surface)
                 } else {
@@ -73,13 +78,13 @@ struct SettingsView: View {
                         if bonjourBrowser.isSearching {
                             ProgressView()
                                 .scaleEffect(0.8)
-                                .tint(.trust)
+                                .tint(.textSecondary)
                             Text("Searching for daemons...")
-                                .foregroundStyle(.trust)
+                                .foregroundStyle(.textSecondary)
                                 .padding(.leading, SolaceTheme.sm)
                         } else {
                             Text("No daemons found")
-                                .foregroundStyle(.trust)
+                                .foregroundStyle(.textSecondary)
                         }
                         Spacer()
                     }
@@ -96,7 +101,7 @@ struct SettingsView: View {
                                     .foregroundStyle(.textPrimary)
                                 Text(daemon.displayAddress)
                                     .font(.toolDetail)
-                                    .foregroundStyle(.trust)
+                                    .foregroundStyle(.textSecondary)
                             }
                             Spacer()
                             if host == daemon.host && port == Int(daemon.port) {
@@ -111,12 +116,12 @@ struct SettingsView: View {
             // Debug info
             Text(bonjourBrowser.debugStatus)
                 .font(.toolDetail)
-                .foregroundStyle(.trust.opacity(0.6))
+                .foregroundStyle(.textSecondary.opacity(0.6))
                 .listRowBackground(Color.surface)
         } header: {
             Text("DISCOVERED DAEMONS")
                 .font(.sectionHeader)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.dusk)
                 .tracking(1.2)
         }
     }
@@ -154,12 +159,14 @@ struct SettingsView: View {
                     testConnectionLabel
                     Spacer()
                 }
+                .padding(.vertical, SolaceTheme.xs)
             }
             .listRowBackground(Color.surface)
+            .listRowSeparator(.hidden)
         } header: {
             Text("CONNECTION")
                 .font(.sectionHeader)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.dusk)
                 .tracking(1.2)
         }
     }
@@ -169,15 +176,15 @@ struct SettingsView: View {
         switch testState {
         case .idle:
             Text("Test Connection")
-                .foregroundStyle(.heart)
+                .foregroundStyle(.coral)
 
         case .testing:
             HStack(spacing: SolaceTheme.sm) {
                 ProgressView()
                     .scaleEffect(0.8)
-                    .tint(.trust)
+                    .tint(.textSecondary)
                 Text("Testing...")
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
             }
 
         case .success:
@@ -198,7 +205,7 @@ struct SettingsView: View {
                 }
                 Text(error)
                     .font(.toolDetail)
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
             }
         }
     }
@@ -212,9 +219,9 @@ struct SettingsView: View {
                 HStack {
                     ProgressView()
                         .scaleEffect(0.8)
-                        .tint(.trust)
+                        .tint(.textSecondary)
                     Text("Loading providers...")
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                         .padding(.leading, SolaceTheme.sm)
                     Spacer()
                 }
@@ -230,29 +237,38 @@ struct SettingsView: View {
                             .fill(Color.sageGreen)
                             .frame(width: 8, height: 8)
                         Text(activeProviderLabel)
-                            .foregroundStyle(.trust)
+                            .foregroundStyle(.textSecondary)
                     }
                 }
                 .listRowBackground(Color.surface)
 
                 // Provider picker
-                HStack {
+                VStack(alignment: .leading, spacing: SolaceTheme.sm) {
                     Text("Provider")
-                        .foregroundStyle(.textPrimary)
-                    Spacer()
-                    Picker("", selection: $settings.selectedProvider) {
-                        Text("Claude").tag("claude")
-                        Text("OpenAI").tag("openai")
-                        Text("Ollama").tag("ollama")
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: 260)
-                    .onChange(of: settingsVM.selectedProvider) { _, newValue in
-                        if newValue == "claude" {
-                            settingsVM.setProvider("claude")
-                        }
-                        if newValue == "ollama" && settingsVM.ollamaModels.isEmpty {
-                            settingsVM.requestOllamaModels()
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.textSecondary)
+
+                    HStack(spacing: SolaceTheme.sm) {
+                        ForEach(["claude", "openai", "ollama"], id: \.self) { provider in
+                            Button {
+                                settings.selectedProvider = provider
+                                if provider == "claude" {
+                                    settingsVM.setProvider("claude")
+                                }
+                                if provider == "ollama" && settingsVM.ollamaModels.isEmpty {
+                                    settingsVM.requestOllamaModels()
+                                }
+                            } label: {
+                                Text(provider.capitalized)
+                                    .font(.system(size: 13, weight: settings.selectedProvider == provider ? .semibold : .medium))
+                                    .foregroundStyle(settings.selectedProvider == provider ? .white : .textPrimary)
+                                    .padding(.horizontal, SolaceTheme.md)
+                                    .padding(.vertical, SolaceTheme.sm)
+                                    .frame(maxWidth: .infinity)
+                                    .background(settings.selectedProvider == provider ? Color.coral : Color.surfaceElevated)
+                                    .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.sm))
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -278,7 +294,7 @@ struct SettingsView: View {
 
                     Text("API key is configured on the daemon via OPENAI_API_KEY in ~/.solace/.env")
                         .font(.toolDetail)
-                        .foregroundStyle(.trust.opacity(0.7))
+                        .foregroundStyle(.textSecondary.opacity(0.7))
                         .listRowBackground(Color.surface)
 
                     // Connect button
@@ -291,12 +307,12 @@ struct SettingsView: View {
                             if settingsVM.isSwitchingProvider {
                                 ProgressView()
                                     .scaleEffect(0.8)
-                                    .tint(.trust)
+                                    .tint(.textSecondary)
                                 Text("Connecting...")
-                                    .foregroundStyle(.trust)
+                                    .foregroundStyle(.textSecondary)
                             } else {
                                 Text(settingsVM.activeProvider == "openai" ? "Update OpenAI" : "Connect to OpenAI")
-                                    .foregroundStyle(.heart)
+                                    .foregroundStyle(.coral)
                             }
                             Spacer()
                         }
@@ -350,7 +366,7 @@ struct SettingsView: View {
                         if settingsVM.isLoadingOllamaModels {
                             ProgressView()
                                 .scaleEffect(0.8)
-                                .tint(.trust)
+                                .tint(.textSecondary)
                         } else if settingsVM.ollamaModels.isEmpty {
                             TextField("e.g. qwen3.5",
                                       text: Binding(
@@ -378,10 +394,10 @@ struct SettingsView: View {
                             } label: {
                                 HStack(spacing: SolaceTheme.xs) {
                                     Text(settingsVM.ollamaModel.isEmpty ? "Select model" : settingsVM.ollamaModel)
-                                        .foregroundStyle(settingsVM.ollamaModel.isEmpty ? .trust : .textPrimary)
+                                        .foregroundStyle(settingsVM.ollamaModel.isEmpty ? .textSecondary : .textPrimary)
                                     Image(systemName: "chevron.up.chevron.down")
                                         .font(.system(size: 10))
-                                        .foregroundStyle(.trust)
+                                        .foregroundStyle(.textSecondary)
                                 }
                             }
                         }
@@ -390,7 +406,7 @@ struct SettingsView: View {
                         } label: {
                             Image(systemName: "arrow.clockwise")
                                 .font(.system(size: 14))
-                                .foregroundStyle(.trust)
+                                .foregroundStyle(.textSecondary)
                         }
                         .buttonStyle(.plain)
                     }
@@ -418,12 +434,12 @@ struct SettingsView: View {
                             if settingsVM.isSwitchingProvider {
                                 ProgressView()
                                     .scaleEffect(0.8)
-                                    .tint(.trust)
+                                    .tint(.textSecondary)
                                 Text("Connecting...")
-                                    .foregroundStyle(.trust)
+                                    .foregroundStyle(.textSecondary)
                             } else {
                                 Text(settingsVM.activeProvider == "ollama" ? "Update Ollama" : "Connect to Ollama")
-                                    .foregroundStyle(.heart)
+                                    .foregroundStyle(.coral)
                             }
                             Spacer()
                         }
@@ -448,11 +464,78 @@ struct SettingsView: View {
         } header: {
             Text("AI PROVIDER")
                 .font(.sectionHeader)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.dusk)
                 .tracking(1.2)
         }
         .onAppear {
             settingsVM.requestProvidersList()
+        }
+    }
+
+    private var cliToolsSection: some View {
+        Section {
+            if settingsVM.isLoadingServers {
+                HStack {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .tint(.textSecondary)
+                    Text("Loading...")
+                        .foregroundStyle(.textSecondary)
+                        .padding(.leading, SolaceTheme.sm)
+                    Spacer()
+                }
+                .listRowBackground(Color.surface)
+            } else {
+                let cliServers = settingsVM.mcpServers.filter { ServerBrandConfig.brand(for: $0.name).isCLI }
+                if cliServers.isEmpty {
+                    Text("No CLI tools configured")
+                        .foregroundStyle(.textSecondary)
+                        .listRowBackground(Color.surface)
+                } else {
+                    ForEach(cliServers) { server in
+                        let brand = ServerBrandConfig.brand(for: server.name)
+                        HStack(spacing: SolaceTheme.md) {
+                            Image(systemName: brand.icon)
+                                .font(.system(size: 16))
+                                .foregroundStyle(brand.color)
+                                .frame(width: 24)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(brand.displayName)
+                                    .foregroundStyle(.textPrimary)
+                                Text("CLI \u{00B7} \(server.toolCount) tool\(server.toolCount == 1 ? "" : "s")")
+                                    .font(.toolDetail)
+                                    .foregroundStyle(.textSecondary)
+                            }
+                            Spacer()
+                            Toggle("", isOn: Binding(
+                                get: { server.enabled },
+                                set: { newValue in
+                                    settingsVM.toggleMCPServer(name: server.name, enabled: newValue)
+                                }
+                            ))
+                            .tint(.sageGreen)
+                            .labelsHidden()
+                        }
+                        .listRowBackground(Color.surface)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                serverToDelete = server.name
+                                showDeleteServerAlert = true
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+            }
+        } header: {
+            Text("CLI TOOLS")
+                .font(.sectionHeader)
+                .foregroundStyle(.dusk)
+                .tracking(1.2)
+        }
+        .onAppear {
+            settingsVM.requestMCPServersList()
         }
     }
 
@@ -462,49 +545,52 @@ struct SettingsView: View {
                 HStack {
                     ProgressView()
                         .scaleEffect(0.8)
-                        .tint(.trust)
+                        .tint(.textSecondary)
                     Text("Loading servers...")
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                         .padding(.leading, SolaceTheme.sm)
                     Spacer()
                 }
                 .listRowBackground(Color.surface)
-            } else if settingsVM.mcpServers.isEmpty {
-                Text("No MCP servers configured")
-                    .foregroundStyle(.trust)
-                    .listRowBackground(Color.surface)
             } else {
-                ForEach(settingsVM.mcpServers) { server in
-                    let brand = ServerBrandConfig.brand(for: server.name)
-                    HStack(spacing: SolaceTheme.md) {
-                        Image(systemName: brand.icon)
-                            .font(.system(size: 16))
-                            .foregroundStyle(brand.color)
-                            .frame(width: 24)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(brand.displayName)
-                                .foregroundStyle(.textPrimary)
-                            Text("\(server.type) \u{00B7} \(server.toolCount) tool\(server.toolCount == 1 ? "" : "s")")
-                                .font(.toolDetail)
-                                .foregroundStyle(.trust)
-                        }
-                        Spacer()
-                        Toggle("", isOn: Binding(
-                            get: { server.enabled },
-                            set: { newValue in
-                                settingsVM.toggleMCPServer(name: server.name, enabled: newValue)
+                let mcpOnlyServers = settingsVM.mcpServers.filter { !ServerBrandConfig.brand(for: $0.name).isCLI }
+                if mcpOnlyServers.isEmpty {
+                    Text("No MCP servers configured")
+                        .foregroundStyle(.textSecondary)
+                        .listRowBackground(Color.surface)
+                } else {
+                    ForEach(mcpOnlyServers) { server in
+                        let brand = ServerBrandConfig.brand(for: server.name)
+                        HStack(spacing: SolaceTheme.md) {
+                            Image(systemName: brand.icon)
+                                .font(.system(size: 16))
+                                .foregroundStyle(brand.color)
+                                .frame(width: 24)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(brand.displayName)
+                                    .foregroundStyle(.textPrimary)
+                                Text("\(server.type) \u{00B7} \(server.toolCount) tool\(server.toolCount == 1 ? "" : "s")")
+                                    .font(.toolDetail)
+                                    .foregroundStyle(.textSecondary)
                             }
-                        ))
-                        .tint(.sageGreen)
-                        .labelsHidden()
-                    }
-                    .listRowBackground(Color.surface)
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button(role: .destructive) {
-                            serverToDelete = server.name
-                            showDeleteServerAlert = true
-                        } label: {
-                            Label("Delete", systemImage: "trash")
+                            Spacer()
+                            Toggle("", isOn: Binding(
+                                get: { server.enabled },
+                                set: { newValue in
+                                    settingsVM.toggleMCPServer(name: server.name, enabled: newValue)
+                                }
+                            ))
+                            .tint(.sageGreen)
+                            .labelsHidden()
+                        }
+                        .listRowBackground(Color.surface)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                serverToDelete = server.name
+                                showDeleteServerAlert = true
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
                         }
                     }
                 }
@@ -524,11 +610,8 @@ struct SettingsView: View {
         } header: {
             Text("MCP SERVERS")
                 .font(.sectionHeader)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.dusk)
                 .tracking(1.2)
-        }
-        .onAppear {
-            settingsVM.requestMCPServersList()
         }
         .sheet(isPresented: $showAddServerSheet) {
             AddMCPServerSheet(settingsVM: settingsVM, isPresented: $showAddServerSheet)
@@ -554,7 +637,7 @@ struct SettingsView: View {
         Section {
             if settingsVM.mcpServers.isEmpty {
                 Text("No MCP servers available")
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
                     .listRowBackground(Color.surface)
             } else {
                 ForEach(settingsVM.mcpServers.filter { $0.enabled }) { server in
@@ -569,7 +652,7 @@ struct SettingsView: View {
                                 .foregroundStyle(.textPrimary)
                             Text("\(server.toolCount) tool\(server.toolCount == 1 ? "" : "s")")
                                 .font(.toolDetail)
-                                .foregroundStyle(.trust)
+                                .foregroundStyle(.textSecondary)
                         }
                         Spacer()
                         Toggle("", isOn: Binding(
@@ -587,14 +670,14 @@ struct SettingsView: View {
         } header: {
             Text("OLLAMA TOOLS")
                 .font(.sectionHeader)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.dusk)
                 .tracking(1.2)
         } footer: {
             let ollamaToolCount = settingsVM.mcpServers
                 .filter { $0.enabled && $0.ollamaEnabled }
                 .reduce(0) { $0 + $1.toolCount }
             Text("\(ollamaToolCount) tool\(ollamaToolCount == 1 ? "" : "s") sent to Ollama. Disable servers with tools your local model doesn't need.")
-                .foregroundStyle(.trust.opacity(0.6))
+                .foregroundStyle(.textSecondary.opacity(0.6))
         }
     }
 
@@ -604,16 +687,16 @@ struct SettingsView: View {
                 HStack {
                     ProgressView()
                         .scaleEffect(0.8)
-                        .tint(.trust)
+                        .tint(.textSecondary)
                     Text("Loading tools...")
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                         .padding(.leading, SolaceTheme.sm)
                     Spacer()
                 }
                 .listRowBackground(Color.surface)
             } else if settingsVM.ollamaTools.isEmpty {
                 Text("No tools available")
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
                     .listRowBackground(Color.surface)
             } else {
                 ForEach(settingsVM.ollamaTools) { tool in
@@ -625,7 +708,7 @@ struct SettingsView: View {
                                 .font(.system(size: 14, weight: .medium))
                             Text(tool.serverName)
                                 .font(.toolDetail)
-                                .foregroundStyle(.trust)
+                                .foregroundStyle(.textSecondary)
                         }
                         Spacer()
                         Toggle("", isOn: Binding(
@@ -660,16 +743,16 @@ struct SettingsView: View {
             HStack {
                 Text("PINNED TOOLS")
                     .font(.sectionHeader)
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
                     .tracking(1.2)
                 Spacer()
                 Text("\(settingsVM.pinnedToolsCount)/\(settingsVM.maxPinnedTools)")
                     .font(.toolDetail)
-                    .foregroundStyle(.trust.opacity(0.7))
+                    .foregroundStyle(.textSecondary.opacity(0.7))
             }
         } footer: {
             Text("Pin specific tools for small models. Pinned tools override automatic relevance-based selection.")
-                .foregroundStyle(.trust.opacity(0.6))
+                .foregroundStyle(.textSecondary.opacity(0.6))
         }
         .onAppear {
             settingsVM.requestOllamaToolsList()
@@ -693,11 +776,11 @@ struct SettingsView: View {
         } header: {
             Text("AMBIENT LISTENING")
                 .font(.sectionHeader)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.dusk)
                 .tracking(1.2)
         } footer: {
             Text("Continuously captures speech and sends it to Solace for analysis.")
-                .foregroundStyle(.trust.opacity(0.6))
+                .foregroundStyle(.textSecondary.opacity(0.6))
         }
     }
 
@@ -708,7 +791,7 @@ struct SettingsView: View {
                     .foregroundStyle(.textPrimary)
                 Spacer()
                 Text("1.0.0")
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
             }
             .listRowBackground(Color.surface)
 
@@ -718,7 +801,7 @@ struct SettingsView: View {
                         .foregroundStyle(.textPrimary)
                     Spacer()
                     Text(daemonVersion)
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                 }
                 .listRowBackground(Color.surface)
             }
@@ -728,13 +811,13 @@ struct SettingsView: View {
                     .foregroundStyle(.textPrimary)
                 Spacer()
                 Text("\(webSocket.toolCount)")
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
             }
             .listRowBackground(Color.surface)
         } header: {
             Text("ABOUT")
                 .font(.sectionHeader)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.dusk)
                 .tracking(1.2)
         }
     }
@@ -744,12 +827,14 @@ struct SettingsView: View {
             Button(role: .destructive) {
                 showDeleteAlert = true
             } label: {
-                HStack {
-                    Spacer()
+                HStack(spacing: SolaceTheme.sm) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 14))
                     Text("Delete All Conversations")
-                        .foregroundStyle(.softRed)
-                    Spacer()
                 }
+                .foregroundStyle(.error)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, SolaceTheme.xs)
             }
             .listRowBackground(Color.surface)
             .alert("Delete All Conversations", isPresented: $showDeleteAlert) {
@@ -763,7 +848,7 @@ struct SettingsView: View {
         } header: {
             Text("DATA")
                 .font(.sectionHeader)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.dusk)
                 .tracking(1.2)
         }
     }

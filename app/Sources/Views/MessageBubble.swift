@@ -10,7 +10,7 @@ private struct StreamingDotsView: View {
         HStack(spacing: SolaceTheme.xs) {
             ForEach(0..<3, id: \.self) { index in
                 Circle()
-                    .fill(Color.trust)
+                    .fill(Color.textSecondary)
                     .frame(width: 6, height: 6)
                     .opacity(animating ? 1.0 : 0.3)
                     .animation(
@@ -45,6 +45,18 @@ struct MessageBubble: View {
             }
 
             VStack(alignment: message.role == .user ? .trailing : .leading, spacing: SolaceTheme.xs) {
+                // Assistant attribution label
+                if message.role == .assistant && !message.content.isEmpty {
+                    HStack(spacing: SolaceTheme.xs) {
+                        Circle()
+                            .fill(Color.coral)
+                            .frame(width: 6, height: 6)
+                        Text("Solace")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.coral)
+                    }
+                }
+
                 bubbleContent
                     .contextMenu {
                         Button {
@@ -79,13 +91,13 @@ struct MessageBubble: View {
                 // Timestamp
                 Text(formattedTimestamp)
                     .font(.timestamp)
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
 
                 // Edited indicator
                 if message.isEdited {
                     Text("(edited)")
                         .font(.system(size: 10))
-                        .foregroundStyle(.trust.opacity(0.6))
+                        .foregroundStyle(.textSecondary.opacity(0.6))
                 }
 
                 // Failed state
@@ -209,17 +221,11 @@ struct MessageBubble: View {
                 }
             }
         }
-        .padding(SolaceTheme.md)
+        .padding(message.role == .user ? SolaceTheme.md : SolaceTheme.xs)
         .frame(maxWidth: UIScreen.main.bounds.width * SolaceTheme.bubbleMaxWidthRatio,
                alignment: message.role == .user ? .trailing : .leading)
         .background(bubbleBackground)
         .clipShape(bubbleShape)
-        .overlay {
-            if message.role == .assistant {
-                RoundedRectangle(cornerRadius: SolaceTheme.bubbleRadius)
-                    .stroke(Color.assistantBubbleBorder, lineWidth: 1)
-            }
-        }
     }
 
     private var editingView: some View {
@@ -264,19 +270,19 @@ struct MessageBubble: View {
     private func modelLoadingView(_ status: String) -> some View {
         HStack(spacing: SolaceTheme.sm) {
             ProgressView()
-                .tint(.trust)
+                .tint(.textSecondary)
                 .scaleEffect(0.8)
             Text(status)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.trust)
+                .foregroundStyle(.textSecondary)
         }
         .padding(.vertical, SolaceTheme.xs)
     }
 
     private var bubbleBackground: Color {
         message.role == .user
-            ? .heart.opacity(0.9)
-            : .surface
+            ? .heart
+            : .clear
     }
 
     private var bubbleShape: UnevenRoundedRectangle {
@@ -290,7 +296,7 @@ struct MessageBubble: View {
         } else {
             return UnevenRoundedRectangle(
                 topLeadingRadius: SolaceTheme.bubbleRadius,
-                bottomLeadingRadius: SolaceTheme.bubbleTailRadius,
+                bottomLeadingRadius: SolaceTheme.bubbleRadius,
                 bottomTrailingRadius: SolaceTheme.bubbleRadius,
                 topTrailingRadius: SolaceTheme.bubbleRadius
             )

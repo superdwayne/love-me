@@ -58,7 +58,7 @@ struct EmailSettingsView: View {
                 } else {
                     Text("Not connected")
                         .font(.toolTitle)
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                 }
             }
             .frame(minHeight: SolaceTheme.minTouchTarget)
@@ -73,7 +73,7 @@ struct EmailSettingsView: View {
                     Spacer()
                     Text(emailVM.connectedEmail)
                         .font(.toolDetail)
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -84,7 +84,7 @@ struct EmailSettingsView: View {
         } header: {
             Text("ACCOUNT")
                 .font(.sectionHeader)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.textSecondary)
                 .tracking(1.2)
         }
     }
@@ -118,7 +118,7 @@ struct EmailSettingsView: View {
         } header: {
             Text("CONNECTION")
                 .font(.sectionHeader)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.textSecondary)
                 .tracking(1.2)
         }
     }
@@ -128,7 +128,7 @@ struct EmailSettingsView: View {
             HStack(spacing: SolaceTheme.md) {
                 Image(systemName: "tray.full.fill")
                     .font(.toolTitle)
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
                     .frame(width: 20)
                 Text("Emails Processed")
                     .font(.chatMessage)
@@ -136,7 +136,7 @@ struct EmailSettingsView: View {
                 Spacer()
                 Text("\(emailVM.emailsProcessed)")
                     .font(.toolTitle)
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
                     .monospacedDigit()
             }
             .frame(minHeight: SolaceTheme.minTouchTarget)
@@ -146,7 +146,7 @@ struct EmailSettingsView: View {
             HStack(spacing: SolaceTheme.md) {
                 Image(systemName: "clock.fill")
                     .font(.toolTitle)
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
                     .frame(width: 20)
                 Text("Last Poll")
                     .font(.chatMessage)
@@ -154,7 +154,7 @@ struct EmailSettingsView: View {
                 Spacer()
                 Text(emailVM.lastPollTime ?? "Never")
                     .font(.toolDetail)
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
             }
             .frame(minHeight: SolaceTheme.minTouchTarget)
             .listRowBackground(Color.surface)
@@ -162,7 +162,7 @@ struct EmailSettingsView: View {
         } header: {
             Text("ACTIVITY")
                 .font(.sectionHeader)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.textSecondary)
                 .tracking(1.2)
         }
     }
@@ -178,14 +178,14 @@ struct EmailSettingsView: View {
                 HStack(spacing: SolaceTheme.md) {
                     Image(systemName: "arrow.clockwise")
                         .font(.toolTitle)
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                         .frame(width: 20)
                     Text("Check Every")
                         .font(.chatMessage)
                         .foregroundStyle(.textPrimary)
                 }
             }
-            .tint(.trust)
+            .tint(.textSecondary)
             .frame(minHeight: SolaceTheme.minTouchTarget)
             .listRowBackground(Color.surface)
             .accessibilityLabel("Polling interval")
@@ -195,12 +195,12 @@ struct EmailSettingsView: View {
         } header: {
             Text("POLLING")
                 .font(.sectionHeader)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.textSecondary)
                 .tracking(1.2)
         } footer: {
             Text("How often Solace checks for new emails.")
                 .font(.toolDetail)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.textSecondary)
                 .padding(.top, SolaceTheme.xs)
         }
     }

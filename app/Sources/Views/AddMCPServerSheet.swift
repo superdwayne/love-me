@@ -74,7 +74,7 @@ struct AddMCPServerSheet: View {
                     } header: {
                         Text("STDIO CONFIGURATION")
                             .font(.sectionHeader)
-                            .foregroundStyle(.trust)
+                            .foregroundStyle(.textSecondary)
                             .tracking(1.2)
                     }
                 } else {
@@ -114,7 +114,7 @@ struct AddMCPServerSheet: View {
                     } header: {
                         Text("HTTP CONFIGURATION")
                             .font(.sectionHeader)
-                            .foregroundStyle(.trust)
+                            .foregroundStyle(.textSecondary)
                             .tracking(1.2)
                     }
                 }
@@ -143,13 +143,13 @@ struct AddMCPServerSheet: View {
                         settingsVM.addServerError = nil
                         isPresented = false
                     }
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Add") {
                         addServer()
                     }
-                    .foregroundStyle(canAdd ? .heart : .trust.opacity(0.4))
+                    .foregroundStyle(canAdd ? .heart : .textSecondary.opacity(0.4))
                     .disabled(!canAdd || settingsVM.isAddingServer)
                 }
             }

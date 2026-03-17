@@ -27,21 +27,14 @@ struct ThinkingPanel: View {
             }
         }
         .background(.surfaceElevated)
-        .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.sm))
-        .overlay(
-            RoundedRectangle(cornerRadius: SolaceTheme.sm)
-                .stroke(
-                    borderColor,
-                    lineWidth: 1
-                )
-        )
+        .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.cardRadius))
     }
 
     private var header: some View {
         HStack(spacing: SolaceTheme.sm) {
-            Image(systemName: "bolt.fill")
+            Image(systemName: "brain")
                 .font(.system(size: 12))
-                .foregroundStyle(.amberGlow)
+                .foregroundStyle(.coral)
                 .opacity(message.isThinkingStreaming ? pulseOpacity : 1.0)
                 .onAppear {
                     guard message.isThinkingStreaming, !reduceMotion else { return }
@@ -63,18 +56,18 @@ struct ThinkingPanel: View {
             if message.isThinkingStreaming {
                 Text("Thinking...")
                     .font(.thinking)
-                    .foregroundStyle(.amberGlow)
+                    .foregroundStyle(.textSecondary)
             } else if let duration = message.thinkingDuration {
                 Text("Thought for \(String(format: "%.1f", duration))s")
                     .font(.thinking)
-                    .foregroundStyle(.amberGlow.opacity(0.8))
+                    .foregroundStyle(.textSecondary.opacity(0.7))
             }
 
             Spacer()
 
             Image(systemName: "chevron.right")
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.trust)
+                .foregroundStyle(.textSecondary)
                 .rotationEffect(.degrees(isExpanded ? 90 : 0))
         }
         .padding(.horizontal, SolaceTheme.md)
@@ -86,7 +79,7 @@ struct ThinkingPanel: View {
         ScrollView {
             Text(message.thinkingContent ?? "")
                 .font(.thinking)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(SolaceTheme.md)
         }
@@ -94,7 +87,7 @@ struct ThinkingPanel: View {
     }
 
     private var borderColor: Color {
-        isExpanded ? .amberGlow.opacity(0.2) : .amberGlow.opacity(0.3)
+        isExpanded ? .coral.opacity(0.15) : .coral.opacity(0.2)
     }
 
     private var accessibilityLabel: String {

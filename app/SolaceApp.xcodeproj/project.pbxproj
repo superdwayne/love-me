@@ -15,7 +15,7 @@
 		0A1B2C3D4E5F6A05B2C3D4E5 /* LinkPreviewService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1B2C3D4E5F6A05B2C3D4E6 /* LinkPreviewService.swift */; };
 		0A1B2C3D4E5F6A06B2C3D4E5 /* LinkPreviewCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1B2C3D4E5F6A06B2C3D4E6 /* LinkPreviewCard.swift */; };
 		0A1B2C3D4E5F6A07B2C3D4E5 /* ChatSearchBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1B2C3D4E5F6A07B2C3D4E6 /* ChatSearchBar.swift */; };
-		0A1B2C3D4E5F6A08B2C3D4E5 /* CardWorkflowBuilderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1B2C3D4E5F6A08B2C3D4E6 /* CardWorkflowBuilderView.swift */; };
+		0A1B2C3D4E5F6A08B2C3D4E5 /* StepInputEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1B2C3D4E5F6A08B2C3D4E6 /* StepInputEditor.swift */; };
 		172E26AE31E9D15D29FAD710 /* EmailSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBAB90B5366DFAAC1309B6DD /* EmailSettingsView.swift */; };
 		2736A36EB25810A9D548FA20 /* WorkflowPreviewCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B1C0551B102E349B32CA49D /* WorkflowPreviewCard.swift */; };
 		2E7199394B1B105CA8148A12 /* WorkflowBuilderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 250210591A3F2F9DE821065B /* WorkflowBuilderView.swift */; };
@@ -24,7 +24,6 @@
 		3E2C2D2DC582981E85208037 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D6DF452C51A884B99D83E4E /* SettingsView.swift */; };
 		461136E0BB5E451E9E610E4E /* ConversationListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B743237B7D6998033A5C46A /* ConversationListViewModel.swift */; };
 		49F265B8DD360D6B66FF3601 /* HapticManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50AD61F5240C4A072DD9DDD /* HapticManager.swift */; };
-		4A56D387A06063EDA4E544C4 /* WorkflowEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA964706C90AB2ADB8F48737 /* WorkflowEditorView.swift */; };
 		58D3E2D1D250A008AACBD117 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20A39B3AA07F0FD11EBA9239 /* ChatView.swift */; };
 		5C50C2E23CBE783B447AA8D1 /* Message.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F78B1B97ED626ED28DBDA80 /* Message.swift */; };
 		71CD19A825D9987B16FECF75 /* WebSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FA6350DDCEA9D963D5F3CB6 /* WebSocketClient.swift */; };
@@ -69,7 +68,6 @@
 		BB11223344556677AABB0024 /* PlayfairDisplay-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = BB11223344556677AABB0025 /* PlayfairDisplay-SemiBold.ttf */; };
 		BB11223344556677AABB0026 /* PlayfairDisplay-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = BB11223344556677AABB0027 /* PlayfairDisplay-Bold.ttf */; };
 		CC22334455667788AABB0002 /* ServerBrandConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC22334455667788AABB0001 /* ServerBrandConfig.swift */; };
-		CC22334455667788AABB0006 /* WorkflowBuilderWrapperView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC22334455667788AABB0005 /* WorkflowBuilderWrapperView.swift */; };
 		DD11223344556677AABB0001 /* AmbientMusicManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD11223344556677AABB0002 /* AmbientMusicManager.swift */; };
 		DD11223344556677AABB0003 /* garden.m4a in Resources */ = {isa = PBXBuildFile; fileRef = DD11223344556677AABB0004 /* garden.m4a */; };
 		DD11223344556677AABB0005 /* water.m4a in Resources */ = {isa = PBXBuildFile; fileRef = DD11223344556677AABB0006 /* water.m4a */; };
@@ -97,7 +95,7 @@
 		0A1B2C3D4E5F6A05B2C3D4E6 /* LinkPreviewService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkPreviewService.swift; sourceTree = "<group>"; };
 		0A1B2C3D4E5F6A06B2C3D4E6 /* LinkPreviewCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkPreviewCard.swift; sourceTree = "<group>"; };
 		0A1B2C3D4E5F6A07B2C3D4E6 /* ChatSearchBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatSearchBar.swift; sourceTree = "<group>"; };
-		0A1B2C3D4E5F6A08B2C3D4E6 /* CardWorkflowBuilderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardWorkflowBuilderView.swift; sourceTree = "<group>"; };
+		0A1B2C3D4E5F6A08B2C3D4E6 /* StepInputEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StepInputEditor.swift; sourceTree = "<group>"; };
 		176BC2E06CFDBA18907AA518 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		20A39B3AA07F0FD11EBA9239 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		239984BDB5B06C5F5AA127E9 /* WorkflowExecutionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowExecutionView.swift; sourceTree = "<group>"; };
@@ -138,7 +136,6 @@
 		E1F4A83C2C7B9E0F00A1B2C3 /* EmailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailViewModel.swift; sourceTree = "<group>"; };
 		F1A2B3C4D5E6F7081920ABCE /* EmailApprovalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailApprovalView.swift; sourceTree = "<group>"; };
 		E2A3B4C5D6E70009F3A4B5C7 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
-		FA964706C90AB2ADB8F48737 /* WorkflowEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowEditorView.swift; sourceTree = "<group>"; };
 		FBAB90B5366DFAAC1309B6DD /* EmailSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailSettingsView.swift; sourceTree = "<group>"; };
 		FF610C4AEFAC2266E2E2CDBE /* Conversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Conversation.swift; sourceTree = "<group>"; };
 		AA11223344556677AABB0002 /* SpiritGuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpiritGuideView.swift; sourceTree = "<group>"; };
@@ -154,7 +151,6 @@
 		BB11223344556677AABB0025 /* PlayfairDisplay-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "PlayfairDisplay-SemiBold.ttf"; sourceTree = "<group>"; };
 		BB11223344556677AABB0027 /* PlayfairDisplay-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "PlayfairDisplay-Bold.ttf"; sourceTree = "<group>"; };
 		CC22334455667788AABB0001 /* ServerBrandConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerBrandConfig.swift; sourceTree = "<group>"; };
-		CC22334455667788AABB0005 /* WorkflowBuilderWrapperView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowBuilderWrapperView.swift; sourceTree = "<group>"; };
 		DD11223344556677AABB0002 /* AmbientMusicManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmbientMusicManager.swift; sourceTree = "<group>"; };
 		DD11223344556677AABB0004 /* garden.m4a */ = {isa = PBXFileReference; lastKnownFileType = file; path = garden.m4a; sourceTree = "<group>"; };
 		DD11223344556677AABB0006 /* water.m4a */ = {isa = PBXFileReference; lastKnownFileType = file; path = water.m4a; sourceTree = "<group>"; };
@@ -303,7 +299,6 @@
 				FF11223344556677AABB0007 /* AgentDetailView.swift */,
 				AA11223344556677AABB0006 /* AmbientBackgroundView.swift */,
 				EE11223344556677AABB0006 /* AmbientListeningOverlay.swift */,
-				0A1B2C3D4E5F6A08B2C3D4E6 /* CardWorkflowBuilderView.swift */,
 				0A1B2C3D4E5F6A07B2C3D4E6 /* ChatSearchBar.swift */,
 				20A39B3AA07F0FD11EBA9239 /* ChatView.swift */,
 				DBE12B2E96ED817B70C3B6FD /* ConnectionBanner.swift */,
@@ -332,9 +327,8 @@
 				AA1B2C3D4E5F6A09B2C3D4E6 /* VoiceTabView.swift */,
 				E2A3B4C5D6E70009F3A4B5C7 /* WelcomeView.swift */,
 				250210591A3F2F9DE821065B /* WorkflowBuilderView.swift */,
-				CC22334455667788AABB0005 /* WorkflowBuilderWrapperView.swift */,
+				0A1B2C3D4E5F6A08B2C3D4E6 /* StepInputEditor.swift */,
 				29CD3B3FA7ED7CF3391BABF3 /* WorkflowDetailView.swift */,
-				FA964706C90AB2ADB8F48737 /* WorkflowEditorView.swift */,
 				239984BDB5B06C5F5AA127E9 /* WorkflowExecutionView.swift */,
 				85CB1D36FFA570D9FADB0ADF /* WorkflowListView.swift */,
 				2B1C0551B102E349B32CA49D /* WorkflowPreviewCard.swift */,
@@ -449,7 +443,6 @@
 				AA9E5F8314511AB6F624A1FB /* WebSocketMessage.swift in Sources */,
 				2E7199394B1B105CA8148A12 /* WorkflowBuilderView.swift in Sources */,
 				024660B030D9DA2FD44FDEB8 /* WorkflowDetailView.swift in Sources */,
-				4A56D387A06063EDA4E544C4 /* WorkflowEditorView.swift in Sources */,
 				C8CDB55A0E0A1A1B221CA908 /* WorkflowExecutionView.swift in Sources */,
 				8110AD50716D3CFD8F5501CD /* WorkflowListView.swift in Sources */,
 				2736A36EB25810A9D548FA20 /* WorkflowPreviewCard.swift in Sources */,
@@ -466,12 +459,11 @@
 				0A1B2C3D4E5F6A05B2C3D4E5 /* LinkPreviewService.swift in Sources */,
 				0A1B2C3D4E5F6A06B2C3D4E5 /* LinkPreviewCard.swift in Sources */,
 				0A1B2C3D4E5F6A07B2C3D4E5 /* ChatSearchBar.swift in Sources */,
-				0A1B2C3D4E5F6A08B2C3D4E5 /* CardWorkflowBuilderView.swift in Sources */,
+				0A1B2C3D4E5F6A08B2C3D4E5 /* StepInputEditor.swift in Sources */,
 				AA11223344556677AABB0001 /* SpiritGuideView.swift in Sources */,
 				AA11223344556677AABB0003 /* GlassModifiers.swift in Sources */,
 				AA11223344556677AABB0005 /* AmbientBackgroundView.swift in Sources */,
 				CC22334455667788AABB0002 /* ServerBrandConfig.swift in Sources */,
-				CC22334455667788AABB0006 /* WorkflowBuilderWrapperView.swift in Sources */,
 				DD11223344556677AABB0001 /* AmbientMusicManager.swift in Sources */,
 				EE11223344556677AABB0001 /* AmbientListeningManager.swift in Sources */,
 				EE11223344556677AABB0003 /* AmbientListeningViewModel.swift in Sources */,

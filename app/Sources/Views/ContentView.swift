@@ -21,54 +21,111 @@ struct ContentView: View {
         emailVM.pendingApprovals.filter { $0.isPending }.count
     }
 
+    private var pillTabBar: some View {
+        HStack(spacing: 0) {
+            ForEach(tabItems, id: \.tab) { item in
+                Button {
+                    withAnimation(.snappy(duration: 0.2)) {
+                        selectedTab = item.tab
+                    }
+                } label: {
+                    VStack(spacing: 2) {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: item.icon)
+                                .font(.system(size: 18, weight: .medium))
+
+                            if item.tab == .agentMail && pendingApprovalCount > 0 {
+                                Text("\(pendingApprovalCount)")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .background(Color.error)
+                                    .clipShape(Capsule())
+                                    .offset(x: 10, y: -6)
+                            }
+                        }
+
+                        Text(item.label)
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    .foregroundStyle(selectedTab == item.tab ? .coral : .textSecondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.top, 6)
+        .padding(.bottom, 2)
+        .background(.regularMaterial)
+        .overlay(alignment: .top) {
+            Color.divider.frame(height: 0.5)
+        }
+    }
+
+    private var tabItems: [(tab: AppTab, icon: String, label: String)] {
+        [
+            (.chat, "bubble.left.and.bubble.right", "Chat"),
+            (.workflows, "bolt.fill", "Workflows"),
+            (.agentMail, "envelope.fill", "Mail"),
+        ]
+    }
+
     var body: some View {
         if !hasSeenWelcome {
             WelcomeView()
         } else {
-        TabView(selection: $selectedTab) {
-            // Chat Tab
-            NavigationSplitView {
-                ConversationListView(selection: $selectedConversation)
-            } detail: {
-                ChatView()
-            }
-            .tint(.heart)
-            .onChange(of: selectedConversation) { _, newValue in
-                if let id = newValue, id != chatVM.currentConversationId {
-                    chatVM.loadConversation(id)
+        ZStack(alignment: .bottom) {
+            // Content area
+            Group {
+                switch selectedTab {
+                case .chat:
+                    NavigationSplitView {
+                        ConversationListView(selection: $selectedConversation)
+                            .safeAreaInset(edge: .bottom) {
+                                Color.clear.frame(height: 60)
+                            }
+                    } detail: {
+                        ChatView()
+                            .safeAreaInset(edge: .bottom) {
+                                Color.clear.frame(height: 60)
+                                    .allowsHitTesting(false)
+                            }
+                    }
+                    .onChange(of: selectedConversation) { _, newValue in
+                        if let id = newValue, id != chatVM.currentConversationId {
+                            chatVM.loadConversation(id)
+                        }
+                    }
+                case .workflows:
+                    NavigationStack {
+                        WorkflowListView()
+                    }
+                    .safeAreaInset(edge: .bottom) {
+                        Color.clear.frame(height: 60)
+                            .allowsHitTesting(false)
+                    }
+                case .agentMail:
+                    NavigationStack {
+                        AgentMailTabView()
+                    }
+                    .safeAreaInset(edge: .bottom) {
+                        Color.clear.frame(height: 60)
+                            .allowsHitTesting(false)
+                    }
                 }
             }
-            .tabItem {
-                Label("Chat", systemImage: "bubble.left.and.bubble.right")
-            }
-            .tag(AppTab.chat)
-
-            // Workflows Tab
-            NavigationStack {
-                WorkflowListView()
-            }
             .tint(.heart)
-            .tabItem {
-                Label("Workflows", systemImage: "arrow.triangle.branch")
-            }
-            .tag(AppTab.workflows)
 
-            // Agent Mail Tab
-            NavigationStack {
-                AgentMailTabView()
-            }
-            .tint(.heart)
-            .tabItem {
-                Label("Agent Mail", systemImage: "envelope.fill")
-            }
-            .tag(AppTab.agentMail)
-            .badge(pendingApprovalCount > 0 ? pendingApprovalCount : 0)
-
+            // Floating pill tab bar
+            pillTabBar
+                .padding(.bottom, 4)
         }
-        .tint(.heart)
         .overlay {
             if ambientVM.isListening || !ambientVM.suggestions.isEmpty {
                 AmbientListeningOverlay()
+                    .zIndex(-1)
             }
         }
         .onChange(of: emailVM.navigateToConversationId) { _, conversationId in
@@ -128,7 +185,7 @@ struct AgentMailTabView: View {
                     showSettings = true
                 } label: {
                     Image(systemName: "gearshape")
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                 }
             }
         }
@@ -150,11 +207,11 @@ struct AgentMailTabView: View {
             HStack(spacing: SolaceTheme.md) {
                 ZStack {
                     Circle()
-                        .fill(emailVM.isEmailConnected ? Color.sageGreen.opacity(0.15) : Color.trust.opacity(0.1))
+                        .fill(emailVM.isEmailConnected ? Color.sageGreen.opacity(0.15) : Color.textSecondary.opacity(0.1))
                         .frame(width: 44, height: 44)
                     Image(systemName: emailVM.isEmailConnected ? "envelope.open.fill" : "envelope.fill")
                         .font(.system(size: 20))
-                        .foregroundStyle(emailVM.isEmailConnected ? .sageGreen : .trust)
+                        .foregroundStyle(emailVM.isEmailConnected ? .sageGreen : .textSecondary)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -173,7 +230,7 @@ struct AgentMailTabView: View {
                             .foregroundStyle(.textPrimary)
                         Text("Not connected")
                             .font(.system(size: 12))
-                            .foregroundStyle(.trust)
+                            .foregroundStyle(.textSecondary)
                     }
                 }
 
@@ -212,7 +269,7 @@ struct AgentMailTabView: View {
                 HStack {
                     Text("PENDING APPROVALS")
                         .font(.sectionHeader)
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.dusk)
                         .tracking(1.2)
                     Spacer()
                     Text("\(approvals.count)")
@@ -235,10 +292,10 @@ struct AgentMailTabView: View {
                 HStack(spacing: SolaceTheme.sm) {
                     Image(systemName: "tray")
                         .font(.system(size: 14))
-                        .foregroundStyle(.trust.opacity(0.5))
+                        .foregroundStyle(.textSecondary.opacity(0.5))
                     Text("No messages yet")
                         .font(.toolDetail)
-                        .foregroundStyle(.trust.opacity(0.7))
+                        .foregroundStyle(.textSecondary.opacity(0.7))
                 }
                 .frame(minHeight: SolaceTheme.minTouchTarget)
                 .listRowBackground(Color.surface)
@@ -250,7 +307,7 @@ struct AgentMailTabView: View {
                         HStack(spacing: SolaceTheme.md) {
                             Image(systemName: "envelope.fill")
                                 .font(.system(size: 14))
-                                .foregroundStyle(.trust)
+                                .foregroundStyle(.coral)
                                 .frame(width: 20)
 
                             VStack(alignment: .leading, spacing: 2) {
@@ -262,12 +319,12 @@ struct AgentMailTabView: View {
 
                                 Text(message.from)
                                     .font(.toolDetail)
-                                    .foregroundStyle(.trust)
+                                    .foregroundStyle(.textSecondary)
                                     .lineLimit(1)
 
                                 Text(message.preview)
                                     .font(.toolDetail)
-                                    .foregroundStyle(.trust.opacity(0.7))
+                                    .foregroundStyle(.textSecondary.opacity(0.7))
                                     .lineLimit(1)
                             }
 
@@ -276,12 +333,12 @@ struct AgentMailTabView: View {
                             VStack(alignment: .trailing, spacing: 2) {
                                 Text(relativeDate(message.date))
                                     .font(.timestamp)
-                                    .foregroundStyle(.trust)
+                                    .foregroundStyle(.textSecondary)
 
                                 if message.attachmentCount > 0 {
                                     Image(systemName: "paperclip")
                                         .font(.system(size: 10))
-                                        .foregroundStyle(.trust.opacity(0.5))
+                                        .foregroundStyle(.textSecondary.opacity(0.5))
                                 }
                             }
                         }
@@ -293,7 +350,7 @@ struct AgentMailTabView: View {
         } header: {
             Text("INBOX")
                 .font(.sectionHeader)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.dusk)
                 .tracking(1.2)
         }
     }
@@ -305,7 +362,7 @@ struct AgentMailTabView: View {
             HStack(spacing: SolaceTheme.md) {
                 Image(systemName: "tray.full.fill")
                     .font(.toolTitle)
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
                     .frame(width: 20)
                 Text("Emails Processed")
                     .font(.chatMessage)
@@ -313,7 +370,7 @@ struct AgentMailTabView: View {
                 Spacer()
                 Text("\(emailVM.emailsProcessed)")
                     .font(.toolTitle)
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
                     .monospacedDigit()
             }
             .frame(minHeight: SolaceTheme.minTouchTarget)
@@ -322,7 +379,7 @@ struct AgentMailTabView: View {
             HStack(spacing: SolaceTheme.md) {
                 Image(systemName: "clock.fill")
                     .font(.toolTitle)
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
                     .frame(width: 20)
                 Text("Last Poll")
                     .font(.chatMessage)
@@ -330,14 +387,14 @@ struct AgentMailTabView: View {
                 Spacer()
                 Text(emailVM.lastPollTime ?? "Never")
                     .font(.toolDetail)
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
             }
             .frame(minHeight: SolaceTheme.minTouchTarget)
             .listRowBackground(Color.surface)
         } header: {
             Text("ACTIVITY")
                 .font(.sectionHeader)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.dusk)
                 .tracking(1.2)
         }
     }
@@ -350,7 +407,7 @@ struct AgentMailTabView: View {
                 HStack(spacing: SolaceTheme.md) {
                     Image(systemName: "gearshape.fill")
                         .font(.toolTitle)
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                         .frame(width: 20)
                     Text("Account Settings")
                         .font(.chatMessage)
@@ -366,7 +423,7 @@ struct AgentMailTabView: View {
                 HStack(spacing: SolaceTheme.md) {
                     Image(systemName: "envelope.badge.fill")
                         .font(.toolTitle)
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                         .frame(width: 20)
                     Text("Email Rules")
                         .font(.chatMessage)
@@ -378,7 +435,7 @@ struct AgentMailTabView: View {
         } header: {
             Text("MANAGE")
                 .font(.sectionHeader)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.dusk)
                 .tracking(1.2)
         }
     }
@@ -393,7 +450,7 @@ struct AgentMailTabView: View {
             VStack(spacing: SolaceTheme.lg) {
                 Image(systemName: "envelope.open")
                     .font(.system(size: 40, weight: .light))
-                    .foregroundStyle(.trust.opacity(0.4))
+                    .foregroundStyle(.textSecondary.opacity(0.4))
                     .padding(.top, SolaceTheme.md)
 
                 VStack(spacing: SolaceTheme.sm) {
@@ -402,7 +459,7 @@ struct AgentMailTabView: View {
                         .foregroundStyle(.textPrimary)
                     Text("Email briefs to your agent and auto-create workflows.")
                         .font(.chatMessage)
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                         .multilineTextAlignment(.center)
                 }
 
@@ -425,7 +482,7 @@ struct AgentMailTabView: View {
 
                     Text("\(inboxIdInput)@agentmail.to")
                         .font(.toolDetail)
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                 }
 
                 Button {
@@ -446,7 +503,7 @@ struct AgentMailTabView: View {
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, SolaceTheme.md)
-                    .background(apiKeyInput.isEmpty ? Color.trust.opacity(0.3) : Color.heart)
+                    .background(apiKeyInput.isEmpty ? Color.coral.opacity(0.3) : Color.coral)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 .disabled(emailVM.isConnecting || apiKeyInput.isEmpty)

@@ -37,14 +37,14 @@ struct ChatView: View {
                 if chatVM.isSearchActive {
                     ChatSearchBar()
                         .transition(.move(edge: .top).combined(with: .opacity))
-                }
-
-                // Messages or empty state
-                if chatVM.messages.isEmpty {
-                    EmptyStateView()
-                        .frame(maxHeight: .infinity)
                 } else {
                     messageList
+                }
+
+                // Workflow suggestion card
+                if chatVM.workflowSuggestion != nil {
+                    WorkflowSuggestionCard()
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
                 // Input bar
@@ -68,7 +68,9 @@ struct ChatView: View {
                     if webSocket.connectionState == .connected {
                         Text(providerLabel)
                             .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(.trust.opacity(0.7))
+                            .foregroundStyle(.textSecondary.opacity(0.7))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(.surfaceElevated.opacity(0.5))
@@ -128,6 +130,7 @@ struct ChatView: View {
     /// Convert full model IDs to readable short names
     private static func shortenModelName(_ model: String) -> String {
         let m = model.lowercased()
+        // Known providers/models (OpenAI/Anthropic)
         if m.contains("opus") { return "Opus" }
         if m.contains("sonnet") { return "Sonnet" }
         if m.contains("haiku") { return "Haiku" }
@@ -136,7 +139,54 @@ struct ChatView: View {
         if m.contains("gpt-4") { return "GPT-4" }
         if m.contains("o3") { return "o3" }
         if m.contains("o1") { return "o1" }
-        // For Ollama or unknown models, show as-is
+
+        // Generic Ollama-style model IDs like "llama3.1:8b-instruct-q8_0" or "qwen2.5:14b-instruct"
+        if m.contains(":") {
+            let parts = m.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: true)
+            let base = String(parts[0])
+            let variant = parts.count > 1 ? String(parts[1]) : ""
+
+            // Prettify base: replace separators, insert space before digits, capitalize words
+            var basePretty = base
+                .replacingOccurrences(of: "-", with: " ")
+                .replacingOccurrences(of: "_", with: " ")
+            basePretty = basePretty.replacingOccurrences(of: #"(?<=\D)(\d)"#, with: " $1", options: .regularExpression)
+            basePretty = basePretty
+                .split(separator: " ")
+                .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+                .joined(separator: " ")
+
+            // Extract parameter size like "8b" or "3.8b" from variant or base
+            var size: String?
+            if let range = variant.range(of: #"(\d+(?:\.\d+)?)b"#, options: .regularExpression) {
+                size = String(variant[range]).uppercased() // e.g. "8B"
+            }
+            if size == nil, let range = base.range(of: #"(\d+(?:\.\d+)?)b"#, options: .regularExpression) {
+                size = String(base[range]).uppercased()
+            }
+
+            if let size {
+                return "\(basePretty) \(size)"
+            } else {
+                return basePretty
+            }
+        }
+
+        // Hyphenated names without colon but with size tokens
+        if let range = m.range(of: #"(\d+(?:\.\d+)?)b"#, options: .regularExpression) {
+            let size = String(m[range]).uppercased()
+            var basePretty = m
+                .replacingOccurrences(of: "-", with: " ")
+                .replacingOccurrences(of: "_", with: " ")
+            basePretty = basePretty.replacingOccurrences(of: #"(?<=\D)(\d)"#, with: " $1", options: .regularExpression)
+            basePretty = basePretty
+                .split(separator: " ")
+                .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+                .joined(separator: " ")
+            return "\(basePretty) \(size)"
+        }
+
+        // Fallback: show as-is
         return model
     }
 
@@ -199,7 +249,7 @@ struct ChatView: View {
                                                     .frame(height: 200)
                                                     .overlay {
                                                         ProgressView()
-                                                            .tint(.trust)
+                                                            .tint(.textSecondary)
                                                     }
                                             case .success(let image):
                                                 image
@@ -361,7 +411,7 @@ struct ChatView: View {
                             RoundedRectangle(cornerRadius: SolaceTheme.sm)
                                 .fill(Color.surfaceElevated)
                                 .frame(width: 150, height: 150)
-                                .overlay { ProgressView().tint(.trust) }
+                                .overlay { ProgressView().tint(.textSecondary) }
                         case .success(let image):
                             image
                                 .resizable()
@@ -400,3 +450,77 @@ struct ChatView: View {
             : SolaceTheme.differentAuthorSpacing
     }
 }
+
+// MARK: - Workflow Suggestion Card
+
+struct WorkflowSuggestionCard: View {
+    @Environment(ChatViewModel.self) private var chatVM
+    @Environment(WorkflowViewModel.self) private var workflowVM
+
+    var body: some View {
+        if let suggestion = chatVM.workflowSuggestion {
+            HStack(spacing: SolaceTheme.md) {
+                Image(systemName: "wand.and.stars")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(.coral)
+                    .frame(width: 28)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Workflow Suggestion")
+                        .font(.inter(size: 13, weight: .semibold))
+                        .foregroundStyle(.textPrimary)
+                    Text(suggestion.description)
+                        .font(.inter(size: 12))
+                        .foregroundStyle(.textSecondary)
+                        .lineLimit(2)
+                }
+
+                Spacer()
+
+                HStack(spacing: SolaceTheme.sm) {
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            chatVM.dismissWorkflowSuggestion()
+                        }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(.textSecondary)
+                            .frame(width: 28, height: 28)
+                            .background(Color.surface)
+                            .clipShape(Circle())
+                    }
+
+                    Button {
+                        chatVM.acceptWorkflowSuggestion()
+                        workflowVM.buildWorkflow(prompt: chatVM.workflowBuilderPrompt)
+                    } label: {
+                        Text("Create")
+                            .font(.inter(size: 13, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, SolaceTheme.md)
+                            .padding(.vertical, 7)
+                            .background(Color.coral)
+                            .clipShape(Capsule())
+                    }
+                }
+            }
+            .padding(.horizontal, SolaceTheme.lg)
+            .padding(.vertical, SolaceTheme.md)
+            .background(Color.coral.opacity(0.06))
+            .overlay(
+                Rectangle()
+                    .frame(height: 1)
+                    .foregroundStyle(Color.divider),
+                alignment: .top
+            )
+            .sheet(isPresented: Binding(
+                get: { chatVM.showWorkflowBuilder },
+                set: { chatVM.showWorkflowBuilder = $0 }
+            )) {
+                WorkflowBuilderView()
+            }
+        }
+    }
+}
+

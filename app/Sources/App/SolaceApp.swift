@@ -66,7 +66,7 @@ struct SolaceApp: App {
                 .environment(agentPlanVM)
                 .environment(bonjourBrowser)
                 .environment(linkPreviewService)
-                .preferredColorScheme(.light)
+                .preferredColorScheme(.dark)
                 .task {
                     await autoConnect()
                 }

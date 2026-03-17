@@ -224,11 +224,21 @@ private struct AgentMailSendRequest: Codable {
     let bcc: [String]?
     let subject: String
     let body: String
+
+    enum CodingKeys: String, CodingKey {
+        case to, cc, bcc, subject
+        case body = "text"
+    }
 }
 
 private struct AgentMailReplyRequest: Codable {
     let body: String
     let in_reply_to: String
+
+    enum CodingKeys: String, CodingKey {
+        case body = "text"
+        case in_reply_to
+    }
 }
 
 private struct AgentMailSendResponse: Codable {

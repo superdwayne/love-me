@@ -25,7 +25,7 @@ struct AgentDashboardView: View {
                             VStack(alignment: .leading, spacing: SolaceTheme.sm) {
                                 Text("WAVE \(waveIndex + 1)")
                                     .font(.system(size: 11, weight: .bold))
-                                    .foregroundStyle(.trust)
+                                    .foregroundStyle(.textSecondary)
                                     .tracking(1.2)
 
                                 ForEach(wave, id: \.id) { agent in
@@ -74,7 +74,7 @@ struct AgentDashboardView: View {
                         .foregroundStyle(.textPrimary)
                     Text("Elapsed: \(elapsedTime)")
                         .font(.system(size: 12))
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                 }
                 Spacer()
                 statusBadge(execution.status)
@@ -84,7 +84,7 @@ struct AgentDashboardView: View {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.trust.opacity(0.1))
+                        .fill(Color.textSecondary.opacity(0.1))
                     RoundedRectangle(cornerRadius: 4)
                         .fill(execution.status == .failed ? Color.softRed : Color.sageGreen)
                         .frame(width: geo.size.width * progressFraction(execution))
@@ -106,11 +106,11 @@ struct AgentDashboardView: View {
     private func statusBadge(_ status: AgentExecutionStatus) -> some View {
         let (text, color): (String, Color) = {
             switch status {
-            case .pending: return ("Pending", .trust)
+            case .pending: return ("Pending", .textSecondary)
             case .running: return ("Running", .blue)
             case .completed: return ("Complete", .sageGreen)
             case .failed: return ("Failed", .softRed)
-            case .cancelled: return ("Cancelled", .trust)
+            case .cancelled: return ("Cancelled", .textSecondary)
             }
         }()
 
@@ -138,7 +138,7 @@ struct AgentExecutionCard: View {
         case .success: return .sageGreen
         case .error: return .softRed
         case .spawning: return .orange
-        default: return .trust.opacity(0.4)
+        default: return .textSecondary.opacity(0.4)
         }
     }
 
@@ -174,7 +174,7 @@ struct AgentExecutionCard: View {
             if result?.status == .running, let text = streamText, !text.isEmpty {
                 Text(String(text.suffix(150)))
                     .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
                     .lineLimit(3)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(SolaceTheme.sm)
@@ -189,7 +189,7 @@ struct AgentExecutionCard: View {
                         .scaleEffect(0.6)
                     Text("Running \(tool)...")
                         .font(.system(size: 11))
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                 }
             }
 
@@ -201,7 +201,7 @@ struct AgentExecutionCard: View {
                         .foregroundStyle(.sageGreen)
                     Text(String(output.prefix(100)))
                         .font(.system(size: 12))
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                         .lineLimit(2)
                 }
             }

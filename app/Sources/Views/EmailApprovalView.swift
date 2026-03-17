@@ -27,7 +27,7 @@ struct EmailApprovalView: View {
 
                 Text(relativeDate(approval.createdAt))
                     .font(.timestamp)
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
             }
 
             // Email info
@@ -39,7 +39,7 @@ struct EmailApprovalView: View {
 
                 Text("From: \(approval.emailFrom)")
                     .font(.toolDetail)
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
                     .lineLimit(1)
             }
 
@@ -56,7 +56,7 @@ struct EmailApprovalView: View {
             } else if !approval.emailPreview.isEmpty {
                 Text(approval.emailPreview)
                     .font(.system(size: 13))
-                    .foregroundStyle(.trust.opacity(0.7))
+                    .foregroundStyle(.textSecondary.opacity(0.7))
                     .lineLimit(2)
             }
 
@@ -79,9 +79,9 @@ struct EmailApprovalView: View {
                         Button(action: onDismiss) {
                             Image(systemName: "xmark")
                                 .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(.trust)
+                                .foregroundStyle(.textSecondary)
                                 .frame(width: 40, height: 36)
-                                .background(Color.trust.opacity(0.1))
+                                .background(Color.textSecondary.opacity(0.1))
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
 
@@ -166,7 +166,7 @@ struct EmailApprovalView: View {
         case "approved": return .electricBlue
         case "completed": return .sageGreen
         case "failed": return .softRed
-        case "dismissed": return .trust
+        case "dismissed": return .textSecondary
         default: return .amberGlow
         }
     }

@@ -41,18 +41,19 @@ struct WorkflowStepCard: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .background(.surface)
+        .background(Color.surface)
         .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.sm))
         .overlay(
-            HStack {
-                Rectangle()
-                    .fill(borderColor)
-                    .frame(width: SolaceTheme.toolCardLeftBorderWidth)
-                Spacer()
-            }
-            .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.sm))
+            RoundedRectangle(cornerRadius: SolaceTheme.sm)
+                .strokeBorder(Color.divider, lineWidth: 1)
         )
-        .shadow(color: status == "running" ? Color.electricBlue.opacity(pulseOpacity) : .clear, radius: 8)
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(borderColor)
+                .frame(width: SolaceTheme.toolCardLeftBorderWidth)
+                .padding(.vertical, SolaceTheme.xs)
+        }
+        .shadow(color: status == "running" ? Color.info.opacity(pulseOpacity) : .clear, radius: 6)
     }
 
     // MARK: - Header
@@ -62,7 +63,7 @@ struct WorkflowStepCard: View {
             // Step number
             Text("\(index + 1)")
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundStyle(.trust)
+                .foregroundStyle(.textSecondary)
                 .frame(width: 20, height: 20)
                 .background(Color.surfaceElevated)
                 .clipShape(Circle())
@@ -82,15 +83,15 @@ struct WorkflowStepCard: View {
                     HStack(spacing: SolaceTheme.xs) {
                         Text(toolName)
                             .font(.timestamp)
-                            .foregroundStyle(.trust)
+                            .foregroundStyle(.textSecondary)
                             .lineLimit(1)
 
                         if !serverName.isEmpty {
                             Text("·")
-                                .foregroundStyle(.trust)
+                                .foregroundStyle(.textSecondary)
                             Text(serverName)
                                 .font(.timestamp)
-                                .foregroundStyle(.trust)
+                                .foregroundStyle(.textSecondary)
                                 .lineLimit(1)
                         }
                     }
@@ -105,7 +106,7 @@ struct WorkflowStepCard: View {
             if mode != .preview {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     .animation(.spring(duration: SolaceTheme.springDuration), value: isExpanded)
             }
@@ -141,7 +142,7 @@ struct WorkflowStepCard: View {
         if lower.contains("bash") || lower.contains("shell") || lower.contains("command") || lower.contains("exec") {
             return ("terminal", .electricBlue)
         }
-        return ("gearshape", .trust)
+        return ("gearshape", .textSecondary)
     }
 
     // MARK: - Status Icon
@@ -164,10 +165,10 @@ struct WorkflowStepCard: View {
         case "skipped":
             Image(systemName: "slash.circle")
                 .font(.system(size: 14))
-                .foregroundStyle(.trust)
+                .foregroundStyle(.textSecondary)
         default:
             Circle()
-                .strokeBorder(Color.trust.opacity(0.4), lineWidth: 1.5)
+                .strokeBorder(Color.textSecondary.opacity(0.4), lineWidth: 1.5)
                 .frame(width: 14, height: 14)
         }
     }
@@ -183,7 +184,7 @@ struct WorkflowStepCard: View {
                     Text(formatDuration(duration))
                         .font(.toolDetail)
                         .monospacedDigit()
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                 }
                 statusIcon
             }
@@ -235,7 +236,7 @@ struct WorkflowStepCard: View {
                 HStack(spacing: SolaceTheme.sm) {
                     Text("Started")
                         .font(.timestamp)
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                     Text(startedAt.formatted(date: .omitted, time: .standard))
                         .font(.toolDetail)
                         .foregroundStyle(.textPrimary)
@@ -246,7 +247,7 @@ struct WorkflowStepCard: View {
                 HStack(spacing: SolaceTheme.sm) {
                     Text("Completed")
                         .font(.timestamp)
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                     Text(completedAt.formatted(date: .omitted, time: .standard))
                         .font(.toolDetail)
                         .foregroundStyle(.textPrimary)
@@ -257,7 +258,7 @@ struct WorkflowStepCard: View {
                 VStack(alignment: .leading, spacing: SolaceTheme.xs) {
                     Text("OUTPUT")
                         .font(.sectionHeader)
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                         .tracking(1.2)
 
                     Text(output)
@@ -295,7 +296,7 @@ struct WorkflowStepCard: View {
             if !inputs.isEmpty {
                 Text("INPUTS")
                     .font(.sectionHeader)
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
                     .tracking(1.2)
 
                 ForEach(Array(inputs.sorted(by: { $0.key < $1.key })), id: \.key) { key, value in
@@ -321,7 +322,7 @@ struct WorkflowStepCard: View {
                 VStack(alignment: .leading, spacing: SolaceTheme.xs) {
                     Text(key)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
 
                     TextField("Value", text: Binding(
                         get: { value },
@@ -344,10 +345,10 @@ struct WorkflowStepCard: View {
         case "running": return .electricBlue
         case "success": return .sageGreen
         case "error": return .softRed
-        case "skipped": return .trust.opacity(0.4)
+        case "skipped": return .textSecondary.opacity(0.4)
         default:
             if mode == .execution {
-                return .trust.opacity(0.2)
+                return .textSecondary.opacity(0.2)
             }
             if needsConfig {
                 return .amberGlow.opacity(0.5)

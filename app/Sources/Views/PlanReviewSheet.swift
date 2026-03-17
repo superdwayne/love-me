@@ -17,7 +17,7 @@ struct PlanReviewSheet: View {
                                 .foregroundStyle(.textPrimary)
                             Text(plan.description)
                                 .font(.system(size: 15))
-                                .foregroundStyle(.trust)
+                                .foregroundStyle(.textSecondary)
                         }
                         .padding(.horizontal, SolaceTheme.lg)
 
@@ -25,10 +25,10 @@ struct PlanReviewSheet: View {
                         if let cost = plan.estimatedCost {
                             HStack {
                                 Image(systemName: "dollarsign.circle")
-                                    .foregroundStyle(.trust)
+                                    .foregroundStyle(.textSecondary)
                                 Text("Estimated cost: $\(String(format: "%.4f", cost))")
                                     .font(.system(size: 13))
-                                    .foregroundStyle(.trust)
+                                    .foregroundStyle(.textSecondary)
                             }
                             .padding(.horizontal, SolaceTheme.lg)
                         }
@@ -45,7 +45,7 @@ struct PlanReviewSheet: View {
                             VStack(alignment: .leading, spacing: SolaceTheme.sm) {
                                 Text("WAVE \(waveIndex + 1)")
                                     .font(.system(size: 11, weight: .bold))
-                                    .foregroundStyle(.trust)
+                                    .foregroundStyle(.textSecondary)
                                     .tracking(1.2)
 
                                 ForEach(wave, id: \.id) { agent in
@@ -73,7 +73,7 @@ struct PlanReviewSheet: View {
                     Button("Edit") {
                         showEditView = true
                     }
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
                 }
             }
             .safeAreaInset(edge: .bottom) {
@@ -121,7 +121,7 @@ struct AgentPlanCard: View {
 
             Text(agent.objective)
                 .font(.system(size: 13))
-                .foregroundStyle(.trust)
+                .foregroundStyle(.textSecondary)
                 .lineLimit(3)
 
             if !agent.requiredTools.isEmpty {
@@ -130,10 +130,10 @@ struct AgentPlanCard: View {
                         ForEach(agent.requiredTools, id: \.self) { tool in
                             Text(tool)
                                 .font(.system(size: 11))
-                                .foregroundStyle(.trust)
+                                .foregroundStyle(.textSecondary)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
-                                .background(Color.trust.opacity(0.1))
+                                .background(Color.textSecondary.opacity(0.1))
                                 .clipShape(Capsule())
                         }
                     }
@@ -144,10 +144,10 @@ struct AgentPlanCard: View {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.turn.down.right")
                         .font(.system(size: 10))
-                        .foregroundStyle(.trust.opacity(0.6))
+                        .foregroundStyle(.textSecondary.opacity(0.6))
                     Text("Depends on: \(deps.compactMap { depId in allAgents.first(where: { $0.id == depId })?.name }.joined(separator: ", "))")
                         .font(.system(size: 11))
-                        .foregroundStyle(.trust.opacity(0.6))
+                        .foregroundStyle(.textSecondary.opacity(0.6))
                 }
             }
         }
@@ -194,13 +194,13 @@ struct StatBadge: View {
         HStack(spacing: SolaceTheme.xs) {
             Image(systemName: icon)
                 .font(.system(size: 12))
-                .foregroundStyle(.trust)
+                .foregroundStyle(.textSecondary)
             Text(value)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.textPrimary)
             Text(label)
                 .font(.system(size: 12))
-                .foregroundStyle(.trust)
+                .foregroundStyle(.textSecondary)
         }
         .padding(.horizontal, SolaceTheme.md)
         .padding(.vertical, SolaceTheme.sm)

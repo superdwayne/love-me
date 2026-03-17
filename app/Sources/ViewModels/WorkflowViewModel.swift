@@ -51,6 +51,7 @@ struct WorkflowStepInfo: Identifiable, Sendable {
     var inputs: [String: String]
     var dependsOn: [String]?
     var onError: String  // "stop", "skip", "retry"
+    var preferredProvider: String?  // "provider:model" for per-step LLM routing
 }
 
 struct ExecutionItem: Identifiable, Sendable {
@@ -144,6 +145,118 @@ struct BuilderStepResult: Identifiable, Sendable {
     let needsConfiguration: Bool
     let inputs: [String: String]
     let dependsOn: [String]?
+    let preferredProvider: String?
+}
+
+// MARK: - Workflow Analysis & Enhancement Models
+
+struct WorkflowIssueInfo: Identifiable, Sendable {
+    let id: String
+    let severity: String   // critical, warning, suggestion
+    let category: String
+    let message: String
+    let affectedStepId: String?
+    let affectedStepName: String?
+    let suggestion: String
+    let fixed: Bool
+}
+
+struct WorkflowAnalysisInfo: Sendable {
+    let workflowId: String
+    let workflowName: String
+    let overallHealth: String   // excellent, good, fair, poor
+    let healthScore: Int
+    let issues: [WorkflowIssueInfo]
+    let missingElements: [WorkflowMissingElement]
+    let recommendations: [WorkflowRecommendation]
+}
+
+struct WorkflowMissingElement: Identifiable, Sendable {
+    let id: String
+    let elementType: String
+    let description: String
+    let recommendedValue: String?
+}
+
+struct WorkflowRecommendation: Identifiable, Sendable {
+    let id: String
+    let title: String
+    let description: String
+    let category: String
+}
+
+struct WorkflowEnhanceInfo: Sendable {
+    let workflowId: String
+    let workflowName: String
+    let healthScore: Int
+    let overallHealth: String
+    let issues: [WorkflowIssueInfo]
+    let fixesApplied: [WorkflowFixInfo]
+    let fixCount: Int
+    let enhanced: Bool
+}
+
+struct WorkflowFixInfo: Identifiable, Sendable {
+    let id: String = UUID().uuidString
+    let description: String
+    let affectedStep: String?
+    let suggestion: String
+}
+
+// MARK: - Enhance & Test Models
+
+struct EnhanceTestIterationInfo: Identifiable, Sendable {
+    let id: Int  // iteration number
+    let preFixHealthScore: Int
+    let postFixHealthScore: Int
+    let issuesFound: Int
+    let issuesFixed: Int
+    let fixDescriptions: [String]
+    let executionStatus: String
+    let failedStepName: String?
+    let failedStepError: String?
+}
+
+struct EnhanceTestResultInfo: Sendable {
+    let converged: Bool
+    let iterations: [EnhanceTestIterationInfo]
+    let finalHealthScore: Int
+    let totalIterations: Int
+    let totalFixesApplied: Int
+}
+
+// MARK: - Editable Types (shared across builders)
+
+struct EditableStep: Identifiable {
+    let id: String
+    var name: String
+    var toolName: String
+    var serverName: String
+    var onError: String
+    var inputs: [String: String]
+
+    init(id: String = UUID().uuidString, name: String = "", toolName: String = "", serverName: String = "", onError: String = "stop", inputs: [String: String] = [:]) {
+        self.id = id
+        self.name = name
+        self.toolName = toolName
+        self.serverName = serverName
+        self.onError = onError
+        self.inputs = inputs
+    }
+}
+
+struct EditableInputParam: Identifiable {
+    let id: String
+    var name: String
+    var label: String
+    var placeholder: String
+
+    init(id: String = UUID().uuidString, name: String = "", label: String = "", placeholder: String = "") {
+        self.id = id
+        self.name = name
+        self.label = label
+        self.placeholder = placeholder
+    }
 }
 
 // MARK: - ViewModel
@@ -169,6 +282,25 @@ final class WorkflowViewModel {
     var builderResult: BuilderWorkflowResult?
     var isBuilding: Bool = false
     var builderError: String?
+
+    // Workflow Enhancement state
+    var analysisResult: WorkflowAnalysisInfo?
+    var enhanceResult: WorkflowEnhanceInfo?
+    var isAnalyzing: Bool = false
+    var isEnhancing: Bool = false
+    var enhanceError: String?
+
+    // Enhance & Test state
+    var isEnhanceTestRunning: Bool = false
+    var enhanceTestPhase: String = ""
+    var enhanceTestIteration: Int = 0
+    var enhanceTestMaxIterations: Int = 0
+    var enhanceTestMessage: String = ""
+    var enhanceTestResult: EnhanceTestResultInfo?
+
+    // Refinement state
+    var isRefining: Bool = false
+    var refinementError: String?
 
     private let webSocket: WebSocketClient
 
@@ -297,6 +429,91 @@ final class WorkflowViewModel {
         webSocket.send(msg)
     }
 
+    func analyzeWorkflow(id: String) {
+        isAnalyzing = true
+        analysisResult = nil
+        let msg = WSMessage(
+            type: WSMessageType.analyzeWorkflow,
+            id: id,
+            metadata: ["workflowId": .string(id)]
+        )
+        webSocket.send(msg)
+    }
+
+    func enhanceWorkflow(id: String) {
+        isEnhancing = true
+        enhanceResult = nil
+        enhanceError = nil
+        let msg = WSMessage(
+            type: WSMessageType.enhanceWorkflow,
+            id: id,
+            metadata: ["workflowId": .string(id)]
+        )
+        webSocket.send(msg)
+    }
+
+    func clearAnalysis() {
+        analysisResult = nil
+        enhanceResult = nil
+        enhanceError = nil
+    }
+
+    func enhanceAndTest(id: String, maxIterations: Int = 3) {
+        isEnhanceTestRunning = true
+        enhanceTestPhase = "starting"
+        enhanceTestIteration = 0
+        enhanceTestMessage = "Starting enhance & test..."
+        enhanceTestResult = nil
+        let msg = WSMessage(
+            type: WSMessageType.enhanceAndTest,
+            id: id,
+            metadata: [
+                "workflowId": .string(id),
+                "maxIterations": .int(maxIterations)
+            ]
+        )
+        webSocket.send(msg)
+    }
+
+    func cancelEnhanceTest(id: String) {
+        let msg = WSMessage(
+            type: WSMessageType.cancelEnhanceTest,
+            id: id,
+            metadata: ["workflowId": .string(id)]
+        )
+        webSocket.send(msg)
+    }
+
+    func clearEnhanceTest() {
+        isEnhanceTestRunning = false
+        enhanceTestPhase = ""
+        enhanceTestIteration = 0
+        enhanceTestMaxIterations = 0
+        enhanceTestMessage = ""
+        enhanceTestResult = nil
+    }
+
+    func refineWorkflow(workflowId: String, refinementPrompt: String) {
+        isRefining = true
+        refinementError = nil
+        let msg = WSMessage(
+            type: WSMessageType.refineWorkflow,
+            id: workflowId,
+            content: refinementPrompt,
+            metadata: ["workflowId": .string(workflowId), "prompt": .string(refinementPrompt)]
+        )
+        webSocket.send(msg)
+    }
+
+    func validateWorkflow(id: String) {
+        let msg = WSMessage(
+            type: WSMessageType.validateWorkflow,
+            id: id,
+            metadata: ["workflowId": .string(id)]
+        )
+        webSocket.send(msg)
+    }
+
     func saveBuiltWorkflow() {
         guard let result = builderResult else { return }
 
@@ -308,7 +525,8 @@ final class WorkflowViewModel {
                 serverName: step.serverName,
                 inputs: step.inputs,
                 dependsOn: step.dependsOn,
-                onError: "stop"
+                onError: "stop",
+                preferredProvider: step.preferredProvider
             )
         }
 
@@ -389,6 +607,24 @@ final class WorkflowViewModel {
 
         case WSMessageType.buildWorkflowResult:
             handleBuildWorkflowResult(msg)
+
+        case WSMessageType.analyzeWorkflowResult:
+            handleAnalyzeWorkflowResult(msg)
+
+        case WSMessageType.enhanceWorkflowResult:
+            handleEnhanceWorkflowResult(msg)
+
+        case WSMessageType.enhanceTestProgress:
+            handleEnhanceTestProgress(msg)
+
+        case WSMessageType.enhanceTestDone:
+            handleEnhanceTestDone(msg)
+
+        case WSMessageType.validateWorkflowResult:
+            break // Validation results consumed by UI directly via enhance result
+
+        case WSMessageType.refineWorkflowResult:
+            handleRefineWorkflowResult(msg)
 
         case WSMessageType.error:
             handleError(msg)
@@ -874,7 +1110,8 @@ final class WorkflowViewModel {
                     serverName: dict["serverName"]?.stringValue ?? "",
                     needsConfiguration: dict["needsConfiguration"]?.boolValue ?? false,
                     inputs: stepInputs,
-                    dependsOn: stepDependsOn
+                    dependsOn: stepDependsOn,
+                    preferredProvider: dict["preferredProvider"]?.stringValue
                 ))
             }
         }
@@ -969,6 +1206,10 @@ final class WorkflowViewModel {
                 stepDict["dependsOn"] = .array(deps.map { .string($0) })
             }
 
+            if let provider = step.preferredProvider {
+                stepDict["preferredProvider"] = .string(provider)
+            }
+
             stepsArray.append(.object(stepDict))
         }
         meta["steps"] = .array(stepsArray)
@@ -1046,7 +1287,8 @@ final class WorkflowViewModel {
                 serverName: dict["serverName"]?.stringValue ?? "",
                 inputs: inputs,
                 dependsOn: dependsOn,
-                onError: dict["onError"]?.stringValue ?? "stop"
+                onError: dict["onError"]?.stringValue ?? "stop",
+                preferredProvider: dict["preferredProvider"]?.stringValue
             ))
         }
 
@@ -1088,5 +1330,224 @@ final class WorkflowViewModel {
         }
 
         return steps
+    }
+
+    // MARK: - Analysis & Enhancement Handlers
+
+    private func handleAnalyzeWorkflowResult(_ msg: WSMessage) {
+        isAnalyzing = false
+        guard let meta = msg.metadata else { return }
+
+        let issues = parseIssues(meta["issues"])
+        let missingElements = parseMissingElements(meta["missingElements"])
+        let recommendations = parseRecommendations(meta["recommendations"])
+
+        analysisResult = WorkflowAnalysisInfo(
+            workflowId: meta["workflowId"]?.stringValue ?? "",
+            workflowName: meta["workflowName"]?.stringValue ?? "",
+            overallHealth: meta["overallHealth"]?.stringValue ?? "unknown",
+            healthScore: meta["healthScore"]?.intValue ?? 0,
+            issues: issues,
+            missingElements: missingElements,
+            recommendations: recommendations
+        )
+    }
+
+    private func handleEnhanceWorkflowResult(_ msg: WSMessage) {
+        isEnhancing = false
+        guard let meta = msg.metadata else {
+            enhanceError = "No response from daemon"
+            return
+        }
+
+        let issues = parseIssues(meta["issues"])
+
+        var fixes: [WorkflowFixInfo] = []
+        if case .array(let fixItems) = meta["fixesApplied"] {
+            for item in fixItems {
+                guard case .object(let dict) = item else { continue }
+                fixes.append(WorkflowFixInfo(
+                    description: dict["description"]?.stringValue ?? "",
+                    affectedStep: dict["affectedStep"]?.stringValue,
+                    suggestion: dict["suggestion"]?.stringValue ?? ""
+                ))
+            }
+        }
+
+        let enhanced = meta["enhanced"]?.boolValue ?? false
+
+        enhanceResult = WorkflowEnhanceInfo(
+            workflowId: meta["workflowId"]?.stringValue ?? "",
+            workflowName: meta["workflowName"]?.stringValue ?? "",
+            healthScore: meta["healthScore"]?.intValue ?? 0,
+            overallHealth: meta["overallHealth"]?.stringValue ?? "unknown",
+            issues: issues,
+            fixesApplied: fixes,
+            fixCount: meta["fixCount"]?.intValue ?? 0,
+            enhanced: enhanced
+        )
+
+        // Reload workflow list to reflect changes
+        if enhanced {
+            loadWorkflows()
+            if let wfId = meta["workflowId"]?.stringValue {
+                loadWorkflow(id: wfId)
+            }
+        }
+    }
+
+    private func parseIssues(_ value: MetadataValue?) -> [WorkflowIssueInfo] {
+        guard case .array(let items) = value else { return [] }
+        return items.compactMap { item -> WorkflowIssueInfo? in
+            guard case .object(let dict) = item else { return nil }
+            return WorkflowIssueInfo(
+                id: dict["id"]?.stringValue ?? UUID().uuidString,
+                severity: dict["severity"]?.stringValue ?? "suggestion",
+                category: dict["category"]?.stringValue ?? "",
+                message: dict["message"]?.stringValue ?? "",
+                affectedStepId: dict["affectedStepId"]?.stringValue,
+                affectedStepName: dict["affectedStepName"]?.stringValue,
+                suggestion: dict["suggestion"]?.stringValue ?? "",
+                fixed: dict["fixed"]?.boolValue ?? false
+            )
+        }
+    }
+
+    private func parseMissingElements(_ value: MetadataValue?) -> [WorkflowMissingElement] {
+        guard case .array(let items) = value else { return [] }
+        return items.compactMap { item -> WorkflowMissingElement? in
+            guard case .object(let dict) = item else { return nil }
+            return WorkflowMissingElement(
+                id: dict["id"]?.stringValue ?? UUID().uuidString,
+                elementType: dict["elementType"]?.stringValue ?? "",
+                description: dict["description"]?.stringValue ?? "",
+                recommendedValue: dict["recommendedValue"]?.stringValue
+            )
+        }
+    }
+
+    private func parseRecommendations(_ value: MetadataValue?) -> [WorkflowRecommendation] {
+        guard case .array(let items) = value else { return [] }
+        return items.compactMap { item -> WorkflowRecommendation? in
+            guard case .object(let dict) = item else { return nil }
+            return WorkflowRecommendation(
+                id: dict["id"]?.stringValue ?? UUID().uuidString,
+                title: dict["title"]?.stringValue ?? "",
+                description: dict["description"]?.stringValue ?? "",
+                category: dict["category"]?.stringValue ?? ""
+            )
+        }
+    }
+
+    // MARK: - Enhance & Test Handlers
+
+    private func handleEnhanceTestProgress(_ msg: WSMessage) {
+        guard let meta = msg.metadata else { return }
+        enhanceTestPhase = meta["phase"]?.stringValue ?? ""
+        enhanceTestIteration = meta["iteration"]?.intValue ?? 0
+        enhanceTestMaxIterations = meta["maxIterations"]?.intValue ?? 0
+        enhanceTestMessage = meta["message"]?.stringValue ?? ""
+
+        if enhanceTestPhase == "cancelled" {
+            isEnhanceTestRunning = false
+        }
+    }
+
+    private func handleEnhanceTestDone(_ msg: WSMessage) {
+        isEnhanceTestRunning = false
+        guard let meta = msg.metadata else { return }
+
+        var iterations: [EnhanceTestIterationInfo] = []
+        if case .array(let items) = meta["iterations"] {
+            for item in items {
+                guard case .object(let dict) = item else { continue }
+                var fixDescs: [String] = []
+                if case .array(let descs) = dict["fixDescriptions"] {
+                    fixDescs = descs.compactMap(\.stringValue)
+                }
+                iterations.append(EnhanceTestIterationInfo(
+                    id: dict["iteration"]?.intValue ?? 0,
+                    preFixHealthScore: dict["preFixHealthScore"]?.intValue ?? dict["healthScore"]?.intValue ?? 0,
+                    postFixHealthScore: dict["postFixHealthScore"]?.intValue ?? dict["healthScore"]?.intValue ?? 0,
+                    issuesFound: dict["issuesFound"]?.intValue ?? 0,
+                    issuesFixed: dict["issuesFixed"]?.intValue ?? 0,
+                    fixDescriptions: fixDescs,
+                    executionStatus: dict["executionStatus"]?.stringValue ?? "unknown",
+                    failedStepName: dict["failedStepName"]?.stringValue,
+                    failedStepError: dict["failedStepError"]?.stringValue
+                ))
+            }
+        }
+
+        enhanceTestResult = EnhanceTestResultInfo(
+            converged: meta["converged"]?.boolValue ?? false,
+            iterations: iterations,
+            finalHealthScore: meta["finalHealthScore"]?.intValue ?? 0,
+            totalIterations: meta["totalIterations"]?.intValue ?? 0,
+            totalFixesApplied: meta["totalFixesApplied"]?.intValue ?? 0
+        )
+
+        loadWorkflows()
+        if let wfId = meta["workflowId"]?.stringValue {
+            loadWorkflow(id: wfId)
+        }
+    }
+
+    private func handleRefineWorkflowResult(_ msg: WSMessage) {
+        isRefining = false
+        guard let meta = msg.metadata else {
+            refinementError = "No response from daemon"
+            return
+        }
+
+        guard meta["success"]?.boolValue == true else {
+            refinementError = "Refinement failed"
+            return
+        }
+
+        // Parse refine result into builder format
+        var steps: [BuilderStepResult] = []
+        if case .array(let stepItems) = meta["steps"] {
+            for item in stepItems {
+                guard case .object(let dict) = item else { continue }
+                var inputs: [String: String] = [:]
+                if case .object(let inputDict) = dict["inputs"] {
+                    for (key, val) in inputDict {
+                        inputs[key] = val.stringValue ?? ""
+                    }
+                }
+                var deps: [String]? = nil
+                if case .array(let depArr) = dict["dependsOn"] {
+                    deps = depArr.compactMap(\.stringValue)
+                }
+                steps.append(BuilderStepResult(
+                    id: dict["id"]?.stringValue ?? UUID().uuidString,
+                    name: dict["name"]?.stringValue ?? "",
+                    toolName: dict["toolName"]?.stringValue ?? "",
+                    serverName: dict["serverName"]?.stringValue ?? "",
+                    needsConfiguration: false,
+                    inputs: inputs,
+                    dependsOn: deps,
+                    preferredProvider: dict["preferredProvider"]?.stringValue
+                ))
+            }
+        }
+
+        builderResult = BuilderWorkflowResult(
+            id: meta["workflowId"]?.stringValue ?? UUID().uuidString,
+            name: meta["name"]?.stringValue ?? "",
+            description: meta["description"]?.stringValue ?? "",
+            cronExpression: meta["cronExpression"]?.stringValue ?? "",
+            scheduleDescription: "",
+            steps: steps,
+            needsConfiguration: false,
+            triggerType: meta["triggerType"]?.stringValue ?? "manual",
+            inputParams: nil
+        )
+
+        loadWorkflows()
+        if let wfId = meta["workflowId"]?.stringValue {
+            loadWorkflow(id: wfId)
+        }
     }
 }

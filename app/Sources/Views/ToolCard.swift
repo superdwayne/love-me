@@ -139,7 +139,7 @@ struct ToolCard: View {
                 if !toolCall.serverName.isEmpty {
                     Text(toolCall.serverName)
                         .font(.toolDetail)
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                         .lineLimit(1)
                 }
             }
@@ -214,7 +214,7 @@ struct ToolCard: View {
                 VStack(alignment: .leading, spacing: SolaceTheme.xs) {
                     Text("INPUT")
                         .font(.sectionHeader)
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                         .tracking(1.2)
 
                     Text(input)
@@ -232,7 +232,7 @@ struct ToolCard: View {
                 VStack(alignment: .leading, spacing: SolaceTheme.xs) {
                     Text("GENERATED IMAGE")
                         .font(.sectionHeader)
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                         .tracking(1.2)
 
                     CachedAsyncImage(url: url) { phase in
@@ -243,7 +243,7 @@ struct ToolCard: View {
                                 .frame(height: 200)
                                 .overlay {
                                     ProgressView()
-                                        .tint(.trust)
+                                        .tint(.textSecondary)
                                 }
                         case .success(let image):
                             image
@@ -258,10 +258,10 @@ struct ToolCard: View {
                                     VStack(spacing: SolaceTheme.xs) {
                                         Image(systemName: "photo.badge.exclamationmark")
                                             .font(.system(size: 20))
-                                            .foregroundStyle(.trust)
+                                            .foregroundStyle(.textSecondary)
                                         Text("Failed to load image")
                                             .font(.toolDetail)
-                                            .foregroundStyle(.trust)
+                                            .foregroundStyle(.textSecondary)
                                     }
                                 }
                         }
@@ -274,7 +274,7 @@ struct ToolCard: View {
                 VStack(alignment: .leading, spacing: SolaceTheme.xs) {
                     Text("RESULT")
                         .font(.sectionHeader)
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                         .tracking(1.2)
 
                     Text(result)

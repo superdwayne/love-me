@@ -16,26 +16,21 @@ struct InputBar: View {
     var body: some View {
         @Bindable var vm = chatVM
 
-        VStack(spacing: 0) {
-            // Top border
-            Rectangle()
-                .fill(Color.divider)
-                .frame(height: 1)
-
-            // Reply preview
+        VStack(spacing: SolaceTheme.sm) {
+            // Reply preview (floating above input)
             if let replyMsg = chatVM.replyingToMessage {
                 HStack(spacing: SolaceTheme.sm) {
-                    Rectangle()
-                        .fill(Color.heart)
-                        .frame(width: 3)
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.coral)
+                        .frame(width: 3, height: 28)
 
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 1) {
                         Text(replyMsg.role == .user ? "You" : "Solace")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.heart)
-                        Text(replyMsg.content.prefix(80))
-                            .font(.system(size: 13))
-                            .foregroundStyle(.trust)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.coral)
+                        Text(replyMsg.content.prefix(60))
+                            .font(.system(size: 12))
+                            .foregroundStyle(.textSecondary)
                             .lineLimit(1)
                     }
 
@@ -45,13 +40,17 @@ struct InputBar: View {
                         chatVM.clearReply()
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 18))
-                            .foregroundStyle(.trust)
+                            .font(.system(size: 16))
+                            .foregroundStyle(.textSecondary)
+                            .frame(width: 32, height: 32)
+                            .contentShape(Circle())
                     }
                 }
+                .padding(.horizontal, SolaceTheme.md)
+                .padding(.vertical, SolaceTheme.xs)
+                .background(Color.surface)
+                .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.md))
                 .padding(.horizontal, SolaceTheme.lg)
-                .padding(.vertical, SolaceTheme.sm)
-                .background(.surfaceElevated)
             }
 
             // Attachment preview strip
@@ -59,16 +58,21 @@ struct InputBar: View {
                 attachmentPreview
             }
 
+            // Main input pill
             HStack(alignment: .bottom, spacing: SolaceTheme.sm) {
-                // Attachment button
+                // Attachment button (inside the pill)
                 PhotosPicker(
                     selection: $selectedPhotos,
                     maxSelectionCount: 5,
                     matching: .images
                 ) {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(.trust)
+                    Image(systemName: "plus")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .background(Color.surfaceElevated)
+                        .clipShape(Circle())
+                        .contentShape(Circle())
                 }
                 .accessibilityLabel("Attach images")
                 .onChange(of: selectedPhotos) { _, items in
@@ -78,7 +82,7 @@ struct InputBar: View {
                     }
                 }
 
-                // Text input
+                // Text input field
                 ChatTextInput(
                     text: $vm.inputText,
                     onReturn: {
@@ -87,54 +91,53 @@ struct InputBar: View {
                         }
                     }
                 )
-                .frame(minHeight: SolaceTheme.minTouchTarget, maxHeight: 120)
+                .frame(minHeight: 36, maxHeight: 120)
                 .fixedSize(horizontal: false, vertical: true)
-                .background(.surface)
-                .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.inputFieldRadius))
-                .contentShape(RoundedRectangle(cornerRadius: SolaceTheme.inputFieldRadius))
                 .onChange(of: chatVM.inputText) { _, newValue in
                     detectAndFetchImageURL(in: newValue)
                 }
 
+                // Send / Stop button
                 if chatVM.isStreaming {
-                    // Stop button (while streaming/executing)
                     Button {
                         chatVM.cancelGeneration()
                     } label: {
                         Image(systemName: "stop.fill")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(.white)
-                            .frame(width: SolaceTheme.sendButtonSize,
-                                   height: SolaceTheme.sendButtonSize)
-                            .background(.softRed)
+                            .frame(width: SolaceTheme.sendButtonSize, height: SolaceTheme.sendButtonSize)
+                            .background(Color.error)
                             .clipShape(Circle())
                     }
                     .accessibilityLabel("Stop generation")
                     .transition(.scale.combined(with: .opacity))
                 } else if canSend {
-                    // Send button
                     Button {
                         chatVM.sendMessage()
                     } label: {
                         Image(systemName: "arrow.up")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(.white)
-                            .frame(width: SolaceTheme.sendButtonSize,
-                                   height: SolaceTheme.sendButtonSize)
-                            .background(.heart)
+                            .frame(width: SolaceTheme.sendButtonSize, height: SolaceTheme.sendButtonSize)
+                            .background(Color.coral)
                             .clipShape(Circle())
                     }
                     .accessibilityLabel("Send message")
                     .transition(.scale.combined(with: .opacity))
                 }
             }
+            .animation(.snappy(duration: 0.15), value: canSend)
+            .animation(.snappy(duration: 0.15), value: chatVM.isStreaming)
+            .padding(.leading, SolaceTheme.sm)
+            .padding(.trailing, SolaceTheme.sm)
+            .padding(.vertical, SolaceTheme.sm)
+            .background(Color.surface)
+            .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.inputFieldRadius))
+            .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
             .padding(.horizontal, SolaceTheme.md)
-            .padding(.top, SolaceTheme.sm)
-            .padding(.bottom, SolaceTheme.lg)
+            .padding(.bottom, SolaceTheme.md)
         }
-        .background(.inputBg)
-        .animation(.snappy(duration: 0.15), value: canSend)
-        .animation(.snappy(duration: 0.15), value: chatVM.inputText.isEmpty)
+        .padding(.top, SolaceTheme.xs)
     }
 
     // MARK: - Helpers
@@ -169,7 +172,7 @@ struct InputBar: View {
                                 if let dur = attachment.audioDuration {
                                     Text(formatDuration(dur))
                                         .font(.system(size: 10, design: .monospaced))
-                                        .foregroundStyle(.trust)
+                                        .foregroundStyle(.textSecondary)
                                 }
                             }
                             .frame(width: 60, height: 60)
@@ -338,6 +341,13 @@ class PastableTextView: UITextView {
     /// Called back after a successful paste so the coordinator can sync state.
     var onPaste: (() -> Void)?
 
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesBegan(touches, with: event)
+        if !isFirstResponder {
+            becomeFirstResponder()
+        }
+    }
+
     override var intrinsicContentSize: CGSize {
         let size = sizeThatFits(CGSize(width: bounds.width, height: .greatestFiniteMagnitude))
         return CGSize(width: UIView.noIntrinsicMetric, height: size.height)
@@ -407,6 +417,17 @@ struct ChatTextInput: UIViewRepresentable {
         tv.spellCheckingType = .default
         tv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
+        // Force immediate focus on tap — SwiftUI's gesture resolution
+        // can swallow the first touch to a UIViewRepresentable, requiring
+        // multiple taps before the keyboard appears.
+        let tapGesture = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleTap(_:))
+        )
+        tapGesture.cancelsTouchesInView = false
+        tapGesture.delegate = context.coordinator
+        tv.addGestureRecognizer(tapGesture)
+
         // Placeholder
         let placeholder = UILabel()
         placeholder.text = "Message Solace..."
@@ -439,7 +460,7 @@ struct ChatTextInput: UIViewRepresentable {
         }
     }
 
-    class Coordinator: NSObject, UITextViewDelegate {
+    class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
         let parent: ChatTextInput
         /// True while the UITextView is the first responder and actively being
         /// edited. Prevents `updateUIView` from clobbering in-flight changes.
@@ -479,6 +500,22 @@ struct ChatTextInput: UIViewRepresentable {
             // Enable scrolling only when the text outgrows the max height
             let fittingSize = textView.sizeThatFits(CGSize(width: textView.bounds.width, height: .greatestFiniteMagnitude))
             textView.isScrollEnabled = fittingSize.height > 120
+        }
+
+        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+            if let textView = gesture.view, !textView.isFirstResponder {
+                textView.becomeFirstResponder()
+            }
+        }
+
+        // MARK: - UIGestureRecognizerDelegate
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            true
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            false
         }
 
         func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {

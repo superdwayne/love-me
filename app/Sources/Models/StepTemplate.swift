@@ -1,28 +1,28 @@
 import SwiftUI
 
 enum StepTemplateCategory: String, CaseIterable, Identifiable {
-    case aiContent = "AI & Content"
-    case filesData = "Files & Data"
-    case communication = "Communication"
-    case custom = "Custom"
+    case create = "Create"
+    case manage = "Manage"
+    case connect = "Connect"
+    case extend = "Extend"
 
     var id: String { rawValue }
 
     var icon: String {
         switch self {
-        case .aiContent: return "brain.head.profile"
-        case .filesData: return "doc.text"
-        case .communication: return "paperplane"
-        case .custom: return "gearshape"
+        case .create: return "sparkles"
+        case .manage: return "folder"
+        case .connect: return "paperplane"
+        case .extend: return "puzzlepiece.extension"
         }
     }
 
     var color: Color {
         switch self {
-        case .aiContent: return .coral
-        case .filesData: return .warning
-        case .communication: return .success
-        case .custom: return .info
+        case .create: return .coral
+        case .manage: return .amberGlow
+        case .connect: return .sageGreen
+        case .extend: return .electricBlue
         }
     }
 }
@@ -64,78 +64,87 @@ struct StepTemplate: Identifiable {
 enum StepTemplates {
     static let builtIn: [StepTemplate] = [
         StepTemplate(
-            name: "Generate Text",
-            description: "Use AI to generate or transform text content",
-            category: .aiContent,
-            icon: "brain.head.profile",
+            name: "Write with AI",
+            description: "Draft, rewrite, or summarize any text",
+            category: .create,
+            icon: "sparkles",
             iconColor: .coral,
             toolName: "generate_text",
             defaultInputs: ["prompt": ""]
         ),
         StepTemplate(
-            name: "Read File",
-            description: "Read contents from a file path",
-            category: .filesData,
+            name: "Open a File",
+            description: "Pull content from a document or file",
+            category: .manage,
             icon: "doc.text",
-            iconColor: .warning,
+            iconColor: .amberGlow,
             toolName: "read_file",
             defaultInputs: ["path": ""]
         ),
         StepTemplate(
-            name: "Write File",
-            description: "Write content to a file path",
-            category: .filesData,
+            name: "Save to File",
+            description: "Store results in a document",
+            category: .manage,
             icon: "doc.text.fill",
-            iconColor: .warning,
+            iconColor: .amberGlow,
             toolName: "write_file",
             defaultInputs: ["path": "", "content": ""]
         ),
         StepTemplate(
-            name: "Run Command",
-            description: "Execute a shell command",
-            category: .filesData,
+            name: "Run a Task",
+            description: "Execute an action on your computer",
+            category: .manage,
             icon: "terminal",
-            iconColor: .info,
+            iconColor: .electricBlue,
             toolName: "run_command",
             defaultInputs: ["command": ""]
         ),
         StepTemplate(
-            name: "Send Email",
-            description: "Send an email message",
-            category: .communication,
-            icon: "paperplane",
-            iconColor: .success,
+            name: "Send an Email",
+            description: "Compose and deliver a message",
+            category: .connect,
+            icon: "paperplane.fill",
+            iconColor: .sageGreen,
             toolName: "send_email",
             defaultInputs: ["to": "", "subject": "", "body": ""]
         ),
         StepTemplate(
-            name: "HTTP Request",
-            description: "Make an HTTP request to an API endpoint",
-            category: .filesData,
-            icon: "network",
-            iconColor: .info,
+            name: "Fetch from Web",
+            description: "Pull data from any website or service",
+            category: .connect,
+            icon: "globe",
+            iconColor: .electricBlue,
             toolName: "http_request",
             defaultInputs: ["url": "", "method": "GET"]
         ),
     ]
 
+    static func humanizeName(_ rawName: String) -> String {
+        rawName
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .split(separator: " ")
+            .map { $0.prefix(1).uppercased() + $0.dropFirst().lowercased() }
+            .joined(separator: " ")
+    }
+
     static func fromMCPTools(_ tools: [MCPToolItem]) -> [StepTemplate] {
         tools.map { tool in
             let (icon, color) = WorkflowStepCard.toolIcon(for: tool.name)
             let category: StepTemplateCategory
-            let lower = tool.name.lowercased()
-            if lower.contains("ai") || lower.contains("generate") || lower.contains("llm") {
-                category = .aiContent
-            } else if lower.contains("email") || lower.contains("send") || lower.contains("mail") {
-                category = .communication
-            } else if lower.contains("file") || lower.contains("read") || lower.contains("write") || lower.contains("bash") || lower.contains("shell") {
-                category = .filesData
+            let lower = tool.name.lowercased() + " " + tool.description.lowercased()
+            if lower.contains("ai") || lower.contains("generate") || lower.contains("llm") || lower.contains("summarize") || lower.contains("translate") {
+                category = .create
+            } else if lower.contains("email") || lower.contains("send") || lower.contains("mail") || lower.contains("notify") || lower.contains("message") || lower.contains("webhook") || lower.contains("http") || lower.contains("fetch") || lower.contains("api") {
+                category = .connect
+            } else if lower.contains("file") || lower.contains("read") || lower.contains("write") || lower.contains("bash") || lower.contains("shell") || lower.contains("directory") || lower.contains("folder") {
+                category = .manage
             } else {
-                category = .custom
+                category = .extend
             }
 
             return StepTemplate(
-                name: tool.name,
+                name: humanizeName(tool.name),
                 description: tool.description,
                 category: category,
                 icon: icon,

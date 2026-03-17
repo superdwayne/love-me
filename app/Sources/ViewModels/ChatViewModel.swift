@@ -52,6 +52,11 @@ final class ChatViewModel {
     var editingMessageId: String?
     var editingText: String = ""
 
+    // Workflow suggestion state
+    var workflowSuggestion: WorkflowSuggestionInfo?
+    var showWorkflowBuilder: Bool = false
+    var workflowBuilderPrompt: String = ""
+
     private let webSocket: WebSocketClient
 
     /// The daemon host (used to rewrite localhost image URLs for network access)
@@ -446,6 +451,9 @@ final class ChatViewModel {
             // Server confirmed the edit, nothing extra needed since we optimistically updated
             break
 
+        case WSMessageType.workflowSuggestion:
+            handleWorkflowSuggestion(msg)
+
         default:
             break
         }
@@ -643,4 +651,41 @@ final class ChatViewModel {
 
         messages = loadedMessages
     }
+
+    // MARK: - Workflow Suggestions
+
+    private func handleWorkflowSuggestion(_ msg: WSMessage) {
+        guard let meta = msg.metadata,
+              let title = meta["title"]?.stringValue,
+              let description = meta["description"]?.stringValue,
+              let prompt = meta["prompt"]?.stringValue else { return }
+
+        let confidence = meta["confidence"]?.doubleValue ?? 0.5
+
+        workflowSuggestion = WorkflowSuggestionInfo(
+            title: title,
+            description: description,
+            prompt: prompt,
+            confidence: confidence
+        )
+        HapticManager.toolCompleted()
+    }
+
+    func acceptWorkflowSuggestion() {
+        guard let suggestion = workflowSuggestion else { return }
+        workflowBuilderPrompt = suggestion.prompt
+        showWorkflowBuilder = true
+        workflowSuggestion = nil
+    }
+
+    func dismissWorkflowSuggestion() {
+        workflowSuggestion = nil
+    }
+}
+
+struct WorkflowSuggestionInfo {
+    let title: String
+    let description: String
+    let prompt: String
+    let confidence: Double
 }

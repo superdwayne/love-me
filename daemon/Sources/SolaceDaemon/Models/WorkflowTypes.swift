@@ -14,6 +14,8 @@ struct WorkflowDefinition: Codable, Sendable {
     var updated: Date
     var originalPrompt: String?
     var enhancedPrompt: String?
+    /// History of enhancements made to this workflow
+    var enhancementHistory: [EnhancementStep]?
 
     init(
         id: String = UUID().uuidString,
@@ -26,7 +28,8 @@ struct WorkflowDefinition: Codable, Sendable {
         created: Date = Date(),
         updated: Date = Date(),
         originalPrompt: String? = nil,
-        enhancedPrompt: String? = nil
+        enhancedPrompt: String? = nil,
+        enhancementHistory: [EnhancementStep]? = nil
     ) {
         self.id = id
         self.name = name
@@ -39,7 +42,51 @@ struct WorkflowDefinition: Codable, Sendable {
         self.updated = updated
         self.originalPrompt = originalPrompt
         self.enhancedPrompt = enhancedPrompt
+        self.enhancementHistory = enhancementHistory
     }
+}
+
+// MARK: - Enhancement History
+
+/// Represents a single enhancement step in a workflow's history
+struct EnhancementStep: Codable, Sendable {
+    let id: String
+    let timestamp: Date
+    let enhancementType: EnhancementType
+    let issuesIdentified: [CritiqueIssue]
+    let issuesFixed: [CritiqueIssue]
+    let enhancedPrompt: String?
+    let originalPrompt: String?
+
+    init(
+        id: String = UUID().uuidString,
+        timestamp: Date = Date(),
+        enhancementType: EnhancementType,
+        issuesIdentified: [CritiqueIssue],
+        issuesFixed: [CritiqueIssue],
+        enhancedPrompt: String? = nil,
+        originalPrompt: String? = nil
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.enhancementType = enhancementType
+        self.issuesIdentified = issuesIdentified
+        self.issuesFixed = issuesFixed
+        self.enhancedPrompt = enhancedPrompt
+        self.originalPrompt = originalPrompt
+    }
+}
+
+/// Types of enhancements that can be applied to a workflow
+enum EnhancementType: String, Codable, Sendable {
+    case missingInputs = "missing_inputs"
+    case missingSteps = "missing_steps"
+    case wrongTools = "wrong_tools"
+    case dataFlowIssues = "data_flow_issues"
+    case parameterErrors = "parameter_errors"
+    case triggerType = "trigger_type"
+    case userFeedback = "user_feedback"
+    case autoOptimization = "auto_optimization"
 }
 
 // MARK: - Trigger
@@ -108,6 +155,10 @@ struct WorkflowStep: Codable, Sendable {
     var inputTemplate: [String: StringOrVariable]
     var dependsOn: [String]?
     var onError: ErrorPolicy
+    /// Optional per-step LLM routing. Format: "provider:model" (e.g. "claude:sonnet", "ollama:qwen3.5", "openai:gpt-4o").
+    /// When set, auto-fix and any LLM reasoning for this step will use this provider instead of the default.
+    /// Parsed via `AgentProviderSpec.from(providerString:)`.
+    var preferredProvider: String?
 
     init(
         id: String = UUID().uuidString,
@@ -116,7 +167,8 @@ struct WorkflowStep: Codable, Sendable {
         serverName: String,
         inputTemplate: [String: StringOrVariable] = [:],
         dependsOn: [String]? = nil,
-        onError: ErrorPolicy = .autofix
+        onError: ErrorPolicy = .autofix,
+        preferredProvider: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -125,6 +177,7 @@ struct WorkflowStep: Codable, Sendable {
         self.inputTemplate = inputTemplate
         self.dependsOn = dependsOn
         self.onError = onError
+        self.preferredProvider = preferredProvider
     }
 }
 
@@ -369,6 +422,188 @@ struct WorkflowSummary: Codable, Sendable {
         self.lastRunStatus = lastExecution?.status.rawValue
         self.lastRunAt = lastExecution?.startedAt
     }
+}
+
+// MARK: - Workflow Analysis
+
+/// Result of analyzing a workflow for issues
+struct WorkflowAnalysisResult: Codable, Sendable {
+    let workflowId: String
+    let workflowName: String
+    let overallHealth: HealthScore
+    let issues: [WorkflowIssue]
+    let missingElements: [MissingElement]
+    let recommendations: [Recommendation]
+    let analyzedAt: Date
+
+    /// Calculate overall health score (0-100)
+    var healthScore: Int {
+        let criticalCount = issues.filter { $0.severity == .critical }.count
+        let warningCount = issues.filter { $0.severity == .warning }.count
+        let suggestionCount = issues.filter { $0.severity == .suggestion }.count
+
+        // Deduct points for issues
+        var score = 100
+        score -= criticalCount * 25
+        score -= warningCount * 10
+        score -= suggestionCount * 3
+        return max(0, min(100, score))
+    }
+}
+
+/// Health score for a workflow
+enum HealthScore: String, Codable, Sendable {
+    case excellent = "excellent"
+    case good = "good"
+    case fair = "fair"
+    case poor = "poor"
+
+    init(from score: Int) {
+        if score >= 90 {
+            self = .excellent
+        } else if score >= 70 {
+            self = .good
+        } else if score >= 50 {
+            self = .fair
+        } else {
+            self = .poor
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .excellent: "Excellent - Workflow is ready to run"
+        case .good: "Good - Minor improvements recommended"
+        case .fair: "Fair - Several issues need attention"
+        case .poor: "Poor - Critical issues must be fixed"
+        }
+    }
+}
+
+/// A single issue found during workflow analysis
+struct WorkflowIssue: Codable, Sendable, Identifiable {
+    let id: String
+    let severity: IssueSeverity
+    let category: IssueCategory
+    let message: String
+    let affectedStepId: String?
+    let affectedStepName: String?
+    let suggestion: String
+    var fixed: Bool = false
+}
+
+/// Severity levels for workflow issues
+enum IssueSeverity: String, Codable, Sendable {
+    case critical = "critical"  // Workflow will fail without fix
+    case warning = "warning"    // Workflow may have issues
+    case suggestion = "suggestion"  // Improvement opportunity
+}
+
+/// Categories of workflow issues
+enum IssueCategory: String, Codable, Sendable {
+    case missingInputs = "missing_inputs"
+    case missingSteps = "missing_steps"
+    case wrongTool = "wrong_tool"
+    case dataFlow = "data_flow"
+    case parameterError = "parameter_error"
+    case triggerType = "trigger_type"
+    case performance = "performance"
+    case security = "security"
+}
+
+/// A missing element that should be added to the workflow
+struct MissingElement: Codable, Sendable, Identifiable {
+    let id: String
+    let elementType: MissingElementType
+    let description: String
+    let recommendedValue: String?
+    let stepId: String?
+    var actionTaken: Bool = false
+}
+
+/// Types of missing elements
+enum MissingElementType: String, Codable, Sendable {
+    case inputParameter = "input_parameter"
+    case workflowStep = "workflow_step"
+    case dataConnection = "data_connection"
+    case errorHandling = "error_handling"
+    case notificationSetting = "notification_setting"
+    case description = "description"
+}
+
+/// A recommendation for improving the workflow
+struct Recommendation: Codable, Sendable {
+    let id: String
+    let title: String
+    let description: String
+    let category: RecommendationCategory
+    var actionTaken: Bool = false
+}
+
+/// Categories of recommendations
+enum RecommendationCategory: String, Codable, Sendable {
+    case automation = "automation"
+    case optimization = "optimization"
+    case reliability = "reliability"
+    case userExperience = "user_experience"
+}
+
+// MARK: - Enhance & Test Loop
+
+/// Record for a single iteration of the enhance-and-test loop
+struct EnhanceTestIteration: Codable, Sendable {
+    let iteration: Int
+    let preFixHealthScore: Int
+    let postFixHealthScore: Int
+    let issuesFound: Int
+    let issuesFixed: Int
+    let fixDescriptions: [String]
+    let executionStatus: String  // completed, failed, cancelled
+    let failedStepName: String?
+    let failedStepError: String?
+}
+
+/// Final result of the enhance-and-test loop
+struct EnhanceTestResult: Codable, Sendable {
+    let converged: Bool
+    let iterations: [EnhanceTestIteration]
+    let finalHealthScore: Int
+    let totalIterations: Int
+    let totalFixesApplied: Int
+}
+
+// MARK: - Workflow Validation
+
+struct WorkflowValidationResult: Codable, Sendable {
+    let workflowId: String
+    let valid: Bool
+    let stepResults: [StepValidationResult]
+
+    var errorCount: Int {
+        stepResults.flatMap(\.issues).filter { $0.severity == .error }.count
+    }
+    var warningCount: Int {
+        stepResults.flatMap(\.issues).filter { $0.severity == .warning }.count
+    }
+}
+
+struct StepValidationResult: Codable, Sendable {
+    let stepId: String
+    let stepName: String
+    let valid: Bool
+    let issues: [StepValidationIssue]
+}
+
+struct StepValidationIssue: Codable, Sendable {
+    let field: String
+    let severity: ValidationSeverity
+    let message: String
+    let suggestion: String?
+}
+
+enum ValidationSeverity: String, Codable, Sendable {
+    case error
+    case warning
 }
 
 // MARK: - JSON Path Helper

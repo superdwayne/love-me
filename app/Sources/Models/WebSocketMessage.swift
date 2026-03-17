@@ -99,6 +99,7 @@ enum WSMessageType {
     static let conversationCreated = "conversation_created"
     static let conversationDeleted = "conversation_deleted"
     static let messageEdited = "message_edited"
+    static let workflowSuggestion = "workflow_suggestion"
 
     // Client -> Server (Workflows)
     static let createWorkflow = "create_workflow"
@@ -133,6 +134,22 @@ enum WSMessageType {
     static let mcpToolsListResult = "mcp_tools_list_result"
     static let parseScheduleResult = "parse_schedule_result"
     static let buildWorkflowResult = "build_workflow_result"
+
+    // Client -> Server (Workflow Enhancement)
+    static let analyzeWorkflow = "analyze_workflow"
+    static let enhanceWorkflow = "enhance_workflow"
+    static let enhanceAndTest = "enhance_and_test"
+    static let cancelEnhanceTest = "cancel_enhance_test"
+    static let validateWorkflow = "validate_workflow"
+    static let refineWorkflow = "refine_workflow"
+
+    // Server -> Client (Workflow Enhancement)
+    static let analyzeWorkflowResult = "analyze_workflow_result"
+    static let enhanceWorkflowResult = "enhance_workflow_result"
+    static let enhanceTestProgress = "enhance_test_progress"
+    static let enhanceTestDone = "enhance_test_done"
+    static let validateWorkflowResult = "validate_workflow_result"
+    static let refineWorkflowResult = "refine_workflow_result"
 
     // Client -> Server (MCP Server Management)
     static let mcpServersList = "mcp_servers_list"

@@ -51,12 +51,12 @@ struct StepTemplatePicker: View {
                     } label: {
                         HStack(spacing: SolaceTheme.md) {
                             Circle()
-                                .fill(Color.trust.opacity(0.2))
+                                .fill(Color.textSecondary.opacity(0.2))
                                 .frame(width: 36, height: 36)
                                 .overlay {
                                     Image(systemName: "plus")
                                         .font(.system(size: 14, weight: .medium))
-                                        .foregroundStyle(.trust)
+                                        .foregroundStyle(.textSecondary)
                                 }
 
                             VStack(alignment: .leading, spacing: 2) {
@@ -65,7 +65,7 @@ struct StepTemplatePicker: View {
                                     .foregroundStyle(.textPrimary)
                                 Text("Choose a tool manually")
                                     .font(.timestamp)
-                                    .foregroundStyle(.trust)
+                                    .foregroundStyle(.textSecondary)
                             }
 
                             Spacer()
@@ -97,7 +97,7 @@ struct StepTemplatePicker: View {
 
                                     Text(template.description)
                                         .font(.timestamp)
-                                        .foregroundStyle(.trust)
+                                        .foregroundStyle(.textSecondary)
                                         .lineLimit(2)
 
                                     if !template.serverName.isEmpty {
@@ -123,7 +123,7 @@ struct StepTemplatePicker: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                 }
             }
             .toolbarBackground(.appBackground, for: .navigationBar)
@@ -146,7 +146,7 @@ struct StepTemplatePicker: View {
                 Text(label)
                     .font(.system(size: 12, weight: .medium))
             }
-            .foregroundStyle(isSelected ? .white : .trust)
+            .foregroundStyle(isSelected ? .white : .textSecondary)
             .padding(.horizontal, SolaceTheme.md)
             .padding(.vertical, SolaceTheme.sm)
             .background(isSelected ? Color.heart : Color.surfaceElevated)

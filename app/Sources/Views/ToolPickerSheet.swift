@@ -31,20 +31,20 @@ struct ToolPickerSheet: View {
                             .tint(.heart)
                         Text("Loading tools...")
                             .font(.toolDetail)
-                            .foregroundStyle(.trust)
+                            .foregroundStyle(.textSecondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if tools.isEmpty {
                     VStack(spacing: SolaceTheme.md) {
                         Image(systemName: "wrench.and.screwdriver")
                             .font(.system(size: 40))
-                            .foregroundStyle(.trust.opacity(0.5))
+                            .foregroundStyle(.textSecondary.opacity(0.5))
                         Text("No tools available")
                             .font(.chatMessage)
-                            .foregroundStyle(.trust)
+                            .foregroundStyle(.textSecondary)
                         Text("Connect an MCP server to get started.")
                             .font(.toolDetail)
-                            .foregroundStyle(.trust.opacity(0.7))
+                            .foregroundStyle(.textSecondary.opacity(0.7))
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -74,7 +74,7 @@ struct ToolPickerSheet: View {
                                                 if !tool.description.isEmpty {
                                                     Text(tool.description)
                                                         .font(.timestamp)
-                                                        .foregroundStyle(.trust)
+                                                        .foregroundStyle(.textSecondary)
                                                         .lineLimit(2)
                                                 }
                                             }
@@ -89,7 +89,7 @@ struct ToolPickerSheet: View {
                             } header: {
                                 Text(group.server.uppercased())
                                     .font(.sectionHeader)
-                                    .foregroundStyle(.trust)
+                                    .foregroundStyle(.textSecondary)
                                     .tracking(1.2)
                             }
                         }
@@ -105,7 +105,7 @@ struct ToolPickerSheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Cancel") { dismiss() }
-                        .foregroundStyle(.trust)
+                        .foregroundStyle(.textSecondary)
                 }
             }
             .toolbarBackground(.appBackground, for: .navigationBar)

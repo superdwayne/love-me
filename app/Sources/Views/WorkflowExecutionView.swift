@@ -133,7 +133,7 @@ struct WorkflowExecutionView: View {
         case "success": return .sageGreen
         case "running": return .electricBlue
         case "error": return .softRed
-        default: return .trust.opacity(0.2)
+        default: return .textSecondary.opacity(0.2)
         }
     }
 
@@ -151,7 +151,7 @@ struct WorkflowExecutionView: View {
                     if !execution.triggerInfo.isEmpty {
                         Text("Triggered: \(execution.triggerInfo)")
                             .font(.toolDetail)
-                            .foregroundStyle(.trust)
+                            .foregroundStyle(.textSecondary)
                     }
                 }
 
@@ -201,10 +201,10 @@ struct WorkflowExecutionView: View {
             HStack(spacing: SolaceTheme.xs) {
                 Image(systemName: icon)
                     .font(.system(size: 10))
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
                 Text(label.uppercased())
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.trust)
+                    .foregroundStyle(.textSecondary)
                     .tracking(0.8)
             }
             Text(value)
@@ -310,10 +310,10 @@ struct WorkflowExecutionView: View {
             Spacer()
             ProgressView()
                 .scaleEffect(1.2)
-                .tint(.trust)
+                .tint(.textSecondary)
             Text("Loading execution...")
                 .font(.chatMessage)
-                .foregroundStyle(.trust)
+                .foregroundStyle(.textSecondary)
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -327,7 +327,7 @@ struct WorkflowExecutionView: View {
         case "failed": return .softRed
         case "running": return .electricBlue
         case "cancelled": return .amberGlow
-        default: return .trust
+        default: return .textSecondary
         }
     }
 

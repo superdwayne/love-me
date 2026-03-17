@@ -34,11 +34,18 @@ actor DaemonApp {
     // Prompt enhancement pipeline
     private let promptEnhancer: PromptEnhancer
 
+    // Workflow analysis, auto-fix & validation
+    private let workflowAnalyzer: WorkflowAnalyzer
+    private let workflowValidator: WorkflowValidator
+
     // Ollama health check
     private var ollamaHealthTask: Task<Void, Never>?
 
     // Active generation task tracking for cancellation
     private var activeGenerationTasks: [String: Task<Void, Never>] = [:]
+
+    // Enhance-and-test loop tracking
+    private var runningEnhanceTests: [String: Task<Void, Never>] = [:]
 
     // Agent swarm subsystem
     private let providerPool: ProviderPool
@@ -86,6 +93,10 @@ actor DaemonApp {
         // Prompt enhancement pipeline
         self.promptEnhancer = PromptEnhancer(llmProvider: claudeClient, mcpManager: mcpManager)
 
+        // Workflow analysis, auto-fix & validation
+        self.workflowAnalyzer = WorkflowAnalyzer(mcpManager: mcpManager, llmProvider: claudeClient)
+        self.workflowValidator = WorkflowValidator(mcpManager: mcpManager)
+
         // Agent swarm components
         self.providerPool = ProviderPool(config: config)
         self.agentPlanStore = AgentPlanStore(
@@ -102,7 +113,7 @@ actor DaemonApp {
         self.pinnedOllamaTools = Set(config.ollamaConfig?.pinnedTools ?? [])
 
         // Executor needs mcpManager, store, and eventBus for decoupling
-        self.workflowExecutor = WorkflowExecutor(mcpManager: mcpManager, store: workflowStore, eventBus: eventBus, llmProvider: claudeClient)
+        self.workflowExecutor = WorkflowExecutor(mcpManager: mcpManager, store: workflowStore, eventBus: eventBus, llmProvider: claudeClient, providerPool: self.providerPool)
 
         // Queue manages concurrent execution with priority-based scheduling
         self.workflowQueue = WorkflowQueue(workflowExecutor: self.workflowExecutor, maxConcurrent: 5)
@@ -367,6 +378,25 @@ actor DaemonApp {
         case WSMessageType.buildWorkflow:
             await handleBuildWorkflow(message, client: client)
 
+        // Workflow Enhancement messages
+        case WSMessageType.analyzeWorkflow:
+            await handleAnalyzeWorkflow(message, client: client)
+
+        case WSMessageType.enhanceWorkflow:
+            await handleEnhanceWorkflow(message, client: client)
+
+        case WSMessageType.enhanceAndTest:
+            await handleEnhanceAndTest(message, client: client)
+
+        case WSMessageType.cancelEnhanceTest:
+            await handleCancelEnhanceTest(message, client: client)
+
+        case WSMessageType.validateWorkflow:
+            await handleValidateWorkflow(message, client: client)
+
+        case WSMessageType.refineWorkflow:
+            await handleRefineWorkflow(message, client: client)
+
         // MCP Server Management messages
         case WSMessageType.mcpServersList:
             await handleMCPServersList(client: client)
@@ -605,6 +635,37 @@ actor DaemonApp {
         - Keep agent objectives specific and actionable
         - Assign the minimum-cost model that can handle each task
         - Include required MCP tool names so each agent only sees tools it needs
+        """
+
+        // Workflow creation guidance
+        prompt += """
+
+        \n\n# Workflow Creation
+
+        You have a `create_workflow` tool that builds automated, reusable workflows from conversation context.
+        The entire conversation history is automatically analyzed when you call this tool — you don't need to repeat everything.
+        The system extracts intents, entities, tools used, and suggested steps from what was discussed.
+
+        USE create_workflow when the user:
+        - Describes a multi-step process: "search for X and email me the results"
+        - Mentions recurring tasks: "every morning", "daily", "weekly", "whenever"
+        - Asks to automate something: "I want to automate …", "set up …", "can you do X and Y regularly"
+        - Chains actions together: "do X, then Y, then Z"
+        - Describes a pipeline: "find …, summarize it, and send it to …"
+        - Says "create a workflow from this" or "make this into a workflow" — build it from what was discussed
+        - After completing a multi-step task, suggests they might want to repeat it
+
+        DO NOT use create_workflow for:
+        - Simple one-shot requests ("search for cats") — just do it directly
+        - Questions or conversational messages
+        - Tasks the user clearly wants done once right now
+
+        When using create_workflow:
+        - Pack the description with EVERY detail from the conversation: specific queries, email addresses, formatting preferences, parameters
+        - Set a descriptive name (e.g. "Daily AI News Digest" not "Workflow 1")
+        - Include schedule if the user mentioned timing (e.g. "every morning at 8am")
+        - The system will automatically select the best LLM provider for each step based on complexity
+        - After creating, briefly confirm what was built, how many steps, and how to trigger it
         """
 
         // Pencil design tool — instruct Claude to show visual results
@@ -859,13 +920,25 @@ actor DaemonApp {
             if !tools.contains(where: { $0.name == "create_workflow" }) {
                 tools.append(ToolDefinition(
                     name: "create_workflow",
-                    description: "Create and save an automated workflow from a natural language description. Use when the user asks to build, create, or save a workflow.",
+                    description: """
+                    Create and save an automated workflow that runs tools in sequence. Use this when the user describes a repeatable process, automation, or multi-step task — even if they don't say "workflow". \
+                    Trigger phrases: "do X and then Y", "every morning search … and email …", "whenever … happens do …", "I want to automate …", "search for … and send me …". \
+                    Include ALL relevant details from the conversation: what to search, who to email, what schedule, what parameters. The description should be a complete, self-contained prompt.
+                    """,
                     input_schema: .object([
                         "type": .string("object"),
                         "properties": .object([
                             "description": .object([
                                 "type": .string("string"),
-                                "description": .string("Natural language description of the workflow to create")
+                                "description": .string("Detailed natural language description of the workflow. Include every relevant detail from the conversation: exact tools/actions, parameters, recipients, schedule, and how step outputs connect to subsequent step inputs.")
+                            ]),
+                            "name": .object([
+                                "type": .string("string"),
+                                "description": .string("Short human-readable name for the workflow, e.g. 'Daily News Digest'")
+                            ]),
+                            "schedule": .object([
+                                "type": .string("string"),
+                                "description": .string("Optional natural language schedule if the user wants it recurring, e.g. 'every morning at 8am', 'every weekday at 9am'. Omit for one-off or manual workflows.")
                             ])
                         ]),
                         "required": .array([.string("description")])
@@ -1118,17 +1191,47 @@ actor DaemonApp {
                     // Built-in create_workflow tool — intercept before MCP
                     if toolCall.name == "create_workflow" {
                         do {
-                            // Parse description from tool input
+                            // Parse fields from tool input
                             var description = ""
+                            var workflowName: String? = nil
+                            var schedule: String? = nil
                             if let inputData = toolCall.input.data(using: .utf8),
                                let json = try? JSONDecoder().decode([String: String].self, from: inputData) {
                                 description = json["description"] ?? toolCall.input
+                                workflowName = json["name"]
+                                schedule = json["schedule"]
                             } else {
                                 description = toolCall.input
                             }
 
+                            // Enrich the prompt with conversation context so the workflow builder
+                            // has the full picture of what the user discussed
+                            var enrichedPrompt = description
+                            if let conversationContext = await buildConversationContext(conversationId: conversationId) {
+                                enrichedPrompt = """
+                                Conversation context (use this to fill in any missing details):
+                                \(conversationContext)
+
+                                Workflow request:
+                                \(description)
+                                """
+                            }
+                            if let schedule = schedule {
+                                enrichedPrompt += "\n\nSchedule: \(schedule)"
+                            }
+
                             let resultContent: String
-                            if let workflow = await buildWorkflowFromPrompt(description) {
+                            if var workflow = await buildWorkflowFromPrompt(enrichedPrompt) {
+                                // Override name if the LLM provided one
+                                if let workflowName = workflowName, !workflowName.isEmpty {
+                                    workflow = WorkflowDefinition(
+                                        id: workflow.id, name: workflowName,
+                                        description: workflow.description, enabled: workflow.enabled,
+                                        trigger: workflow.trigger, steps: workflow.steps,
+                                        originalPrompt: workflow.originalPrompt,
+                                        enhancedPrompt: workflow.enhancedPrompt
+                                    )
+                                }
                                 try await workflowStore.create(workflow)
 
                                 // Save tool_result
@@ -1486,6 +1589,39 @@ actor DaemonApp {
                 conversationId: conversationId
             )
             try? await client.send(doneMsg)
+
+            // Analyze conversation for workflow suggestions (non-blocking)
+            Task { [conversationStore, weak client] in
+                guard let client else { return }
+                do {
+                    let conversation = try await conversationStore.load(id: conversationId)
+                    let toolNames = conversation.messages
+                        .filter { $0.role == "tool_use" }
+                        .compactMap { $0.metadata?["toolName"] }
+                    let recentToolNames = Array(Set(toolNames.suffix(10)))
+
+                    if let suggestion = WorkflowSuggestionAnalyzer.analyze(
+                        messages: conversation.messages,
+                        toolsUsed: recentToolNames
+                    ) {
+                        let suggestionMsg = WSMessage(
+                            type: WSMessageType.workflowSuggestion,
+                            conversationId: conversationId,
+                            metadata: [
+                                "title": .string(suggestion.title),
+                                "description": .string(suggestion.description),
+                                "prompt": .string(suggestion.prompt),
+                                "confidence": .double(suggestion.confidence)
+                            ]
+                        )
+                        try? await client.send(suggestionMsg)
+                        Logger.info("Workflow suggestion sent for conversation \(conversationId) (confidence: \(String(format: "%.2f", suggestion.confidence)))")
+                    }
+                } catch {
+                    // Silently ignore — suggestions are best-effort
+                }
+            }
+
             break toolLoop
 
         } catch {
@@ -3225,11 +3361,31 @@ actor DaemonApp {
             return entry
         }.joined(separator: "\n")
 
+        // Build available providers list for per-step routing
+        let wsBuildProviders = await providerPool.availableProviders()
+        let wsBuildProviderCatalog = wsBuildProviders.map { name -> String in
+            switch name {
+            case "claude":
+                return "- claude:haiku (fast, cheap — good for simple transformations, formatting)\n- claude:sonnet (balanced — good for reasoning, code generation, analysis)\n- claude:opus (most capable — good for complex multi-step reasoning)"
+            case "ollama":
+                let model = config.ollamaConfig?.model ?? "local-model"
+                return "- ollama:\(model) (local, free, no latency — good for simple tool calls, text formatting)"
+            case "openai":
+                let model = config.openaiConfig?.model ?? "gpt-4o"
+                return "- openai:\(model) (good for code generation, structured output)"
+            default:
+                return "- \(name)"
+            }
+        }.joined(separator: "\n")
+
         let systemPrompt = """
         You are a workflow builder for the Solace automation system. The user will describe a workflow in natural language. You must generate a valid workflow JSON object.
 
         Available MCP tools:
         \(toolCatalog.isEmpty ? "No MCP tools currently connected." : toolCatalog)
+
+        Available LLM providers (for per-step routing):
+        \(wsBuildProviderCatalog.isEmpty ? "Only default provider available." : wsBuildProviderCatalog)
 
         Output ONLY a valid JSON object (no markdown, no explanation) with this exact schema:
         {
@@ -3249,7 +3405,8 @@ actor DaemonApp {
               "needsConfiguration": false,
               "inputs": {
                 "paramName": "value or {{__input__.param_name}}"
-              }
+              },
+              "preferredProvider": "provider:model (optional)"
             }
           ]
         }
@@ -3267,12 +3424,28 @@ actor DaemonApp {
         - Example: if step_1 produces search results, step_2 can use {{step_1.$}} to get all results
         - For runtime input parameters (manual trigger), use {{__input__.param_name}}
 
+        Per-step LLM routing (preferredProvider):
+        - Each step can optionally specify which LLM provider handles auto-fix and reasoning for that step
+        - Format: "provider:model" (e.g. "claude:sonnet", "ollama:qwen3.5", "openai:gpt-4o")
+        - Omit preferredProvider to use the system default
+        - Use cheaper/faster providers (ollama, claude:haiku) for simple tool calls like fetching data or file operations
+        - Use more capable providers (claude:sonnet, openai:gpt-4o) for steps requiring reasoning, code generation, or complex transformations
+        - Use the most capable provider (claude:opus) only for steps requiring deep analysis or multi-step reasoning
+        - ONLY assign providers from the available list above
+
+        Step chaining — connecting outputs to inputs:
+        - ALWAYS chain steps together when one step produces data the next step needs
+        - Example: if step_1 generates an image and step_2 sends an email, step_2's body should include {{step_1.$}} or {{step_1.url}} to embed the generated image URL
+        - NEVER write static placeholder text like "image not available" or "results will appear here" — always use {{step_id.$}} references to pass real data between steps
+        - If a step produces a URL (e.g. image generation), the next step should reference that URL, not describe what would happen
+
         Rules:
         - CRITICAL: Only use tools that exist in the catalog above. NEVER invent tool names.
-        - If no matching tool exists for a capability the user needs, set needsConfiguration to true and explain in the step name what tool is needed
+        - CRITICAL: NEVER generate placeholder or static fallback content. If the user asks to generate an image, you MUST use an image generation tool from the catalog (e.g. leonardo-ai). If the user asks to send an email with generated content, the email body MUST reference the previous step's output using {{step_id.$}} — never hardcode a message saying the feature is unavailable.
+        - If no matching tool exists for a capability the user needs, set needsConfiguration to true and explain in the step name what tool is needed. But ALWAYS check the full catalog first — tools like image generation, 3D rendering, web search, email, etc. are likely available.
         - Steps are linear (executed top-to-bottom in sequence)
         - Use the user's language for step names (human-readable)
-        - Keep step count minimal — only what the user described
+        - Keep step count minimal — only what the user described, but include ALL necessary steps (e.g. if the user says "generate X and email it", that's at least 2 steps: generate + email)
         - IMPORTANT: Always include the "inputs" object with all required parameters for each tool
         - Generate creative, sensible default values for inputs based on what the user asked for
         - For code execution tools, write the actual code that accomplishes the user's goal
@@ -3326,6 +3499,7 @@ actor DaemonApp {
                 let serverName: String
                 let needsConfiguration: Bool?
                 let inputs: [String: JSONValue]?
+                let preferredProvider: String?
             }
 
             let aiWorkflow = try JSONDecoder().decode(AIWorkflow.self, from: jsonData)
@@ -3395,6 +3569,11 @@ actor DaemonApp {
                     stepDict["dependsOn"] = .array([.string(prevId)])
                 }
 
+                // Per-step LLM routing
+                if let provider = aiStep.preferredProvider {
+                    stepDict["preferredProvider"] = .string(provider)
+                }
+
                 stepMetadata.append(.object(stepDict))
                 previousStepId = stepId
             }
@@ -3427,6 +3606,37 @@ actor DaemonApp {
                 resultMetadata["inputParams"] = .array(paramsMeta)
             }
 
+            // Build a temporary WorkflowDefinition for validation
+            let tempTrigger: WorkflowTrigger
+            if resolvedTriggerType == "manual" {
+                let params = (aiWorkflow.inputParams ?? []).map { InputParam(name: $0.name, label: $0.label, placeholder: $0.placeholder) }
+                tempTrigger = .manual(inputParams: params)
+            } else {
+                tempTrigger = .cron(expression: cronExpression)
+            }
+
+            var tempSteps: [WorkflowStep] = []
+            for (index, aiStep) in aiWorkflow.steps.enumerated() {
+                let aiId = aiStep.id ?? "step_\(index)"
+                let stepId = aiIdToUUID[aiId]!
+                var inputTemplate: [String: StringOrVariable] = [:]
+                if let inputs = aiStep.inputs {
+                    for (key, value) in inputs {
+                        switch value {
+                        case .string(let str):
+                            inputTemplate[key] = str.contains("{{") ? .template(str) : .literal(str)
+                        default:
+                            inputTemplate[key] = .literal(value.toJSONString())
+                        }
+                    }
+                }
+                tempSteps.append(WorkflowStep(id: stepId, name: aiStep.name, toolName: aiStep.toolName, serverName: aiStep.serverName, inputTemplate: inputTemplate))
+            }
+            let tempWorkflow = WorkflowDefinition(id: workflowId, name: aiWorkflow.name, trigger: tempTrigger, steps: tempSteps)
+            let validation = await workflowValidator.validate(workflow: tempWorkflow)
+            resultMetadata["validation"] = serializeValidation(validation)
+            resultMetadata["isDraft"] = .bool(!validation.valid)
+
             let resultMsg = WSMessage(
                 type: WSMessageType.buildWorkflowResult,
                 id: workflowId,
@@ -3437,6 +3647,676 @@ actor DaemonApp {
         } catch {
             Logger.error("Build workflow failed: \(error)")
             await sendError(to: client, message: "Failed to build workflow: \(error.localizedDescription)", code: "BUILD_ERROR")
+        }
+    }
+
+    // MARK: - Workflow Analysis & Enhancement
+
+    private func handleAnalyzeWorkflow(_ message: WSMessage, client: WebSocketClient) async {
+        guard let workflowId = message.id ?? message.metadata?["workflowId"]?.stringValue else {
+            await sendError(to: client, message: "Missing workflow ID", code: "MISSING_FIELD")
+            return
+        }
+
+        do {
+            let workflow = try await workflowStore.get(id: workflowId)
+            let analysis = await workflowAnalyzer.analyze(workflow: workflow)
+
+            let issuesMeta: [MetadataValue] = analysis.issues.map { issue in
+                .object([
+                    "id": .string(issue.id),
+                    "severity": .string(issue.severity.rawValue),
+                    "category": .string(issue.category.rawValue),
+                    "message": .string(issue.message),
+                    "affectedStepId": issue.affectedStepId.map { .string($0) } ?? .null,
+                    "affectedStepName": issue.affectedStepName.map { .string($0) } ?? .null,
+                    "suggestion": .string(issue.suggestion),
+                    "fixed": .bool(issue.fixed)
+                ])
+            }
+
+            let missingMeta: [MetadataValue] = analysis.missingElements.map { el in
+                .object([
+                    "id": .string(el.id),
+                    "elementType": .string(el.elementType.rawValue),
+                    "description": .string(el.description),
+                    "recommendedValue": el.recommendedValue.map { .string($0) } ?? .null
+                ])
+            }
+
+            let recommendationsMeta: [MetadataValue] = analysis.recommendations.map { rec in
+                .object([
+                    "id": .string(rec.id),
+                    "title": .string(rec.title),
+                    "description": .string(rec.description),
+                    "category": .string(rec.category.rawValue)
+                ])
+            }
+
+            let resultMsg = WSMessage(
+                type: WSMessageType.analyzeWorkflowResult,
+                id: workflowId,
+                metadata: [
+                    "workflowId": .string(analysis.workflowId),
+                    "workflowName": .string(analysis.workflowName),
+                    "overallHealth": .string(analysis.overallHealth.rawValue),
+                    "healthScore": .int(analysis.healthScore),
+                    "issues": .array(issuesMeta),
+                    "missingElements": .array(missingMeta),
+                    "recommendations": .array(recommendationsMeta)
+                ]
+            )
+            try? await client.send(resultMsg)
+
+        } catch {
+            Logger.error("Analyze workflow failed: \(error)")
+            await sendError(to: client, message: "Failed to analyze workflow: \(error.localizedDescription)", code: "ANALYZE_ERROR")
+        }
+    }
+
+    private func handleEnhanceWorkflow(_ message: WSMessage, client: WebSocketClient) async {
+        guard let workflowId = message.id ?? message.metadata?["workflowId"]?.stringValue else {
+            await sendError(to: client, message: "Missing workflow ID", code: "MISSING_FIELD")
+            return
+        }
+
+        do {
+            let originalWorkflow = try await workflowStore.get(id: workflowId)
+            let result = await workflowAnalyzer.enhance(workflow: originalWorkflow)
+
+            // Compute step-level diff
+            var changes: [MetadataValue] = []
+            if result.enhancementStep != nil {
+                let originalStepMap = Dictionary(originalWorkflow.steps.map { ($0.id, $0) }, uniquingKeysWith: { f, _ in f })
+                let newStepMap = Dictionary(result.workflow.steps.map { ($0.id, $0) }, uniquingKeysWith: { f, _ in f })
+
+                for step in result.workflow.steps {
+                    if let orig = originalStepMap[step.id] {
+                        if orig.toolName != step.toolName {
+                            changes.append(.object([
+                                "type": .string("step_modified"), "stepName": .string(step.name),
+                                "field": .string("toolName"), "before": .string(orig.toolName), "after": .string(step.toolName)
+                            ]))
+                        }
+                        if orig.name != step.name {
+                            changes.append(.object([
+                                "type": .string("step_modified"), "stepName": .string(step.name),
+                                "field": .string("name"), "before": .string(orig.name), "after": .string(step.name)
+                            ]))
+                        }
+                    } else {
+                        changes.append(.object(["type": .string("step_added"), "stepName": .string(step.name)]))
+                    }
+                }
+                for step in originalWorkflow.steps {
+                    if newStepMap[step.id] == nil {
+                        changes.append(.object(["type": .string("step_removed"), "stepName": .string(step.name)]))
+                    }
+                }
+
+                // Save and broadcast
+                try await workflowStore.update(result.workflow)
+                Logger.info("Enhanced workflow '\(result.workflow.name)' — \(result.fixedIssues.count) fix(es) applied")
+
+                let updateMsg = WSMessage(
+                    type: WSMessageType.workflowUpdated,
+                    metadata: [
+                        "id": .string(result.workflow.id),
+                        "name": .string(result.workflow.name),
+                        "description": .string(result.workflow.description),
+                        "enabled": .bool(result.workflow.enabled),
+                        "stepCount": .int(result.workflow.steps.count)
+                    ]
+                )
+                await server.broadcast(updateMsg)
+            }
+
+            // Run validation on the enhanced workflow
+            let validation = await workflowValidator.validate(workflow: result.workflow)
+
+            let issuesMeta: [MetadataValue] = result.analysis.issues.map { issue in
+                .object([
+                    "id": .string(issue.id),
+                    "severity": .string(issue.severity.rawValue),
+                    "category": .string(issue.category.rawValue),
+                    "message": .string(issue.message),
+                    "suggestion": .string(issue.suggestion),
+                    "fixed": .bool(issue.fixed)
+                ])
+            }
+
+            let fixesMeta: [MetadataValue] = result.fixedIssues.map { fix in
+                .object([
+                    "description": .string(fix.description),
+                    "affectedStep": fix.affectedStep.map { .string($0) } ?? .null,
+                    "suggestion": .string(fix.suggestion)
+                ])
+            }
+
+            let stepsMeta: [MetadataValue] = result.workflow.steps.map { step in
+                .object([
+                    "id": .string(step.id),
+                    "name": .string(step.name),
+                    "toolName": .string(step.toolName),
+                    "serverName": .string(step.serverName),
+                    "onError": .string(step.onError.rawValue)
+                ])
+            }
+
+            let resultMsg = WSMessage(
+                type: WSMessageType.enhanceWorkflowResult,
+                id: workflowId,
+                metadata: [
+                    "workflowId": .string(result.workflow.id),
+                    "workflowName": .string(result.workflow.name),
+                    "healthScore": .int(result.analysis.healthScore),
+                    "overallHealth": .string(result.analysis.overallHealth.rawValue),
+                    "issues": .array(issuesMeta),
+                    "fixesApplied": .array(fixesMeta),
+                    "fixCount": .int(result.fixedIssues.count),
+                    "steps": .array(stepsMeta),
+                    "enhanced": .bool(result.enhancementStep != nil),
+                    "changes": .array(changes),
+                    "validation": serializeValidation(validation)
+                ]
+            )
+            try? await client.send(resultMsg)
+
+        } catch {
+            Logger.error("Enhance workflow failed: \(error)")
+            await sendError(to: client, message: "Failed to enhance workflow: \(error.localizedDescription)", code: "ENHANCE_ERROR")
+        }
+    }
+
+    // MARK: - Enhance & Test Loop
+
+    private func handleEnhanceAndTest(_ message: WSMessage, client: WebSocketClient) async {
+        guard let workflowId = message.id ?? message.metadata?["workflowId"]?.stringValue else {
+            await sendError(to: client, message: "Missing workflow ID", code: "MISSING_FIELD")
+            return
+        }
+
+        let maxIterations = min(
+            message.metadata?["maxIterations"]?.intValue ?? 3,
+            5  // hard cap
+        )
+
+        // Guard against re-entrance
+        if runningEnhanceTests[workflowId] != nil {
+            await sendError(to: client, message: "Enhance-and-test already running for this workflow", code: "ALREADY_RUNNING")
+            return
+        }
+
+        // Capture references for the spawned task
+        let store = self.workflowStore
+        let analyzer = self.workflowAnalyzer
+        let executor = self.workflowExecutor
+        let server = self.server
+
+        let validator = self.workflowValidator
+
+        let task = Task { [weak self] in
+            var iterations: [EnhanceTestIteration] = []
+            var executionErrors: [(stepName: String, error: String)] = []
+            var converged = false
+            var totalFixes = 0
+
+            do {
+                var workflow = try await store.get(id: workflowId)
+
+                for iteration in 1...maxIterations {
+                    if Task.isCancelled { break }
+
+                    // Phase 1: Analyzing
+                    await self?.sendEnhanceTestProgress(
+                        to: client, workflowId: workflowId,
+                        phase: "analyzing", iteration: iteration, maxIterations: maxIterations,
+                        message: "Analyzing workflow for issues (iteration \(iteration))..."
+                    )
+
+                    let analysis = await analyzer.analyze(workflow: workflow)
+                    let preFixScore = analysis.healthScore
+
+                    // Phase 2: Enhancing
+                    if Task.isCancelled { break }
+                    await self?.sendEnhanceTestProgress(
+                        to: client, workflowId: workflowId,
+                        phase: "enhancing", iteration: iteration, maxIterations: maxIterations,
+                        message: "Applying \(analysis.issues.count) fix(es) (iteration \(iteration))..."
+                    )
+
+                    let enhanceResult = await analyzer.enhance(
+                        workflow: workflow,
+                        executionErrors: executionErrors
+                    )
+
+                    let fixDescs = enhanceResult.fixedIssues.map(\.description)
+                    totalFixes += enhanceResult.fixedIssues.count
+
+                    // Save the enhanced workflow
+                    if enhanceResult.enhancementStep != nil {
+                        try await store.update(enhanceResult.workflow)
+                        workflow = enhanceResult.workflow
+
+                        let updateMsg = WSMessage(
+                            type: WSMessageType.workflowUpdated,
+                            metadata: [
+                                "id": .string(workflow.id),
+                                "name": .string(workflow.name),
+                                "description": .string(workflow.description),
+                                "enabled": .bool(workflow.enabled),
+                                "stepCount": .int(workflow.steps.count)
+                            ]
+                        )
+                        await server.broadcast(updateMsg)
+                    }
+
+                    // Re-analyze to get post-fix health score
+                    let postFixAnalysis = await analyzer.analyze(workflow: workflow)
+                    let postFixScore = postFixAnalysis.healthScore
+
+                    // Phase 2.5: Validate before testing
+                    let validation = await validator.validate(workflow: workflow)
+                    if validation.errorCount > 0 {
+                        // Skip execution — feed validation errors into next iteration
+                        let valErrors: [(stepName: String, error: String)] = validation.stepResults
+                            .filter { !$0.valid }
+                            .flatMap { sr in
+                                sr.issues.filter { $0.severity == .error }
+                                    .map { (stepName: sr.stepName, error: "Validation: \($0.message)") }
+                            }
+                        executionErrors = valErrors
+
+                        iterations.append(EnhanceTestIteration(
+                            iteration: iteration,
+                            preFixHealthScore: preFixScore,
+                            postFixHealthScore: postFixScore,
+                            issuesFound: analysis.issues.count,
+                            issuesFixed: enhanceResult.fixedIssues.count,
+                            fixDescriptions: fixDescs,
+                            executionStatus: "validation_failed",
+                            failedStepName: valErrors.first?.stepName,
+                            failedStepError: valErrors.first?.error
+                        ))
+
+                        if iteration < maxIterations {
+                            await self?.sendEnhanceTestProgress(
+                                to: client, workflowId: workflowId,
+                                phase: "retrying", iteration: iteration, maxIterations: maxIterations,
+                                message: "Validation failed (\(validation.errorCount) error(s)) — retrying..."
+                            )
+                        }
+                        continue
+                    }
+
+                    // Phase 3: Testing
+                    if Task.isCancelled { break }
+                    await self?.sendEnhanceTestProgress(
+                        to: client, workflowId: workflowId,
+                        phase: "testing", iteration: iteration, maxIterations: maxIterations,
+                        message: "Running test execution (iteration \(iteration))..."
+                    )
+
+                    let execution = await executor.execute(
+                        workflow: workflow,
+                        triggerInfo: "enhancement_test (iteration \(iteration))"
+                    )
+
+                    let issuesFound = analysis.issues.count
+                    let issuesFixed = enhanceResult.fixedIssues.count
+
+                    if execution.status == .completed {
+                        converged = true
+                        iterations.append(EnhanceTestIteration(
+                            iteration: iteration,
+                            preFixHealthScore: preFixScore,
+                            postFixHealthScore: postFixScore,
+                            issuesFound: issuesFound,
+                            issuesFixed: issuesFixed,
+                            fixDescriptions: fixDescs,
+                            executionStatus: "completed",
+                            failedStepName: nil,
+                            failedStepError: nil
+                        ))
+
+                        await self?.sendEnhanceTestProgress(
+                            to: client, workflowId: workflowId,
+                            phase: "converged", iteration: iteration, maxIterations: maxIterations,
+                            message: "Workflow passed test execution!"
+                        )
+                        break
+                    } else {
+                        let failedSteps = execution.stepResults.filter { $0.status == .error }
+                        executionErrors = failedSteps.map { (stepName: $0.stepName, error: $0.error ?? "Unknown error") }
+
+                        let firstFailed = failedSteps.first
+                        iterations.append(EnhanceTestIteration(
+                            iteration: iteration,
+                            preFixHealthScore: preFixScore,
+                            postFixHealthScore: postFixScore,
+                            issuesFound: issuesFound,
+                            issuesFixed: issuesFixed,
+                            fixDescriptions: fixDescs,
+                            executionStatus: execution.status.rawValue,
+                            failedStepName: firstFailed?.stepName,
+                            failedStepError: firstFailed?.error
+                        ))
+
+                        if iteration < maxIterations {
+                            await self?.sendEnhanceTestProgress(
+                                to: client, workflowId: workflowId,
+                                phase: "retrying", iteration: iteration, maxIterations: maxIterations,
+                                message: "Test failed at '\(firstFailed?.stepName ?? "unknown")' — retrying..."
+                            )
+                        }
+                    }
+                }
+            } catch {
+                Logger.error("Enhance-and-test loop failed: \(error)")
+            }
+
+            let finalScore = iterations.last?.postFixHealthScore ?? 0
+            let result = EnhanceTestResult(
+                converged: converged,
+                iterations: iterations,
+                finalHealthScore: finalScore,
+                totalIterations: iterations.count,
+                totalFixesApplied: totalFixes
+            )
+            await self?.sendEnhanceTestDone(to: client, workflowId: workflowId, result: result)
+
+            await self?.removeEnhanceTest(workflowId: workflowId)
+        }
+
+        runningEnhanceTests[workflowId] = task
+    }
+
+    private func handleCancelEnhanceTest(_ message: WSMessage, client: WebSocketClient) async {
+        guard let workflowId = message.id ?? message.metadata?["workflowId"]?.stringValue else {
+            await sendError(to: client, message: "Missing workflow ID", code: "MISSING_FIELD")
+            return
+        }
+
+        guard let task = runningEnhanceTests[workflowId] else {
+            await sendError(to: client, message: "No enhance-and-test running for this workflow", code: "NOT_RUNNING")
+            return
+        }
+
+        task.cancel()
+        runningEnhanceTests.removeValue(forKey: workflowId)
+        Logger.info("Cancelled enhance-and-test for workflow \(workflowId)")
+
+        await sendEnhanceTestProgress(
+            to: client, workflowId: workflowId,
+            phase: "cancelled", iteration: 0, maxIterations: 0,
+            message: "Enhance & Test cancelled"
+        )
+    }
+
+    private func removeEnhanceTest(workflowId: String) {
+        runningEnhanceTests.removeValue(forKey: workflowId)
+    }
+
+    private func sendEnhanceTestProgress(
+        to client: WebSocketClient,
+        workflowId: String,
+        phase: String,
+        iteration: Int,
+        maxIterations: Int,
+        message: String
+    ) async {
+        let msg = WSMessage(
+            type: WSMessageType.enhanceTestProgress,
+            id: workflowId,
+            metadata: [
+                "workflowId": .string(workflowId),
+                "phase": .string(phase),
+                "iteration": .int(iteration),
+                "maxIterations": .int(maxIterations),
+                "message": .string(message)
+            ]
+        )
+        try? await client.send(msg)
+    }
+
+    private func sendEnhanceTestDone(
+        to client: WebSocketClient,
+        workflowId: String,
+        result: EnhanceTestResult
+    ) async {
+        let iterationsMeta: [MetadataValue] = result.iterations.map { iter in
+            .object([
+                "iteration": .int(iter.iteration),
+                "preFixHealthScore": .int(iter.preFixHealthScore),
+                "postFixHealthScore": .int(iter.postFixHealthScore),
+                "issuesFound": .int(iter.issuesFound),
+                "issuesFixed": .int(iter.issuesFixed),
+                "fixDescriptions": .array(iter.fixDescriptions.map { .string($0) }),
+                "executionStatus": .string(iter.executionStatus),
+                "failedStepName": iter.failedStepName.map { .string($0) } ?? .null,
+                "failedStepError": iter.failedStepError.map { .string($0) } ?? .null
+            ])
+        }
+
+        let msg = WSMessage(
+            type: WSMessageType.enhanceTestDone,
+            id: workflowId,
+            metadata: [
+                "workflowId": .string(workflowId),
+                "converged": .bool(result.converged),
+                "totalIterations": .int(result.totalIterations),
+                "finalHealthScore": .int(result.finalHealthScore),
+                "totalFixesApplied": .int(result.totalFixesApplied),
+                "iterations": .array(iterationsMeta)
+            ]
+        )
+        try? await client.send(msg)
+    }
+
+    // MARK: - Workflow Validation & Refinement
+
+    private func serializeValidation(_ validation: WorkflowValidationResult) -> MetadataValue {
+        .object([
+            "valid": .bool(validation.valid),
+            "errorCount": .int(validation.errorCount),
+            "warningCount": .int(validation.warningCount),
+            "stepResults": .array(validation.stepResults.map { sr in
+                .object([
+                    "stepId": .string(sr.stepId),
+                    "stepName": .string(sr.stepName),
+                    "valid": .bool(sr.valid),
+                    "issues": .array(sr.issues.map { issue in
+                        .object([
+                            "field": .string(issue.field),
+                            "severity": .string(issue.severity.rawValue),
+                            "message": .string(issue.message),
+                            "suggestion": issue.suggestion.map { .string($0) } ?? .null
+                        ])
+                    })
+                ])
+            })
+        ])
+    }
+
+    private func handleValidateWorkflow(_ message: WSMessage, client: WebSocketClient) async {
+        guard let workflowId = message.id ?? message.metadata?["workflowId"]?.stringValue else {
+            await sendError(to: client, message: "Missing workflow ID", code: "MISSING_FIELD")
+            return
+        }
+
+        do {
+            let workflow = try await workflowStore.get(id: workflowId)
+            let result = await workflowValidator.validate(workflow: workflow)
+
+            let resultMsg = WSMessage(
+                type: WSMessageType.validateWorkflowResult,
+                id: workflowId,
+                metadata: [
+                    "workflowId": .string(workflowId),
+                    "validation": serializeValidation(result)
+                ]
+            )
+            try? await client.send(resultMsg)
+
+        } catch {
+            Logger.error("Validate workflow failed: \(error)")
+            await sendError(to: client, message: "Failed to validate workflow: \(error.localizedDescription)", code: "VALIDATE_ERROR")
+        }
+    }
+
+    private func handleRefineWorkflow(_ message: WSMessage, client: WebSocketClient) async {
+        guard let refinementPrompt = message.content ?? message.metadata?["prompt"]?.stringValue else {
+            await sendError(to: client, message: "Missing refinement prompt", code: "MISSING_FIELD")
+            return
+        }
+
+        guard let workflowId = message.id ?? message.metadata?["workflowId"]?.stringValue else {
+            await sendError(to: client, message: "Missing workflow ID", code: "MISSING_FIELD")
+            return
+        }
+
+        do {
+            let existingWorkflow = try await workflowStore.get(id: workflowId)
+
+            // Serialize the FULL existing workflow as JSON so the LLM sees everything
+            let stepsJSON = existingWorkflow.steps.enumerated().map { i, step -> String in
+                let inputs = step.inputTemplate.map { key, val -> String in
+                    let resolved: String
+                    switch val {
+                    case .literal(let s): resolved = s
+                    case .variable(let stepId, let path): resolved = "{{\(stepId).\(path)}}"
+                    case .template(let t): resolved = t
+                    }
+                    return "        \"\(key)\": \"\(resolved.replacingOccurrences(of: "\"", with: "\\\""))\""
+                }.joined(separator: ",\n")
+
+                let deps = (step.dependsOn ?? []).map { "\"\($0)\"" }.joined(separator: ", ")
+
+                return """
+                  {
+                    "id": "step_\(i + 1)",
+                    "name": "\(step.name)",
+                    "toolName": "\(step.toolName)",
+                    "serverName": "\(step.serverName)",
+                    "onError": "\(step.onError.rawValue)",
+                    "dependsOn": [\(deps)],
+                    "inputs": {
+                \(inputs)
+                    }
+                  }
+                """
+            }.joined(separator: ",\n")
+
+            let triggerDesc: String
+            switch existingWorkflow.trigger {
+            case .cron(let expr): triggerDesc = "cron schedule: \(expr)"
+            case .manual(let params):
+                let paramList = (params ?? []).map { "\($0.name) (\($0.label))" }.joined(separator: ", ")
+                triggerDesc = "manual trigger\(paramList.isEmpty ? "" : " with inputs: \(paramList)")"
+            case .event(let source, let eventType, _):
+                triggerDesc = "event trigger: \(source):\(eventType)"
+            }
+
+            let combinedPrompt = """
+            EXISTING WORKFLOW (full definition):
+            Name: \(existingWorkflow.name)
+            Description: \(existingWorkflow.description)
+            Trigger: \(triggerDesc)
+            Steps:
+            [\(stepsJSON)]
+
+            USER'S EDIT REQUEST: \(refinementPrompt)
+
+            IMPORTANT INSTRUCTIONS:
+            - PRESERVE all existing steps that the user did not ask to change — keep their exact tool names, server names, and input values
+            - ADD new steps where the user requested — place them in the correct position in the pipeline
+            - MODIFY only the steps the user specifically mentioned
+            - Chain new steps to existing ones using {{step_id.$}} or {{step_id.field}} references
+            - Keep the same trigger type unless the user asked to change it
+            - Return the COMPLETE updated workflow, not just the changes
+            """
+
+            guard let newWorkflow = await buildWorkflowFromPrompt(combinedPrompt) else {
+                await sendError(to: client, message: "Failed to refine workflow", code: "REFINE_ERROR")
+                return
+            }
+
+            // Preserve the original workflow's ID so it updates rather than duplicates
+            let refined = WorkflowDefinition(
+                id: existingWorkflow.id,
+                name: newWorkflow.name,
+                description: newWorkflow.description,
+                enabled: existingWorkflow.enabled,
+                trigger: newWorkflow.trigger,
+                steps: newWorkflow.steps,
+                notificationPrefs: existingWorkflow.notificationPrefs,
+                created: existingWorkflow.created,
+                updated: Date(),
+                originalPrompt: existingWorkflow.originalPrompt,
+                enhancedPrompt: newWorkflow.enhancedPrompt,
+                enhancementHistory: existingWorkflow.enhancementHistory
+            )
+
+            // Save and validate
+            try await workflowStore.update(refined)
+            let validation = await workflowValidator.validate(workflow: refined)
+
+            // Build step metadata for the response
+            let stepsMeta: [MetadataValue] = refined.steps.map { step in
+                var inputsMeta: [String: MetadataValue] = [:]
+                for (key, value) in step.inputTemplate {
+                    inputsMeta[key] = .string(value.resolve(with: [:]))
+                }
+                return .object([
+                    "id": .string(step.id),
+                    "name": .string(step.name),
+                    "toolName": .string(step.toolName),
+                    "serverName": .string(step.serverName),
+                    "onError": .string(step.onError.rawValue),
+                    "inputs": .object(inputsMeta)
+                ])
+            }
+
+            let triggerType: String
+            let cronExpression: String
+            switch refined.trigger {
+            case .cron(let expr): triggerType = "cron"; cronExpression = expr
+            case .manual: triggerType = "manual"; cronExpression = ""
+            case .event: triggerType = "event"; cronExpression = ""
+            }
+
+            let resultMsg = WSMessage(
+                type: WSMessageType.refineWorkflowResult,
+                id: workflowId,
+                metadata: [
+                    "success": .bool(true),
+                    "workflowId": .string(refined.id),
+                    "name": .string(refined.name),
+                    "description": .string(refined.description),
+                    "triggerType": .string(triggerType),
+                    "cronExpression": .string(cronExpression),
+                    "steps": .array(stepsMeta),
+                    "validation": serializeValidation(validation)
+                ]
+            )
+            try? await client.send(resultMsg)
+
+            // Broadcast update
+            let updateMsg = WSMessage(
+                type: WSMessageType.workflowUpdated,
+                metadata: [
+                    "id": .string(refined.id),
+                    "name": .string(refined.name),
+                    "description": .string(refined.description),
+                    "enabled": .bool(refined.enabled),
+                    "stepCount": .int(refined.steps.count)
+                ]
+            )
+            await server.broadcast(updateMsg)
+
+        } catch {
+            Logger.error("Refine workflow failed: \(error)")
+            await sendError(to: client, message: "Failed to refine workflow: \(error.localizedDescription)", code: "REFINE_ERROR")
         }
     }
 
@@ -3867,11 +4747,31 @@ actor DaemonApp {
             return entry
         }.joined(separator: "\n")
 
+        // Build available providers list for per-step routing
+        let availableProviders = await providerPool.availableProviders()
+        let providerCatalog = availableProviders.map { name -> String in
+            switch name {
+            case "claude":
+                return "- claude:haiku (fast, cheap — good for simple transformations, formatting)\n- claude:sonnet (balanced — good for reasoning, code generation, analysis)\n- claude:opus (most capable — good for complex multi-step reasoning)"
+            case "ollama":
+                let model = config.ollamaConfig?.model ?? "local-model"
+                return "- ollama:\(model) (local, free, no latency — good for simple tool calls, text formatting)"
+            case "openai":
+                let model = config.openaiConfig?.model ?? "gpt-4o"
+                return "- openai:\(model) (good for code generation, structured output)"
+            default:
+                return "- \(name)"
+            }
+        }.joined(separator: "\n")
+
         let systemPrompt = """
         You are a workflow builder for the Solace automation system. The user will describe a workflow in natural language. You must generate a valid workflow JSON object.
 
         Available MCP tools:
         \(toolCatalog.isEmpty ? "No MCP tools currently connected." : toolCatalog)
+
+        Available LLM providers (for per-step routing):
+        \(providerCatalog.isEmpty ? "Only default provider available." : providerCatalog)
 
         Output ONLY a valid JSON object (no markdown, no explanation) with this exact schema:
         {
@@ -3891,7 +4791,8 @@ actor DaemonApp {
               "needsConfiguration": false,
               "inputs": {
                 "paramName": "value or {{__input__.param_name}}"
-              }
+              },
+              "preferredProvider": "provider:model (optional)"
             }
           ]
         }
@@ -3909,12 +4810,28 @@ actor DaemonApp {
         - Example: if step_1 produces search results, step_2 can use {{step_1.$}} to get all results
         - For runtime input parameters (manual trigger), use {{__input__.param_name}}
 
+        Per-step LLM routing (preferredProvider):
+        - Each step can optionally specify which LLM provider handles auto-fix and reasoning for that step
+        - Format: "provider:model" (e.g. "claude:sonnet", "ollama:qwen3.5", "openai:gpt-4o")
+        - Omit preferredProvider to use the system default
+        - Use cheaper/faster providers (ollama, claude:haiku) for simple tool calls like fetching data or file operations
+        - Use more capable providers (claude:sonnet, openai:gpt-4o) for steps requiring reasoning, code generation, or complex transformations
+        - Use the most capable provider (claude:opus) only for steps requiring deep analysis or multi-step reasoning
+        - ONLY assign providers from the available list above
+
+        Step chaining — connecting outputs to inputs:
+        - ALWAYS chain steps together when one step produces data the next step needs
+        - Example: if step_1 generates an image and step_2 sends an email, step_2's body should include {{step_1.$}} or {{step_1.url}} to embed the generated image URL
+        - NEVER write static placeholder text like "image not available" or "results will appear here" — always use {{step_id.$}} references to pass real data between steps
+        - If a step produces a URL (e.g. image generation), the next step should reference that URL, not describe what would happen
+
         Rules:
         - CRITICAL: Only use tools that exist in the catalog above. NEVER invent tool names.
-        - If no matching tool exists for a capability the user needs, set needsConfiguration to true and explain in the step name what tool is needed
+        - CRITICAL: NEVER generate placeholder or static fallback content. If the user asks to generate an image, you MUST use an image generation tool from the catalog (e.g. leonardo-ai). If the user asks to send an email with generated content, the email body MUST reference the previous step's output using {{step_id.$}} — never hardcode a message saying the feature is unavailable.
+        - If no matching tool exists for a capability the user needs, set needsConfiguration to true and explain in the step name what tool is needed. But ALWAYS check the full catalog first — tools like image generation, 3D rendering, web search, email, etc. are likely available.
         - Steps are linear (executed top-to-bottom in sequence)
         - Use the user's language for step names (human-readable)
-        - Keep step count minimal — only what the user described
+        - Keep step count minimal — only what the user described, but include ALL necessary steps (e.g. if the user says "generate X and email it", that's at least 2 steps: generate + email)
         - IMPORTANT: Always include the "inputs" object with all required parameters for each tool
         - Generate creative, sensible default values for inputs based on what the user asked for
         - For code execution tools, write the actual code that accomplishes the user's goal
@@ -3963,6 +4880,7 @@ actor DaemonApp {
                 let serverName: String
                 let needsConfiguration: Bool?
                 let inputs: [String: JSONValue]?
+                let preferredProvider: String?
             }
 
             let aiWorkflow = try JSONDecoder().decode(AIWorkflow.self, from: jsonData)
@@ -4023,6 +4941,17 @@ actor DaemonApp {
                     dependsOn = [prevId]
                 }
 
+                // Validate preferredProvider against available providers
+                var validatedProvider: String? = nil
+                if let pref = aiStep.preferredProvider {
+                    let providerName = pref.split(separator: ":").first.map(String.init)?.lowercased()
+                    if let providerName, availableProviders.contains(providerName) {
+                        validatedProvider = pref
+                    } else {
+                        Logger.info("buildWorkflowFromPrompt: Ignoring unavailable provider '\(pref)' for step '\(aiStep.name)'")
+                    }
+                }
+
                 steps.append(WorkflowStep(
                     id: stepId,
                     name: aiStep.name,
@@ -4030,10 +4959,16 @@ actor DaemonApp {
                     serverName: aiStep.serverName,
                     inputTemplate: inputTemplate,
                     dependsOn: dependsOn,
-                    onError: .autofix
+                    onError: .autofix,
+                    preferredProvider: validatedProvider
                 ))
                 previousStepId = stepId
             }
+
+            let providerSummary = steps.compactMap { $0.preferredProvider }.isEmpty
+                ? "all default"
+                : steps.map { $0.preferredProvider ?? "default" }.joined(separator: ", ")
+            Logger.info("buildWorkflowFromPrompt: Built '\(aiWorkflow.name)' with \(steps.count) step(s), providers: [\(providerSummary)]")
 
             return WorkflowDefinition(
                 id: UUID().uuidString,
@@ -4541,6 +5476,93 @@ actor DaemonApp {
         try? await client.send(msg)
     }
 
+    // MARK: - Conversation Context for Workflows
+
+    /// Build a structured analysis of the conversation for workflow creation.
+    /// Uses the LLM to extract actionable intents, entities, and tool requirements
+    /// rather than dumping raw messages. Falls back to raw context if LLM is unavailable.
+    private func buildConversationContext(conversationId: String) async -> String? {
+        guard let conversation = try? await conversationStore.load(id: conversationId) else { return nil }
+
+        let recentMessages = conversation.messages.suffix(30)
+        guard !recentMessages.isEmpty else { return nil }
+
+        // Build raw transcript for the LLM to analyze
+        var transcript: [String] = []
+        var toolsUsedInConversation: Set<String> = []
+        for msg in recentMessages {
+            switch msg.role {
+            case "user":
+                let text = msg.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty {
+                    transcript.append("User: \(String(text.prefix(800)))")
+                }
+            case "assistant":
+                let text = msg.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty {
+                    transcript.append("Assistant: \(String(text.prefix(800)))")
+                }
+            case "tool_use":
+                let toolName = msg.metadata?["toolName"] ?? "unknown"
+                toolsUsedInConversation.insert(toolName)
+                transcript.append("[Tool call: \(toolName)]")
+            case "tool_result":
+                let text = msg.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty {
+                    let toolName = msg.metadata?["toolName"] ?? "tool"
+                    toolsUsedInConversation.insert(toolName)
+                    transcript.append("[\(toolName) result]: \(String(text.prefix(400)))")
+                }
+            default:
+                break
+            }
+        }
+
+        guard !transcript.isEmpty else { return nil }
+        let rawTranscript = transcript.joined(separator: "\n")
+
+        // Use LLM to produce structured analysis (Claude only — local models too slow)
+        if llmProvider.providerName == "Claude", config.apiKey != nil {
+            let analysisPrompt = """
+            Analyze this conversation and extract a structured summary for building an automated workflow.
+
+            Conversation:
+            \(rawTranscript)
+
+            Tools the user has already used in this conversation: \(toolsUsedInConversation.sorted().joined(separator: ", "))
+
+            Return a structured analysis with these sections:
+            SUMMARY: One paragraph describing what the user is trying to accomplish
+            INTENTS: Bullet list of specific actions/goals the user expressed
+            ENTITIES: Key values mentioned (URLs, file paths, names, IDs, schedules, etc.)
+            TOOLS_NEEDED: Which tools from the conversation (or implied) would be needed
+            SUGGESTED_STEPS: Ordered list of concrete steps a workflow should perform
+            TRIGGER_TYPE: Whether this should be "manual" (on-demand, needs runtime inputs) or "cron" (scheduled/recurring)
+            RUNTIME_INPUTS: If manual, what parameters should the user provide at run time
+
+            Be specific and actionable. Extract actual values from the conversation where available.
+            """
+
+            do {
+                let analysis = try await llmProvider.singleRequest(
+                    messages: [MessageParam(role: "user", text: analysisPrompt)],
+                    systemPrompt: "You are a workflow analyst. Extract structured, actionable information from conversations. Be concise and specific."
+                )
+                Logger.info("buildConversationContext: LLM analysis complete (\(analysis.count) chars)")
+                return analysis
+            } catch {
+                Logger.error("buildConversationContext: LLM analysis failed, falling back to raw context: \(error)")
+            }
+        }
+
+        // Fallback: return raw transcript with tool metadata
+        var fallback = rawTranscript
+        if !toolsUsedInConversation.isEmpty {
+            fallback += "\n\nTools used in conversation: \(toolsUsedInConversation.sorted().joined(separator: ", "))"
+        }
+        return fallback
+    }
+
     // MARK: - Workflow Serialization Helpers
 
     private func decodeWorkflowFromMetadata(_ metadata: [String: MetadataValue]) -> WorkflowDefinition? {
@@ -4617,7 +5639,8 @@ actor DaemonApp {
                         serverName: stepDict["serverName"]?.stringValue ?? "",
                         inputTemplate: inputTemplate,
                         dependsOn: dependsOn,
-                        onError: ErrorPolicy(rawValue: stepDict["onError"]?.stringValue ?? "stop") ?? .stop
+                        onError: ErrorPolicy(rawValue: stepDict["onError"]?.stringValue ?? "stop") ?? .stop,
+                        preferredProvider: stepDict["preferredProvider"]?.stringValue
                     )
                     steps.append(step)
                 }
@@ -4723,6 +5746,11 @@ actor DaemonApp {
             // Encode dependsOn
             if let deps = step.dependsOn, !deps.isEmpty {
                 stepDict["dependsOn"] = .array(deps.map { .string($0) })
+            }
+
+            // Encode preferredProvider
+            if let provider = step.preferredProvider {
+                stepDict["preferredProvider"] = .string(provider)
             }
 
             return .object(stepDict)

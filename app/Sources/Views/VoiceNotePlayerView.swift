@@ -114,7 +114,7 @@ struct VoiceNotePlayerView: View {
                     ZStack(alignment: .leading) {
                         // Background track
                         RoundedRectangle(cornerRadius: 2)
-                            .fill(isUserMessage ? Color.white.opacity(0.3) : Color.trust.opacity(0.3))
+                            .fill(isUserMessage ? Color.white.opacity(0.3) : Color.textSecondary.opacity(0.3))
                             .frame(height: 4)
 
                         // Progress fill
@@ -140,7 +140,7 @@ struct VoiceNotePlayerView: View {
             // Duration label
             Text(player?.isPlaying == true ? (player?.formattedCurrentTime ?? "0:00") : formatDuration(duration))
                 .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(isUserMessage ? .white.opacity(0.8) : .trust)
+                .foregroundStyle(isUserMessage ? .white.opacity(0.8) : .textSecondary)
                 .frame(width: 36, alignment: .trailing)
         }
         .padding(.vertical, SolaceTheme.xs)
@@ -161,7 +161,7 @@ struct VoiceNotePlayerView: View {
         if barFraction <= progressFraction {
             return isUserMessage ? .white : .heart
         }
-        return isUserMessage ? .white.opacity(0.3) : .trust.opacity(0.3)
+        return isUserMessage ? .white.opacity(0.3) : .textSecondary.opacity(0.3)
     }
 
     private func barHeight(at index: Int) -> CGFloat {
@@ -199,10 +199,10 @@ struct RemoteVoiceNoteView: View {
         } else if isLoading {
             HStack(spacing: SolaceTheme.sm) {
                 ProgressView()
-                    .tint(isUserMessage ? .white : .trust)
+                    .tint(isUserMessage ? .white : .textSecondary)
                 Text("Loading voice note...")
                     .font(.system(size: 13))
-                    .foregroundStyle(isUserMessage ? .white.opacity(0.8) : .trust)
+                    .foregroundStyle(isUserMessage ? .white.opacity(0.8) : .textSecondary)
             }
             .padding(.vertical, SolaceTheme.xs)
         } else if loadFailed {
@@ -211,7 +211,7 @@ struct RemoteVoiceNoteView: View {
                     .foregroundStyle(isUserMessage ? .white : .softRed)
                 Text("Voice note unavailable")
                     .font(.system(size: 13))
-                    .foregroundStyle(isUserMessage ? .white.opacity(0.8) : .trust)
+                    .foregroundStyle(isUserMessage ? .white.opacity(0.8) : .textSecondary)
             }
             .padding(.vertical, SolaceTheme.xs)
         } else {
@@ -220,7 +220,7 @@ struct RemoteVoiceNoteView: View {
                     .foregroundStyle(isUserMessage ? .white : .heart)
                 Text("Voice note")
                     .font(.system(size: 13))
-                    .foregroundStyle(isUserMessage ? .white.opacity(0.8) : .trust)
+                    .foregroundStyle(isUserMessage ? .white.opacity(0.8) : .textSecondary)
             }
             .padding(.vertical, SolaceTheme.xs)
             .onTapGesture {

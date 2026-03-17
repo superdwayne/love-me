@@ -3,103 +3,74 @@ import SwiftUI
 struct EmptyStateView: View {
     @Environment(WebSocketClient.self) private var webSocket
     @Environment(ChatViewModel.self) private var chatVM
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var breatheScale: CGFloat = 1.0
 
-    private let suggestions = [
-        "What can you help me with?",
-        "Create a workflow to monitor my inbox",
-        "Summarize my recent emails",
+    private var greeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case 5..<12: return "Good morning"
+        case 12..<17: return "Good afternoon"
+        case 17..<22: return "Good evening"
+        default: return "Good evening"
+        }
+    }
+
+    private let suggestions: [(icon: String, text: String)] = [
+        ("pencil.line", "Help me draft a message"),
+        ("calendar", "Plan my week ahead"),
+        ("lightbulb", "Brainstorm ideas with me"),
+        ("envelope", "Summarize my recent emails"),
     ]
 
     var body: some View {
-        VStack(spacing: SolaceTheme.lg) {
+        VStack(spacing: SolaceTheme.xl) {
             Spacer()
 
-            // Logo
-            HStack(spacing: 0) {
-                Text("Solace")
+            // Greeting
+            VStack(spacing: SolaceTheme.xs) {
+                Text(greeting)
                     .font(.emptyStateTitle)
                     .foregroundStyle(.textPrimary)
 
-                Text(".")
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
-                    .foregroundStyle(.heart)
-                    .scaleEffect(breatheScale)
-                    .onAppear {
-                        guard !reduceMotion else { return }
-                        withAnimation(
-                            .easeInOut(duration: SolaceTheme.breatheDuration)
-                            .repeatForever(autoreverses: true)
-                        ) {
-                            breatheScale = 1.08
-                        }
-                    }
+                Text("What can I help you with?")
+                    .font(.chatMessage)
+                    .foregroundStyle(.textSecondary)
             }
 
-            // Subtitle
-            Text("Send a message to get started.")
-                .font(.chatMessage)
-                .foregroundStyle(.trust)
-
-            // Connection status
-            HStack(spacing: SolaceTheme.sm) {
-                Circle()
-                    .fill(connectionColor)
-                    .frame(width: 8, height: 8)
-
-                Text(connectionText)
-                    .font(.system(size: 14))
-                    .foregroundStyle(connectionColor)
-            }
-            .padding(.top, SolaceTheme.sm)
-
-            // Suggestion chips
-            VStack(spacing: SolaceTheme.sm) {
-                ForEach(suggestions, id: \.self) { suggestion in
+            // Suggestion cards
+            VStack(spacing: SolaceTheme.xs) {
+                ForEach(suggestions, id: \.text) { suggestion in
                     Button {
-                        chatVM.inputText = suggestion
+                        chatVM.inputText = suggestion.text
                         chatVM.sendMessage()
                     } label: {
-                        HStack(spacing: SolaceTheme.sm) {
-                            Image(systemName: "arrow.right.circle")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.heart)
-                            Text(suggestion)
+                        HStack(spacing: SolaceTheme.md) {
+                            Image(systemName: suggestion.icon)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(.coral)
+                                .frame(width: 18)
+
+                            Text(suggestion.text)
                                 .font(.system(size: 14))
                                 .foregroundStyle(.textPrimary)
-                                .multilineTextAlignment(.leading)
+
+                            Spacer()
+
+                            Image(systemName: "arrow.up.right")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.textSecondary)
                         }
-                        .padding(.horizontal, SolaceTheme.md)
-                        .padding(.vertical, SolaceTheme.sm)
+                        .padding(.horizontal, SolaceTheme.lg)
+                        .padding(.vertical, SolaceTheme.md)
                         .frame(maxWidth: 300, alignment: .leading)
-                        .background(Color.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .background(Color.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: SolaceTheme.cardRadius))
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.top, SolaceTheme.sm)
 
             Spacer()
             Spacer()
-        }
-        .offset(y: -40)
-    }
-
-    private var connectionColor: Color {
-        switch webSocket.connectionState {
-        case .connected: return .sageGreen
-        case .connecting: return .amberGlow
-        case .disconnected: return .softRed
-        }
-    }
-
-    private var connectionText: String {
-        switch webSocket.connectionState {
-        case .connected: return "Connected to your Mac."
-        case .connecting: return "Connecting..."
-        case .disconnected: return "Not connected."
         }
     }
 }

@@ -19,8 +19,8 @@ struct DecompositionResult: Sendable {
     let rawText: String
 }
 
-struct CritiqueIssue: Sendable {
-    enum Severity: String, Sendable {
+struct CritiqueIssue: Codable, Sendable {
+    enum Severity: String, Codable, Sendable {
         case critical
         case suggestion
     }
